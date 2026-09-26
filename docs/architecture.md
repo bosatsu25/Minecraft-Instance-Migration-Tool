@@ -333,6 +333,51 @@ This phase does not claim whole-machine power-loss immunity beyond the guarantee
 file flush semantics, and it is not Execute. The future executor must await a successful durable Started
 append before mutation and await a durable terminal append before advancing to another destructive step.
 
+
+## Phase 3.5 Live revalidation and execute orchestration contract
+
+Phase 3.5 wires the safety contracts together without adding a production mutation adapter.
+
+Before each planned write step, `ExecutionLiveValidator` re-runs the read-only Inspector for the
+source and destination roots and compares the current top-level observation for that step with the
+reviewed `MigrationPlan`. Root state, expected kind, source state, destination state, and journal
+operation must still match. Any drift blocks the step before durable `Started`.
+
+For Replace steps, the completed backup artifact is also revalidated immediately before `Started`.
+A missing or invalid backup prevents the destructive step.
+
+The Application orchestrator then enforces this sequence:
+
+```text
+step live revalidation
+  -> backup revalidation when Replace
+  -> durable Started
+  -> mutation port
+  -> post-write fingerprint verification
+  -> durable Applied
+```
+
+A later step is considered only after the previous step reached durable `Applied`.
+
+If mutation or post-write verification fails after `Started`, the orchestrator attempts a durable
+`Failed` terminal record using a non-cancelled safety path and returns `RecoveryRequired`.
+If the `Applied` journal write itself fails after mutation/verification succeeded, the journal still
+contains durable `Started`; the result is `RecoveryRequired`, so restart semantics remain
+`Uncertain` rather than falsely claiming success.
+
+Cancellation is honored before each destructive step. Once `Started` is durable, safety bookkeeping
+uses non-cancelled journal writes so a cancellation cannot intentionally suppress terminal evidence.
+If cancellation is observed between two safely Applied steps, execution stops before the next Started
+record and returns the count of already Applied steps.
+
+This phase introduces two ports but no Infrastructure implementation:
+
+- `IExecutionMutationPort`: future single-entry Copy / Replace mutation;
+- `IExecutionPostWriteVerifier`: future independent destination fingerprint calculation.
+
+Therefore Phase 3.5 proves orchestration ordering and failure semantics only. It performs no production
+Minecraft destination writes.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -359,10 +404,9 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Backup:** Phase 3.1 creates an owned verified artifact; Phase 3.2 can revalidate a completed artifact
   read-only against ownership, manifest, plan, exact top-level membership, no-follow traversal, and a
   recomputed tree fingerprint. A failed/cancelled/invalid artifact is never accepted as recovery evidence.
-- **Execute:** Phase 3.4 now provides durable journal storage. Future Execute must revalidate roots and
-  source/destination state, await a durable Started record before each mutation, produce a post-write
-  fingerprint, persist Applied/Failed durably, and only then advance. Reject stale plans, unsafe paths,
-  changed collision assumptions, or any journal transition failure.
+- **Execute:** Phase 3.5 now provides Application orchestration around live metadata revalidation,
+  backup revalidation, durable journal barriers, a mutation port, independent post-write verification,
+  and durable terminal evidence. Production mutation/verification adapters remain future work.
 - **Verify:** Compare actual outcomes against the plan using defined evidence (such as content
   fingerprints), independently of an executor's success flag.
 - **Diagnose / Rollback:** Phase 3.3 defines reverse-order rollback requirements from journal evidence.
