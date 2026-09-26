@@ -39,11 +39,9 @@ public sealed class MigrationPreviewViewModelTests
             path == "source"
                 ? Inspection(("config", EntryState.Directory))
                 : Inspection(("config", EntryState.Directory))));
-        var model = CreateModel(inspector)
-        {
-            SourcePath = "source",
-            DestinationPath = "destination",
-        };
+        var model = CreateModel(inspector);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
 
         await model.GeneratePreviewAsync();
 
@@ -56,11 +54,10 @@ public sealed class MigrationPreviewViewModelTests
     public async Task ChangingInputClearsPreviousPreview()
     {
         var model = CreateModel(new StubInspector((_, _) =>
-            Task.FromResult(Inspection(("config", EntryState.Directory)))))
-        {
-            SourcePath = "source",
-            DestinationPath = "destination",
-        };
+            Task.FromResult(Inspection(("config", EntryState.Directory)))));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+
         await model.GeneratePreviewAsync();
         Assert.NotEmpty(model.Entries);
 
@@ -82,11 +79,9 @@ public sealed class MigrationPreviewViewModelTests
             received = token;
             return pending.Task;
         });
-        var model = CreateModel(inspector)
-        {
-            SourcePath = "source",
-            DestinationPath = "destination",
-        };
+        var model = CreateModel(inspector);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
 
         Task running = model.GeneratePreviewAsync();
         Assert.True(model.IsBusy);
@@ -105,11 +100,9 @@ public sealed class MigrationPreviewViewModelTests
     public async Task ErrorCategoryIsShownWithoutLeakingPrivateMessage()
     {
         var model = CreateModel(new StubInspector((_, _) =>
-            throw new InvalidOperationException("private source path")))
-        {
-            SourcePath = "source",
-            DestinationPath = "destination",
-        };
+            throw new InvalidOperationException("private source path")));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
 
         await model.GeneratePreviewAsync();
 
