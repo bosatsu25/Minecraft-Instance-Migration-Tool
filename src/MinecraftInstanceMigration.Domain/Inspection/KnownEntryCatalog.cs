@@ -1,22 +1,25 @@
 namespace MinecraftInstanceMigration.Domain.Inspection;
 
-public sealed record KnownEntryDefinition(string Name, ExpectedEntryKind ExpectedKind);
+public sealed record KnownEntryDefinition(
+    string Name,
+    ExpectedEntryKind ExpectedKind,
+    bool RecommendedByDefault);
 
 public static class KnownEntryCatalog
 {
     private static readonly KnownEntryDefinition[] Entries =
     [
-        new("options.txt", ExpectedEntryKind.File),
-        new("config", ExpectedEntryKind.Directory),
-        new("resourcepacks", ExpectedEntryKind.Directory),
-        new("shaderpacks", ExpectedEntryKind.Directory),
-        new("schematics", ExpectedEntryKind.Directory),
-        new("saves", ExpectedEntryKind.Directory),
-        new("screenshots", ExpectedEntryKind.Directory),
-        new("XaeroWaypoints", ExpectedEntryKind.Directory),
-        new("XaeroWorldMap", ExpectedEntryKind.Directory),
-        new("itemscroller", ExpectedEntryKind.Directory),
-        new("g4mespeed", ExpectedEntryKind.Directory),
+        new("options.txt", ExpectedEntryKind.File, true),
+        new("config", ExpectedEntryKind.Directory, true),
+        new("resourcepacks", ExpectedEntryKind.Directory, true),
+        new("shaderpacks", ExpectedEntryKind.Directory, true),
+        new("schematics", ExpectedEntryKind.Directory, true),
+        new("saves", ExpectedEntryKind.Directory, false),
+        new("screenshots", ExpectedEntryKind.Directory, false),
+        new("XaeroWaypoints", ExpectedEntryKind.Directory, true),
+        new("XaeroWorldMap", ExpectedEntryKind.Directory, true),
+        new("itemscroller", ExpectedEntryKind.Directory, true),
+        new("g4mespeed", ExpectedEntryKind.Directory, true),
     ];
 
     public static IReadOnlyList<KnownEntryDefinition> All { get; } = Array.AsReadOnly(Entries);
