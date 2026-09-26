@@ -6,21 +6,6 @@ public sealed class InstanceInspector(IInspectionFileSystem fileSystem) : IInsta
 {
     private readonly IInspectionFileSystem _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 
-    private static readonly (string Name, ExpectedEntryKind Kind)[] Targets =
-    [
-        ("options.txt", ExpectedEntryKind.File),
-        ("config", ExpectedEntryKind.Directory),
-        ("resourcepacks", ExpectedEntryKind.Directory),
-        ("shaderpacks", ExpectedEntryKind.Directory),
-        ("schematics", ExpectedEntryKind.Directory),
-        ("saves", ExpectedEntryKind.Directory),
-        ("screenshots", ExpectedEntryKind.Directory),
-        ("XaeroWaypoints", ExpectedEntryKind.Directory),
-        ("XaeroWorldMap", ExpectedEntryKind.Directory),
-        ("itemscroller", ExpectedEntryKind.Directory),
-        ("g4mespeed", ExpectedEntryKind.Directory),
-    ];
-
     public Task<InstanceInspectionResult> InspectAsync(string candidatePath, CancellationToken cancellationToken = default)
     {
         return Task.Run(() => Inspect(candidatePath, cancellationToken), cancellationToken);
@@ -36,13 +21,13 @@ public sealed class InstanceInspector(IInspectionFileSystem fileSystem) : IInsta
             return new InstanceInspectionResult(session.RootState, []);
         }
 
-        var entries = new List<EntryObservation>(Targets.Length);
-        foreach (var (name, kind) in Targets)
+        var entries = new List<EntryObservation>(KnownEntryCatalog.All.Count);
+        foreach (KnownEntryDefinition target in KnownEntryCatalog.All)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var state = session.ObserveChild(name, cancellationToken);
+            var state = session.ObserveChild(target.Name, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            entries.Add(new EntryObservation(name, kind, state));
+            entries.Add(new EntryObservation(target.Name, target.ExpectedKind, state));
         }
 
         return new InstanceInspectionResult(session.RootState, entries);
