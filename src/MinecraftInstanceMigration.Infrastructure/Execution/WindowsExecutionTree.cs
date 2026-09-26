@@ -237,13 +237,11 @@ internal static class WindowsExecutionTree
             if (forDelete)
             {
                 desiredAccess |= ExecutionNativeMethods.DeleteAccess;
-                if (directory)
-                {
-                    desiredAccess |=
-                        BackupNativeMethods.FileListDirectory |
+                desiredAccess |= directory
+                    ? BackupNativeMethods.FileListDirectory |
                         BackupNativeMethods.FileTraverse |
-                        ExecutionNativeMethods.FileDeleteChild;
-                }
+                        ExecutionNativeMethods.FileDeleteChild
+                    : BackupNativeMethods.FileReadData;
             }
             else
             {
