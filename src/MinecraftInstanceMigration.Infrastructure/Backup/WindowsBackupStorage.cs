@@ -436,8 +436,7 @@ public sealed class WindowsBackupStorage : IBackupStorage
                 BackupNativeMethods.Synchronize;
             uint options = BackupNativeMethods.FileOpenReparsePoint |
                 BackupNativeMethods.FileOpenNoRecall |
-                BackupNativeMethods.FileSynchronousIoNonAlert |
-                (directory ? BackupNativeMethods.FileDirectoryFile : BackupNativeMethods.FileNonDirectoryFile);
+                BackupNativeMethods.FileSynchronousIoNonAlert;
 
             (SafeFileHandle data, int status) = BackupNativeMethods.OpenRelative(
                 parent,
@@ -584,7 +583,6 @@ public sealed class WindowsBackupStorage : IBackupStorage
                     desiredAccess,
                     BackupNativeMethods.ShareRead,
                     BackupNativeMethods.FileOpen,
-                    BackupNativeMethods.FileDirectoryFile |
                     BackupNativeMethods.FileOpenReparsePoint |
                     BackupNativeMethods.FileOpenNoRecall |
                     BackupNativeMethods.FileSynchronousIoNonAlert);
