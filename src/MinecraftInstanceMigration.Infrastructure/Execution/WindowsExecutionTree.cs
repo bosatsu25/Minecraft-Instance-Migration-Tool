@@ -80,6 +80,24 @@ internal static class WindowsExecutionTree
         IsEqualOrDescendant(first, second) ||
         IsEqualOrDescendant(second, first);
 
+    internal static bool PhysicalRootsOverlap(
+        HeldDirectory first,
+        HeldDirectory second) =>
+        IsPhysicalEqualOrDescendant(first.Root, second.Root) ||
+        IsPhysicalEqualOrDescendant(second.Root, first.Root);
+
+    internal static bool IsPhysicalEqualOrDescendant(
+        SafeFileHandle candidate,
+        SafeFileHandle root)
+    {
+        string candidatePath =
+            ExecutionNativeMethods.GetCanonicalVolumePath(candidate);
+        string rootPath =
+            ExecutionNativeMethods.GetCanonicalVolumePath(root);
+
+        return IsEqualOrDescendant(candidatePath, rootPath);
+    }
+
     internal static HeldDirectory OpenDirectoryChain(
         string path,
         bool writableFinal)
@@ -183,12 +201,15 @@ internal static class WindowsExecutionTree
     {
         ValidateSingleName(name);
 
+        uint shareAccess = BackupNativeMethods.ShareRead |
+            (forDelete ? BackupNativeMethods.ShareDelete : 0);
+
         (SafeFileHandle metadata, int metadataStatus) = BackupNativeMethods.OpenRelative(
             parent,
             name,
             BackupNativeMethods.FileReadAttributes |
             BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
+            shareAccess,
             BackupNativeMethods.FileOpen,
             BackupNativeMethods.FileOpenReparsePoint |
             BackupNativeMethods.FileOpenNoRecall |
@@ -236,7 +257,7 @@ internal static class WindowsExecutionTree
                 parent,
                 name,
                 desiredAccess,
-                BackupNativeMethods.ShareRead,
+                shareAccess,
                 BackupNativeMethods.FileOpen,
                 BackupNativeMethods.FileOpenReparsePoint |
                 BackupNativeMethods.FileOpenNoRecall |
