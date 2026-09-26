@@ -71,22 +71,6 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
             cancellationToken.ThrowIfCancellationRequested();
             using HeldDirectory root = OpenDirectoryChain(normalizedBackupRoot, writableFinal: false);
 
-            IReadOnlyList<string> actualNames = BackupNativeMethods.EnumerateNames(root.Root);
-            var expectedNames = new HashSet<string>(
-                plan.Entries.Select(entry => entry.Name),
-                StringComparer.OrdinalIgnoreCase)
-            {
-                ".mim-backup-owner.json",
-                "backup-manifest.json",
-            };
-
-            if (actualNames.Count != expectedNames.Count ||
-                actualNames.Any(name => !expectedNames.Contains(name)))
-            {
-                throw new BackupArtifactValidationException(
-                    BackupArtifactFailureKind.UnexpectedContent);
-            }
-
             OwnerMarker owner = ReadJsonFile<OwnerMarker>(
                 root.Root,
                 ".mim-backup-owner.json",
@@ -116,6 +100,22 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
             {
                 throw new BackupArtifactValidationException(
                     BackupArtifactFailureKind.ManifestInvalid);
+            }
+
+            IReadOnlyList<string> actualNames = BackupNativeMethods.EnumerateNames(root.Root);
+            var expectedNames = new HashSet<string>(
+                plan.Entries.Select(entry => entry.Name),
+                StringComparer.OrdinalIgnoreCase)
+            {
+                ".mim-backup-owner.json",
+                "backup-manifest.json",
+            };
+
+            if (actualNames.Count != expectedNames.Count ||
+                actualNames.Any(name => !expectedNames.Contains(name)))
+            {
+                throw new BackupArtifactValidationException(
+                    BackupArtifactFailureKind.UnexpectedContent);
             }
 
             TreeFingerprint actual = FingerprintPlan(root.Root, plan, cancellationToken);
