@@ -34,6 +34,8 @@ public static class RollbackPlanPolicy
 
         foreach (ExecutionJournalStep step in snapshot.Steps.Reverse())
         {
+            ExecutionJournalEntry draftEntry = draft.Entries[step.Sequence];
+
             switch (step.Outcome)
             {
                 case ExecutionStepOutcome.NotStarted:
@@ -45,6 +47,7 @@ public static class RollbackPlanPolicy
                         rollbackEntries.Add(Manual(
                             rollbackEntries.Count,
                             step,
+                            draftEntry.ExpectedKind,
                             RollbackRecoveryReason.MissingPostWriteFingerprint));
                         break;
                     }
@@ -54,6 +57,7 @@ public static class RollbackPlanPolicy
                         rollbackEntries.Add(Manual(
                             rollbackEntries.Count,
                             step,
+                            draftEntry.ExpectedKind,
                             RollbackRecoveryReason.ValidatedBackupUnavailable));
                         break;
                     }
@@ -61,6 +65,7 @@ public static class RollbackPlanPolicy
                     rollbackEntries.Add(new RollbackPlanEntry(
                         rollbackEntries.Count,
                         step.Name,
+                        draftEntry.ExpectedKind,
                         step.Operation,
                         step.Operation == ExecutionOperationKind.Copy
                             ? RollbackActionKind.DeleteCreatedEntry
@@ -133,10 +138,12 @@ public static class RollbackPlanPolicy
     private static RollbackPlanEntry Manual(
         int order,
         ExecutionJournalStep step,
+        MinecraftInstanceMigration.Domain.Inspection.ExpectedEntryKind expectedKind,
         RollbackRecoveryReason reason) =>
         new(
             order,
             step.Name,
+            expectedKind,
             step.Operation,
             RollbackActionKind.ManualRecoveryRequired,
             step.AppliedFingerprint,
