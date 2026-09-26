@@ -275,3 +275,24 @@ content/structure mismatch fails the operation.
 Remaining gaps before Execute: deterministic mid-copy failure injection, restore/rollback behavior,
 ACL / alternate-stream / timestamp preservation decisions, and revalidation of a completed backup
 immediately before destructive migration writes.
+
+
+## Phase 3.2: Completed backup revalidation
+
+Phase 3.2 is a read-only verification phase over an already completed backup artifact.
+
+Coverage includes:
+
+- invalid and pre-cancelled requests do not cross the Application storage boundary;
+- a completed backup validates successfully and validation leaves the artifact byte-for-byte unchanged;
+- payload mutation after backup completion produces `VerificationMismatch`;
+- missing completion manifest produces `ManifestInvalid`;
+- invalid ownership marker produces `OwnershipMarkerInvalid`;
+- unexpected top-level backup content produces `UnexpectedContent`;
+- a nested junction injected after backup completion produces `ReparsePoint`;
+- a manifest created for a different backup plan is rejected.
+
+The validator reuses the same handle-relative no-follow traversal and tree-fingerprint algorithm as
+backup creation. It does not repair, clean up, or rewrite an invalid artifact. A GREEN result is
+point-in-time evidence only; Execute still needs destination/source revalidation plus an execution
+journal and rollback contract.

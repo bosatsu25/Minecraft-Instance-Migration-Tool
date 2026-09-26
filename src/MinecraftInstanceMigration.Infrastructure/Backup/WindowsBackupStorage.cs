@@ -11,7 +11,7 @@ using MinecraftInstanceMigration.Domain.Inspection;
 
 namespace MinecraftInstanceMigration.Infrastructure.Backup;
 
-public sealed class WindowsBackupStorage : IBackupStorage
+public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValidationStorage
 {
     private const int BufferSize = 128 * 1024;
 
@@ -28,6 +28,160 @@ public sealed class WindowsBackupStorage : IBackupStorage
         return Task.Run(
             () => CreateBackup(destinationRoot, backupParent, plan, manifest, cancellationToken),
             CancellationToken.None);
+    }
+
+    public Task<BackupArtifactValidationResult> ValidateBackupAsync(
+        string backupRoot,
+        BackupPlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        return Task.Run(
+            () => ValidateBackup(backupRoot, plan, cancellationToken),
+            CancellationToken.None);
+    }
+
+    private static BackupArtifactValidationResult ValidateBackup(
+        string backupRoot,
+        BackupPlan plan,
+        CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Backup validation requires Windows.");
+        }
+
+        if (!plan.CanStartBackup)
+        {
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Invalid,
+                BackupArtifactFailureKind.InvalidPlan);
+        }
+
+        if (!TryNormalizeLocalDirectoryPath(backupRoot, out string normalizedBackupRoot))
+        {
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Invalid,
+                BackupArtifactFailureKind.InvalidPath);
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using HeldDirectory root = OpenDirectoryChain(normalizedBackupRoot, writableFinal: false);
+
+            OwnerMarker owner = ReadJsonFile<OwnerMarker>(
+                root.Root,
+                ".mim-backup-owner.json",
+                4096,
+                BackupArtifactFailureKind.OwnershipMarkerInvalid,
+                cancellationToken);
+
+            if (owner.FormatVersion != 1 ||
+                !Guid.TryParseExact(owner.ExecutionId, "N", out _) ||
+                !string.Equals(
+                    Path.GetFileName(normalizedBackupRoot),
+                    "mim-backup-" + owner.ExecutionId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new BackupArtifactValidationException(
+                    BackupArtifactFailureKind.OwnershipMarkerInvalid);
+            }
+
+            CompletedManifest manifest = ReadJsonFile<CompletedManifest>(
+                root.Root,
+                "backup-manifest.json",
+                64 * 1024,
+                BackupArtifactFailureKind.ManifestInvalid,
+                cancellationToken);
+
+            if (!CompletedManifestMatchesPlan(plan, manifest))
+            {
+                throw new BackupArtifactValidationException(
+                    BackupArtifactFailureKind.ManifestInvalid);
+            }
+
+            IReadOnlyList<string> actualNames = BackupNativeMethods.EnumerateNames(root.Root);
+            var expectedNames = new HashSet<string>(
+                plan.Entries.Select(entry => entry.Name),
+                StringComparer.OrdinalIgnoreCase)
+            {
+                ".mim-backup-owner.json",
+                "backup-manifest.json",
+            };
+
+            if (actualNames.Count != expectedNames.Count ||
+                actualNames.Any(name => !expectedNames.Contains(name)))
+            {
+                throw new BackupArtifactValidationException(
+                    BackupArtifactFailureKind.UnexpectedContent);
+            }
+
+            TreeFingerprint actual = FingerprintPlan(root.Root, plan, cancellationToken);
+            if (!FingerprintMatches(actual, manifest.Verification))
+            {
+                throw new BackupArtifactValidationException(
+                    BackupArtifactFailureKind.VerificationMismatch);
+            }
+
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Valid,
+                Verification: ToSummary(actual));
+        }
+        catch (OperationCanceledException)
+        {
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Cancelled);
+        }
+        catch (BackupArtifactValidationException error)
+        {
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Invalid,
+                error.Kind);
+        }
+        catch (BackupStorageException error)
+        {
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Invalid,
+                MapValidationFailure(error.Kind));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Invalid,
+                BackupArtifactFailureKind.AccessDenied);
+        }
+        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 5)
+        {
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Invalid,
+                BackupArtifactFailureKind.AccessDenied);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Invalid,
+                BackupArtifactFailureKind.IoFailure);
+        }
+        catch (IOException)
+        {
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Invalid,
+                BackupArtifactFailureKind.IoFailure);
+        }
+        catch (BackupNativeException error)
+        {
+            BackupArtifactFailureKind kind =
+                error.Status == BackupNativeMethods.StatusReparsePointEncountered
+                    ? BackupArtifactFailureKind.ReparsePoint
+                    : BackupNativeMethods.RtlNtStatusToDosError(error.Status) == 5
+                        ? BackupArtifactFailureKind.AccessDenied
+                        : BackupArtifactFailureKind.IoFailure;
+            return new BackupArtifactValidationResult(
+                BackupArtifactValidationStatus.Invalid,
+                kind);
+        }
     }
 
     private static BackupExecutionResult CreateBackup(
@@ -207,6 +361,128 @@ public sealed class WindowsBackupStorage : IBackupStorage
                 entriesCopied);
         }
     }
+
+    private static T ReadJsonFile<T>(
+        SafeFileHandle parent,
+        string name,
+        int maximumBytes,
+        BackupArtifactFailureKind invalidKind,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        OpenedNode node;
+        try
+        {
+            node = OpenExistingNode(parent, name);
+        }
+        catch (BackupStorageException error) when (error.Kind == BackupFailureKind.SourceChanged)
+        {
+            throw new BackupArtifactValidationException(invalidKind);
+        }
+
+        using (node)
+        {
+            if (node.IsDirectory)
+            {
+                throw new BackupArtifactValidationException(invalidKind);
+            }
+
+            long length = RandomAccess.GetLength(node.Handle);
+            if (length <= 0 || length > maximumBytes)
+            {
+                throw new BackupArtifactValidationException(invalidKind);
+            }
+
+            byte[] bytes = new byte[checked((int)length)];
+            int offset = 0;
+            while (offset < bytes.Length)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int read = RandomAccess.Read(node.Handle, bytes.AsSpan(offset), offset);
+                if (read == 0)
+                {
+                    throw new BackupArtifactValidationException(invalidKind);
+                }
+
+                offset += read;
+            }
+
+            try
+            {
+                T? value = JsonSerializer.Deserialize<T>(bytes);
+                return value ?? throw new BackupArtifactValidationException(invalidKind);
+            }
+            catch (JsonException)
+            {
+                throw new BackupArtifactValidationException(invalidKind);
+            }
+        }
+    }
+
+    private static bool CompletedManifestMatchesPlan(BackupPlan plan, CompletedManifest manifest)
+    {
+        if (manifest.SchemaVersion != BackupManifestDraft.CurrentSchemaVersion ||
+            manifest.Entries is null ||
+            manifest.Verification is null ||
+            plan.Entries.Count != manifest.Entries.Count ||
+            manifest.Verification.FileCount < 0 ||
+            manifest.Verification.DirectoryCount < 0 ||
+            manifest.Verification.TotalBytes < 0 ||
+            !IsSha256(manifest.Verification.Sha256))
+        {
+            return false;
+        }
+
+        for (int index = 0; index < plan.Entries.Count; index++)
+        {
+            BackupPlanEntry planEntry = plan.Entries[index];
+            ManifestEntry manifestEntry = manifest.Entries[index];
+            if (manifestEntry is null ||
+                !string.Equals(planEntry.Name, manifestEntry.Name, StringComparison.Ordinal) ||
+                !string.Equals(planEntry.ExpectedKind.ToString(), manifestEntry.ExpectedKind, StringComparison.Ordinal) ||
+                !string.Equals(planEntry.DestinationState.ToString(), manifestEntry.DestinationState, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool FingerprintMatches(
+        TreeFingerprint actual,
+        BackupVerificationSummary expected) =>
+        actual.FileCount == expected.FileCount &&
+        actual.DirectoryCount == expected.DirectoryCount &&
+        actual.TotalBytes == expected.TotalBytes &&
+        string.Equals(actual.Sha256, expected.Sha256, StringComparison.OrdinalIgnoreCase);
+
+    private static BackupVerificationSummary ToSummary(TreeFingerprint fingerprint) =>
+        new(
+            fingerprint.FileCount,
+            fingerprint.DirectoryCount,
+            fingerprint.TotalBytes,
+            fingerprint.Sha256);
+
+    private static bool IsSha256(string? value) =>
+        value is { Length: 64 } &&
+        value.All(character =>
+            character is >= '0' and <= '9' or
+            >= 'A' and <= 'F' or
+            >= 'a' and <= 'f');
+
+    private static BackupArtifactFailureKind MapValidationFailure(BackupFailureKind kind) =>
+        kind switch
+        {
+            BackupFailureKind.InvalidPlan => BackupArtifactFailureKind.InvalidPlan,
+            BackupFailureKind.InvalidPath => BackupArtifactFailureKind.InvalidPath,
+            BackupFailureKind.ReparsePoint => BackupArtifactFailureKind.ReparsePoint,
+            BackupFailureKind.AccessDenied => BackupArtifactFailureKind.AccessDenied,
+            BackupFailureKind.SourceChanged or BackupFailureKind.VerificationFailed =>
+                BackupArtifactFailureKind.VerificationMismatch,
+            _ => BackupArtifactFailureKind.IoFailure,
+        };
 
     private static bool ManifestMatchesPlan(BackupPlan plan, BackupManifestDraft manifest)
     {
@@ -743,6 +1019,11 @@ public sealed class WindowsBackupStorage : IBackupStorage
     private sealed class BackupStorageException(BackupFailureKind kind) : Exception
     {
         public BackupFailureKind Kind { get; } = kind;
+    }
+
+    private sealed class BackupArtifactValidationException(BackupArtifactFailureKind kind) : Exception
+    {
+        public BackupArtifactFailureKind Kind { get; } = kind;
     }
 
     private sealed record OwnerMarker(int FormatVersion, string ExecutionId);

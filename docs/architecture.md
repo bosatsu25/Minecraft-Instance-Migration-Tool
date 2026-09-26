@@ -213,6 +213,35 @@ metadata such as timestamps. Execute / restore must not assume those properties 
 Backup result paths remain in-memory return values. Failure categories do not include exception
 messages that might contain private user paths.
 
+
+## Phase 3.2 Completed backup revalidation
+
+A completed backup is not trusted merely because Phase 3.1 once returned `Completed`.
+`IBackupArtifactValidator` is the Application use case; the Infrastructure storage adapter
+reopens the backup artifact read-only and proves it still matches the reviewed `BackupPlan`.
+
+Validation requires all of the following:
+
+- the backup plan is still `Ready`;
+- the backup-root path is a supported local path and every ancestor/root is opened no-follow;
+- the ownership marker exists, is valid schema v1, contains a GUID execution id, and is bound to
+  the `mim-backup-{executionId}` directory name;
+- `backup-manifest.json` exists, parses as the current schema, and its entry list exactly matches
+  the current backup plan in order/name/kind/state;
+- the backup root contains exactly the plan entries plus the two metadata files;
+- no reparse point is encountered at any traversed depth;
+- a newly computed tree fingerprint equals the manifest's file count, directory count, byte count,
+  and SHA-256 value.
+
+The validator performs no writes. Missing/corrupt metadata, extra top-level content, payload mutation,
+plan mismatch, or reparse insertion invalidates the artifact. Validation returns typed categories
+without surfacing path-bearing exception text.
+
+A valid result is evidence that the backup artifact is internally consistent at validation time.
+It is not a rollback implementation and does not authorize destructive writes by itself; a future
+execution workflow must bind this evidence to an execution journal and revalidate destination/source
+assumptions immediately before mutation.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -236,9 +265,9 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Preview / Dry Run:** The implemented read-only preview presents the same plan without writes,
   including exclusions, planned actions, blockers, unresolved conflicts, and backup intent. Size estimates
   remain unavailable until a later bounded inventory design exists. Do not compute a different implicit plan at execution.
-- **Backup:** Phase 3.1 implements an owned Windows backup artifact for planned replacements,
-  handle-relative no-follow traversal, partial-state preservation, and independent post-copy fingerprint
-  verification. Completion manifest creation is the final step; a failed/cancelled root is never complete.
+- **Backup:** Phase 3.1 creates an owned verified artifact; Phase 3.2 can revalidate a completed artifact
+  read-only against ownership, manifest, plan, exact top-level membership, no-follow traversal, and a
+  recomputed tree fingerprint. A failed/cancelled/invalid artifact is never accepted as recovery evidence.
 - **Execute:** Revalidate roots and source/destination state against the reviewed plan.
   Reject stale plans, unsafe paths, or changed collision assumptions; cancellation and partial writes need explicit outcomes.
 - **Verify:** Compare actual outcomes against the plan using defined evidence (such as content

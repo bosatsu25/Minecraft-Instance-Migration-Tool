@@ -95,3 +95,18 @@ Before Execute / restore work can rely on backup for destructive changes, the pr
 
 No future Execute implementation may treat a Phase 3.0 preflight or a Phase 3.1 partial root as a
 completed backup.
+
+
+## Completed-artifact revalidation
+
+Phase 3.2 adds a read-only revalidation step for completed backup roots. It exists because the
+artifact can be moved, edited, partially deleted, or tampered with after Phase 3.1 completed.
+
+Validation reopens the backup root using the same local-path and no-follow rules, verifies the owner
+marker is bound to the root name, parses the completion manifest, checks that its entries exactly
+match the current `BackupPlan`, rejects unexpected top-level content, and recomputes the entire
+planned tree fingerprint. Any nested reparse point or fingerprint mismatch invalidates the artifact.
+
+The validator never repairs or rewrites the backup. A valid artifact is necessary recovery evidence,
+but it is not sufficient to start destructive Execute: the future workflow must still revalidate the
+live migration inputs and bind the validated backup to an execution journal.

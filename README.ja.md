@@ -5,10 +5,9 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 3.1 の Backup IO foundation です。** UI は引き続き Inspector / Preview のみですが、
-Application + Infrastructure では `ReadyToReplace` destination を対象に、Windows 上で検証付き backup を
-作成できます。backup は明示した local backup parent 配下に新規 `mim-backup-*` owned directory として
-作成します。Migration Execute はまだ実装していません。
+**現在は Phase 3.2 の Backup Revalidation です。** UI は引き続き Inspector / Preview のみです。
+Application + Infrastructure では `ReadyToReplace` destination の検証付き backup を作成し、その完成済み
+artifact を destructive phase の直前に read-only で再検証できます。Migration Execute はまだ実装していません。
 
 ## 目的
 
@@ -100,7 +99,9 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
 6. Phase 3.0: Backup Preflight と version 付き manifest draft。filesystem write はなし。
 7. Phase 3.1: owned backup root、handle-relative traversal、cancellation、nested reparse rejection、
    post-copy fingerprint verification を備えた Windows Backup IO foundation。
-8. 以後は nested exclusion / 互換性 → Executor → Verifier → Report、
+8. Phase 3.2: owner marker、completion manifest、BackupPlan、再計算した tree fingerprint を使う
+   completed-backup read-only revalidation。
+9. 以後は execution journal / rollback contract → Executor → Verifier → Report、
    および失敗時の診断・ロールバックを個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
