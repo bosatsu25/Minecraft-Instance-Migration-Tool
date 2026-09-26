@@ -1,3 +1,4 @@
+using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Execution;
 using MinecraftInstanceMigration.Infrastructure.Backup;
@@ -46,11 +47,17 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
             cancellationToken.ThrowIfCancellationRequested();
 
             using WindowsExecutionTree.HeldDirectory source =
-                WindowsExecutionTree.OpenDirectoryChain(normalizedSource, writableFinal: false);
+                OpenSourceRoot(normalizedSource);
             using WindowsExecutionTree.HeldDirectory destination =
-                WindowsExecutionTree.OpenDirectoryChain(normalizedDestination, writableFinal: true);
+                OpenDestinationRoot(normalizedDestination);
 
-            using WindowsExecutionTree.OpenedNode sourceNode = OpenSource(source.Root, step);
+            if (WindowsExecutionTree.PhysicalRootsOverlap(source, destination))
+            {
+                return Failed(ExecutionMutationFailureKind.OverlappingRoots);
+            }
+
+            using WindowsExecutionTree.OpenedNode sourceNode =
+                OpenSource(source.Root, step);
 
             if (step.Operation == ExecutionOperationKind.Copy)
             {
@@ -104,8 +111,34 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         }
     }
 
+    private static WindowsExecutionTree.HeldDirectory OpenSourceRoot(string path)
+    {
+        try
+        {
+            return WindowsExecutionTree.OpenDirectoryChain(path, writableFinal: false);
+        }
+        catch (ExecutionTreeException error) when (
+            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        {
+            throw new ExecutionMutationException(ExecutionMutationFailureKind.SourceChanged);
+        }
+    }
+
+    private static WindowsExecutionTree.HeldDirectory OpenDestinationRoot(string path)
+    {
+        try
+        {
+            return WindowsExecutionTree.OpenDirectoryChain(path, writableFinal: true);
+        }
+        catch (ExecutionTreeException error) when (
+            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        {
+            throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
+        }
+    }
+
     private static WindowsExecutionTree.OpenedNode OpenSource(
-        Microsoft.Win32.SafeHandles.SafeFileHandle sourceRoot,
+        SafeFileHandle sourceRoot,
         ExecutionJournalEntry step)
     {
         try
@@ -132,7 +165,7 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
     }
 
     private static void EnsureDestinationMissing(
-        Microsoft.Win32.SafeHandles.SafeFileHandle destinationRoot,
+        SafeFileHandle destinationRoot,
         string name)
     {
         try
@@ -152,7 +185,7 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
     }
 
     private static void EnsureReplaceDestination(
-        Microsoft.Win32.SafeHandles.SafeFileHandle destinationRoot,
+        SafeFileHandle destinationRoot,
         ExecutionJournalEntry step)
     {
         try
@@ -171,7 +204,7 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
 
     private static void CopyFromSource(
         WindowsExecutionTree.OpenedNode source,
-        Microsoft.Win32.SafeHandles.SafeFileHandle destinationRoot,
+        SafeFileHandle destinationRoot,
         string name,
         CancellationToken cancellationToken)
     {
@@ -191,7 +224,7 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
     }
 
     private static void RemoveDestination(
-        Microsoft.Win32.SafeHandles.SafeFileHandle destinationRoot,
+        SafeFileHandle destinationRoot,
         string name,
         CancellationToken cancellationToken)
     {
