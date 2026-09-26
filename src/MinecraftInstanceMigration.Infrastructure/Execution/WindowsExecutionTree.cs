@@ -331,8 +331,15 @@ internal static class WindowsExecutionTree
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
         using OpenedNode node = OpenExistingNode(parent, name, forDelete: true);
+        DeleteOpenedNode(node, cancellationToken);
+    }
+
+    internal static void DeleteOpenedNode(
+        OpenedNode node,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (node.IsDirectory)
         {
@@ -355,7 +362,14 @@ internal static class WindowsExecutionTree
     {
         using OpenedNode node = OpenExistingNode(root, name);
         EnsureExpectedKind(node, expectedKind);
+        return FingerprintOpenedNode(node, name, cancellationToken);
+    }
 
+    internal static TreeFingerprint FingerprintOpenedNode(
+        OpenedNode node,
+        string relativeName,
+        CancellationToken cancellationToken)
+    {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         int files = 0;
         int directories = 0;
@@ -363,7 +377,7 @@ internal static class WindowsExecutionTree
 
         AppendFingerprint(
             node,
-            name,
+            relativeName,
             hash,
             ref files,
             ref directories,
