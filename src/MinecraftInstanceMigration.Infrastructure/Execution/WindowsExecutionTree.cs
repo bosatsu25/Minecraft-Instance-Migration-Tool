@@ -43,13 +43,13 @@ internal static class WindowsExecutionTree
             path.Length > 32000 ||
             !char.IsAsciiLetter(path[0]) ||
             path[1] != ':' ||
-            path[2] != '\')
+            path[2] != '\\')
         {
             return false;
         }
 
         string[] components = path[3..]
-            .Split('\', StringSplitOptions.RemoveEmptyEntries);
+            .Split('\\', StringSplitOptions.RemoveEmptyEntries);
 
         if (components.Length == 0 ||
             components.Any(component => !IsSingleName(component)))
@@ -70,7 +70,7 @@ internal static class WindowsExecutionTree
             return false;
         }
 
-        normalized = driveRoot + string.Join('\', components);
+        normalized = driveRoot + string.Join('\\', components);
         return true;
     }
 
@@ -86,7 +86,7 @@ internal static class WindowsExecutionTree
     {
         string driveRoot = path[..3];
         SafeFileHandle drive = BackupNativeMethods.CreateFileW(
-            @"\?" + driveRoot,
+            @"\\?\" + driveRoot,
             BackupNativeMethods.FileListDirectory |
             BackupNativeMethods.FileTraverse |
             BackupNativeMethods.FileReadAttributes |
@@ -111,7 +111,7 @@ internal static class WindowsExecutionTree
         try
         {
             string[] components = path[3..]
-                .Split('\', StringSplitOptions.RemoveEmptyEntries);
+                .Split('\\', StringSplitOptions.RemoveEmptyEntries);
 
             for (int index = 0; index < components.Length; index++)
             {
@@ -581,7 +581,7 @@ internal static class WindowsExecutionTree
         }
 
         return candidate.StartsWith(
-            root.TrimEnd('\') + "\",
+            root.TrimEnd('\\') + "\\",
             StringComparison.OrdinalIgnoreCase);
     }
 
@@ -595,7 +595,7 @@ internal static class WindowsExecutionTree
             !"<>:".Contains(character) &&
             character != '"' &&
             character != '/' &&
-            character != '\' &&
+            character != '\\' &&
             character != '|' &&
             character != '?' &&
             character != '*');
