@@ -1,3 +1,4 @@
+using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Execution;
 using MinecraftInstanceMigration.Infrastructure.Backup;
@@ -46,9 +47,14 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
             cancellationToken.ThrowIfCancellationRequested();
 
             using WindowsExecutionTree.HeldDirectory source =
-                WindowsExecutionTree.OpenDirectoryChain(normalizedSource, writableFinal: false);
+                OpenSourceRoot(normalizedSource);
             using WindowsExecutionTree.HeldDirectory destination =
-                WindowsExecutionTree.OpenDirectoryChain(normalizedDestination, writableFinal: false);
+                OpenDestinationRoot(normalizedDestination);
+
+            if (WindowsExecutionTree.PhysicalRootsOverlap(source, destination))
+            {
+                return Failed(ExecutionPostWriteVerificationFailureKind.OverlappingRoots);
+            }
 
             WindowsExecutionTree.TreeFingerprint sourceBefore =
                 FingerprintSource(source.Root, step, cancellationToken);
@@ -106,8 +112,36 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
         }
     }
 
+    private static WindowsExecutionTree.HeldDirectory OpenSourceRoot(string path)
+    {
+        try
+        {
+            return WindowsExecutionTree.OpenDirectoryChain(path, writableFinal: false);
+        }
+        catch (ExecutionTreeException error) when (
+            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        {
+            throw new ExecutionVerificationException(
+                ExecutionPostWriteVerificationFailureKind.SourceChanged);
+        }
+    }
+
+    private static WindowsExecutionTree.HeldDirectory OpenDestinationRoot(string path)
+    {
+        try
+        {
+            return WindowsExecutionTree.OpenDirectoryChain(path, writableFinal: false);
+        }
+        catch (ExecutionTreeException error) when (
+            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        {
+            throw new ExecutionVerificationException(
+                ExecutionPostWriteVerificationFailureKind.DestinationMissing);
+        }
+    }
+
     private static WindowsExecutionTree.TreeFingerprint FingerprintSource(
-        Microsoft.Win32.SafeHandles.SafeFileHandle sourceRoot,
+        SafeFileHandle sourceRoot,
         ExecutionJournalEntry step,
         CancellationToken cancellationToken)
     {
@@ -128,7 +162,7 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
     }
 
     private static WindowsExecutionTree.TreeFingerprint FingerprintDestination(
-        Microsoft.Win32.SafeHandles.SafeFileHandle destinationRoot,
+        SafeFileHandle destinationRoot,
         ExecutionJournalEntry step,
         CancellationToken cancellationToken)
     {
