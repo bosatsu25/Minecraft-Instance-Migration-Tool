@@ -10,6 +10,7 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
     public Task<RollbackStorageResult> ApplyAsync(
         string destinationRoot,
         string? backupRoot,
+        RollbackBackupEvidence? backupEvidence,
         RollbackPlanEntry action,
         CancellationToken cancellationToken)
     {
@@ -19,6 +20,7 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             () => Apply(
                 destinationRoot,
                 backupRoot,
+                backupEvidence,
                 action,
                 cancellationToken),
             CancellationToken.None);
@@ -27,6 +29,7 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
     private static RollbackStorageResult Apply(
         string destinationRoot,
         string? backupRoot,
+        RollbackBackupEvidence? backupEvidence,
         RollbackPlanEntry action,
         CancellationToken cancellationToken)
     {
@@ -56,6 +59,13 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
         string? backup = null;
         if (action.Action == RollbackActionKind.RestoreFromBackup)
         {
+            if (backupEvidence is null ||
+                !backupEvidence.Plan.CanStartBackup)
+            {
+                return GuardRejected(
+                    RollbackStorageFailureKind.InvalidPlan);
+            }
+
             if (!WindowsExecutionTree.TryNormalizeRoot(
                     backupRoot,
                     out backup))
@@ -100,9 +110,25 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                     RollbackStorageFailureKind.OverlappingRoots);
             }
 
+            WindowsExecutionTree.TreeFingerprint validatedBackup =
+                WindowsExecutionTree.FingerprintBackupPlan(
+                    backupDirectory.Root,
+                    backupEvidence!.Plan,
+                    cancellationToken);
+
+            if (!MatchesBackupEvidence(
+                    validatedBackup,
+                    backupEvidence.Verification))
+            {
+                return GuardRejected(
+                    RollbackStorageFailureKind.BackupChanged);
+            }
+
             return RestoreFromBackup(
                 destinationDirectory.Root,
                 backupDirectory.Root,
+                backupEvidence,
+                validatedBackup,
                 action,
                 cancellationToken);
         }
@@ -226,6 +252,8 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
     private static RollbackStorageResult RestoreFromBackup(
         SafeFileHandle destinationRoot,
         SafeFileHandle backupRoot,
+        RollbackBackupEvidence backupEvidence,
+        WindowsExecutionTree.TreeFingerprint validatedBackup,
         RollbackPlanEntry action,
         CancellationToken cancellationToken)
     {
@@ -241,6 +269,18 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                     backup,
                     action.Name,
                     cancellationToken);
+
+            WindowsExecutionTree.TreeFingerprint backupAfterValidation =
+                WindowsExecutionTree.FingerprintOpenedNode(
+                    backup,
+                    action.Name,
+                    cancellationToken);
+
+            if (backupBefore != backupAfterValidation)
+            {
+                return GuardRejected(
+                    RollbackStorageFailureKind.BackupChanged);
+            }
 
             using (WindowsExecutionTree.OpenedNode destination =
                 OpenDestinationForDelete(destinationRoot, action))
@@ -282,7 +322,17 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                     action.Name,
                     cancellationToken);
 
-            if (backupBefore != backupAfter)
+            WindowsExecutionTree.TreeFingerprint aggregateAfter =
+                WindowsExecutionTree.FingerprintBackupPlan(
+                    backupRoot,
+                    backupEvidence.Plan,
+                    cancellationToken);
+
+            if (backupBefore != backupAfter ||
+                validatedBackup != aggregateAfter ||
+                !MatchesBackupEvidence(
+                    aggregateAfter,
+                    backupEvidence.Verification))
             {
                 return RecoveryRequired(
                     RollbackStorageFailureKind.BackupChanged);
@@ -433,6 +483,17 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             return true;
         }
     }
+
+    private static bool MatchesBackupEvidence(
+        WindowsExecutionTree.TreeFingerprint actual,
+        MinecraftInstanceMigration.Application.Backup.BackupVerificationSummary expected) =>
+        actual.FileCount == expected.FileCount &&
+        actual.DirectoryCount == expected.DirectoryCount &&
+        actual.TotalBytes == expected.TotalBytes &&
+        string.Equals(
+            actual.Sha256,
+            expected.Sha256,
+            StringComparison.OrdinalIgnoreCase);
 
     private static RollbackStorageFailureKind MapGeneralFailure(
         ExecutionTreeFailureKind kind) =>
