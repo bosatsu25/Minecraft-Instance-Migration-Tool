@@ -25,6 +25,7 @@ public enum ExecutionOrchestrationFailureKind
     LiveStateChanged,
     BackupRequired,
     BackupInvalid,
+    UnsafeWorkspace,
     JournalFailure,
     MutationFailed,
     PostWriteVerificationFailed,
