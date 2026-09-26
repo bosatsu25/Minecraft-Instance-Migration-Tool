@@ -296,3 +296,28 @@ The validator reuses the same handle-relative no-follow traversal and tree-finge
 backup creation. It does not repair, clean up, or rewrite an invalid artifact. A GREEN result is
 point-in-time evidence only; Execute still needs destination/source revalidation plus an execution
 journal and rollback contract.
+
+
+## Phase 3.3: Execution journal / rollback contract
+
+Phase 3.3 is pure Domain/Application logic and performs no migration or rollback filesystem writes.
+
+Coverage includes:
+
+- Ready Copy / Replace intents become ordered schema-v1 journal entries;
+- a Ready plan with no writes produces `NotRequired`;
+- non-ready migration plans block journal creation;
+- malformed Copy / Replace intents fail closed;
+- journal models defensively copy caller collections;
+- an applied Copy becomes fingerprint-guarded `DeleteCreatedEntry`;
+- an applied Replace becomes fingerprint-guarded `RestoreFromBackup` only with currently valid backup evidence;
+- missing backup evidence, Failed / Uncertain outcomes, or missing post-write fingerprints require manual recovery;
+- rollback actions are ordered in reverse execution order;
+- journal schema or structure mismatch blocks rollback;
+- malformed SHA-256 evidence is rejected;
+- the Application adapter translates `BackupArtifactValidationResult.IsValid` into the Domain rollback decision.
+
+No Infrastructure journal writer or rollback adapter exists in this phase. Before Execute, tests must
+cover durable journal append/flush semantics, crash/interruption points, destination revalidation,
+per-step post-write fingerprinting, and the guarantee that journal evidence is persisted before a
+later destructive step begins.

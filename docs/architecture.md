@@ -242,6 +242,52 @@ It is not a rollback implementation and does not authorize destructive writes by
 execution workflow must bind this evidence to an execution journal and revalidate destination/source
 assumptions immediately before mutation.
 
+
+## Phase 3.3 Execution journal and rollback contract
+
+Phase 3.3 defines the deterministic recovery contract before migration writes are implemented.
+
+`ExecutionJournalPolicy` converts only a `Ready` `MigrationPlan` into a schema-v1
+`ExecutionJournalDraft`. Only write-intent entries are included, in reviewed plan order:
+
+- `ReadyToCopy` -> `Copy`, and destination must still be observed as Missing;
+- `ReadyToReplace` -> `Replace`, and the source/destination states must still match the intent;
+- a non-ready plan or malformed write intent fails closed.
+
+A Ready plan with no write entries produces `NotRequired`; this avoids inventing execution work
+for Skip / NoSource / Excluded entries.
+
+The runtime contract is represented by an immutable `ExecutionJournalSnapshot`. Each planned step
+must preserve sequence, entry name, and operation and may report:
+
+- `NotStarted`
+- `Applied`
+- `Failed`
+- `Uncertain`
+
+An `Applied` step needs a post-write `ExecutionContentFingerprint` before automatic rollback may
+be considered. This fingerprint is intentionally path-free and carries file/directory counts,
+total bytes, and SHA-256 evidence.
+
+`RollbackPlanPolicy` consumes the draft plus a snapshot and produces rollback requirements in
+**reverse execution order**:
+
+- applied Copy -> `DeleteCreatedEntry`, guarded by the recorded post-write fingerprint;
+- applied Replace -> `RestoreFromBackup`, guarded by the recorded post-write fingerprint and
+  allowed only when completed-backup validation is currently valid;
+- Failed / Uncertain -> `ManualRecoveryRequired`;
+- Applied without a post-write fingerprint -> `ManualRecoveryRequired`;
+- malformed schema or journal structure -> rollback `Blocked`.
+
+The fingerprint guard is critical: future rollback IO must first prove that the current destination
+still matches the state written by Execute. It must never blindly delete or overwrite a destination
+that may have been edited after migration.
+
+Phase 3.3 defines contracts only. It does **not** persist a journal, mutate destination data,
+restore a backup, delete created entries, or claim crash durability. A future Infrastructure journal
+must use durable append/flush semantics and an execution workflow must record evidence before advancing
+to the next destructive operation.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -268,13 +314,15 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Backup:** Phase 3.1 creates an owned verified artifact; Phase 3.2 can revalidate a completed artifact
   read-only against ownership, manifest, plan, exact top-level membership, no-follow traversal, and a
   recomputed tree fingerprint. A failed/cancelled/invalid artifact is never accepted as recovery evidence.
-- **Execute:** Revalidate roots and source/destination state against the reviewed plan.
-  Reject stale plans, unsafe paths, or changed collision assumptions; cancellation and partial writes need explicit outcomes.
+- **Execute:** Revalidate roots and source/destination state against the reviewed plan, then persist
+  durable journal evidence around each destructive step. Reject stale plans, unsafe paths, or changed
+  collision assumptions; cancellation and partial writes need explicit outcomes.
 - **Verify:** Compare actual outcomes against the plan using defined evidence (such as content
-  hashes where required), independently of an executor's success flag.
-- **Diagnose / Rollback:** Preserve failure evidence without private payloads. Attempt recovery
-  using verified backup information and an execution journal. Rollback may fail and must
-  never be reported as successful merely because it was attempted. Do not blindly undo later user edits.
+  fingerprints), independently of an executor's success flag.
+- **Diagnose / Rollback:** Phase 3.3 defines reverse-order rollback requirements from journal evidence.
+  Automatic rollback is allowed only with a post-write fingerprint guard; Replace additionally requires
+  currently validated backup evidence. Failed/uncertain outcomes remain recovery-required. Future rollback
+  IO must never blindly undo later user edits.
 - **Report:** Distinguish succeeded, failed, cancelled, partially changed, rolled back, and
   recovery-required outcomes. Define bounded, redacted diagnostics before persisting any report.
 
