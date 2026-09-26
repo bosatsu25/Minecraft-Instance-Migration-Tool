@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/MinecraftInstanceMigration.Infrastructure/MinecraftInstanceMigration.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
