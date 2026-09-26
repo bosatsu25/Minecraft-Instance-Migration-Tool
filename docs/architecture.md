@@ -403,8 +403,12 @@ For Replace:
 - races that make the destination missing/change/collide fail the mutation instead of overwriting an
   unexpected object.
 
-Source and destination roots may not be equal or ancestor/descendant of each other. This prevents
-self-copy/self-delete recursion.
+Source and destination roots may not be equal or ancestor/descendant of each other. This is
+checked both lexically and again after opening the roots by canonical handle path, so aliases such as
+SUBST/short-name mappings cannot bypass the overlap guard. The execution workspace validator also
+requires the durable journal parent to be physically outside both migration roots before the journal
+is created. This prevents a Replace payload from deleting its own recovery evidence and prevents the
+journal from contaminating source content.
 
 `WindowsExecutionPostWriteVerifier` is independent of the mutation success flag. It fingerprints:
 
