@@ -5,10 +5,10 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 3.4 の Durable Execution Journal Storage です。** UI は引き続き Inspector / Preview のみです。
-execution / rollback contract に加え、Windows 上で append-only・checksum 付き JSONL journal を durable flush 付きで
-永続化できます。Started が durable で terminal record がない場合、再読込時は Uncertain として復元します。
-Migration Execute、restore IO、rollback IO は未実装です。
+**現在は Phase 3.5 の Execute Orchestration Contract です。** UI は引き続き Inspector / Preview のみです。
+Application では live source / destination revalidation、completed-backup revalidation、durable Started、
+1 step mutation、post-write fingerprint verification、durable Applied / Failed を port 経由で順序制御できます。
+production の Minecraft mutation adapter はまだ無いため、この phase では実 migration write は発生しません。
 
 ## 目的
 
@@ -104,7 +104,8 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
    completed-backup read-only revalidation。
 9. Phase 3.3: version 付き execution-journal contract と deterministic rollback planning。migration write はなし。
 10. Phase 3.4: append / flush ordering と crash-tail recovery を備えた durable Windows execution journal storage。
-11. 以後は Execute orchestration → Verifier → rollback IO → Report を個別に実装。
+11. Phase 3.5: live revalidation + execute orchestration contract。mutation / verifier は port のみ。
+12. 以後は production mutation adapter → verifier integration → rollback IO → Report を個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
 旧版由来の移行候補は [migration rules](docs/migration-rules.md) に整理しています。
@@ -112,4 +113,4 @@ Phase 2.1 では legacy の Recommended 方向として、既知候補のうち 
 だけを既定 OFF とし、それ以外を選択します。destination conflict は明示的に Skip / Replace
 を指定しない限り未解決のままです。Phase 2.2 の UI dry run は Recommended preset を使い、
 未解決 conflict をそのまま表示します。旧版 `hanemod-client.json` exclusion、Merge、
-size estimate、互換性保証、migration write、restore IO、rollback IO は未実装です。
+size estimate、互換性保証、production migration mutation IO、restore IO、rollback IO は未実装です。

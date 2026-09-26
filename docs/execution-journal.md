@@ -148,3 +148,24 @@ The caller receives the journal path only as an in-memory `ExecutionJournalRefer
 Phase 3.4 is not migration Execute. The next workflow must combine live inspection revalidation,
 completed-backup revalidation, durable Started, actual mutation, post-write fingerprinting, and durable
 terminal evidence in that order.
+
+
+## Phase 3.5 orchestration binding
+
+The durable journal protocol is now bound to an Application execution orchestrator.
+
+For each draft step, the orchestrator revalidates the live source/destination observations. Replace
+also revalidates the completed backup artifact. Only after those checks pass may it request durable
+`Started`.
+
+The future mutation adapter is called only after `Started` succeeds. A separate post-write verifier
+must then produce the `ExecutionContentFingerprint`; only that independently produced fingerprint may
+be written into durable `Applied`.
+
+If mutation or verification fails after Started, the orchestrator attempts durable `Failed`. If the
+terminal journal update itself fails, the operation is RecoveryRequired and restart sees the durable
+Started as Uncertain.
+
+Phase 3.5 intentionally leaves `IExecutionMutationPort` and `IExecutionPostWriteVerifier` without
+production implementations. This keeps destructive filesystem behavior out until handle-safe Copy /
+Replace and independent verification can be tested together on owned fixtures.

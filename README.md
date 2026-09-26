@@ -5,11 +5,11 @@
 A planned Windows desktop tool for selectively moving Minecraft user data from an old
 instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 3.4 Durable Execution Journal Storage.** The app UI remains Inspector / Preview only.
-The core can derive execution/rollback contracts, and Infrastructure can now persist a Windows execution
-journal as an append-only, checksummed JSONL artifact with durable flush semantics. A durable Started record
-without a terminal record recovers as Uncertain after interruption. Migration Execute, restore IO, and
-destructive rollback are still not implemented.
+**Status: Phase 3.5 Execute Orchestration Contract.** The app UI remains Inspector / Preview only.
+Application can now orchestrate live source/destination revalidation, completed-backup revalidation,
+durable Started journal barriers, one-step mutation, post-write fingerprint verification, and durable
+Applied/Failed evidence through ports. No production Minecraft mutation adapter exists yet, so this
+phase still performs no real migration writes.
 
 ## Why
 
@@ -102,7 +102,8 @@ See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for 
    recomputed tree fingerprint.
 9. Phase 3.3: versioned execution-journal contract and deterministic rollback planning, with no migration writes.
 10. Phase 3.4: durable Windows execution-journal storage with append/flush ordering and crash-tail recovery.
-11. Separate later changes: Execute orchestration → Verifier → rollback IO → Report.
+11. Phase 3.5: live revalidation + execution orchestration contract, with mutation/verifier ports only.
+12. Separate later changes: production mutation adapter → verifier integration → rollback IO → Report.
 
 Each node gets a focused issue/PR and its own acceptance tests before the next expansion.
 Legacy selection candidates are documented in [migration rules](docs/migration-rules.md).
@@ -111,4 +112,4 @@ except `saves` and `screenshots`, which remain opt-in. Destination conflicts rem
 unless a caller explicitly chooses Skip or Replace. Phase 2.2 exposes a UI dry-run using the
 Recommended preset; this UI currently displays unresolved conflicts rather than editing decisions.
 The legacy `hanemod-client.json` exclusion, Merge semantics, size estimates, compatibility claims,
-migration write execution, restore IO, and rollback IO are not implemented.
+production migration mutation IO, restore IO, and rollback IO are not implemented.

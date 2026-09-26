@@ -358,3 +358,32 @@ must recover as Uncertain.
 Before Execute is added, the next phase must bind this journal protocol to live source/destination
 revalidation and backup revalidation, and must prove by failure injection that no destructive mutation
 begins before Started is durable and no later mutation begins before the previous terminal evidence is durable.
+
+
+## Phase 3.5: Live revalidation / execute orchestration
+
+Phase 3.5 is Domain/Application only and deliberately has no production migration mutation adapter.
+
+Coverage includes:
+
+- unchanged reviewed Copy state passes live validation;
+- destination appearance before Copy is rejected;
+- source kind/state drift before Replace is rejected;
+- unsafe roots are rejected;
+- journal-step operation must match the reviewed write intent;
+- Application live validation inspects source then destination immediately before a step;
+- Replace ordering is exactly journal-create -> live revalidate -> backup revalidate -> durable Started
+  -> mutation port -> post-write verify -> durable Applied;
+- Copy does not require backup validation;
+- live-state drift or invalid backup prevents Started and mutation;
+- a failed Started journal write prevents mutation;
+- mutation failure attempts durable Failed and returns RecoveryRequired;
+- post-write verification failure attempts durable Failed and returns RecoveryRequired;
+- failure to persist Applied after mutation returns RecoveryRequired;
+- cancellation after one safely Applied step stops before the next Started;
+- revalidation failure after an earlier Applied step returns RecoveryRequired rather than pretending
+  the entire migration was merely blocked.
+
+The mutation/verifier ports are test doubles only in this phase. The next production phase must add
+handle-safe single-entry Copy/Replace IO plus an independent fingerprint verifier and then run the same
+ordering against real owned temporary fixtures with deterministic failure injection.
