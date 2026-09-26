@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Execution;
@@ -220,6 +221,94 @@ public sealed class ExecutionMutationIntegrationTests
         Assert.False(File.Exists(Path.Combine(destination, "options.txt")));
     }
 
+
+    [Fact]
+    public async Task MissingSourceRootIsClassifiedAsSourceChanged()
+    {
+        using var fixture = new InspectionFixture();
+        string source = fixture.At("missing-source");
+        string destination = fixture.At("destination");
+        Directory.CreateDirectory(destination);
+
+        ExecutionMutationResult result =
+            await new WindowsExecutionMutationPort().ApplyAsync(
+                source,
+                destination,
+                new ExecutionJournalEntry(
+                    0,
+                    "options.txt",
+                    ExpectedEntryKind.File,
+                    ExecutionOperationKind.Copy),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
+        Assert.Equal(
+            ExecutionMutationFailureKind.SourceChanged,
+            result.FailureKind);
+    }
+
+    [Fact]
+    public async Task MissingDestinationRootIsClassifiedAsDestinationChanged()
+    {
+        using var fixture = new InspectionFixture();
+        string source = fixture.At("source");
+        string destination = fixture.At("missing-destination");
+        Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "options.txt"), "source");
+
+        ExecutionMutationResult result =
+            await new WindowsExecutionMutationPort().ApplyAsync(
+                source,
+                destination,
+                new ExecutionJournalEntry(
+                    0,
+                    "options.txt",
+                    ExpectedEntryKind.File,
+                    ExecutionOperationKind.Copy),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
+        Assert.Equal(
+            ExecutionMutationFailureKind.DestinationChanged,
+            result.FailureKind);
+    }
+
+    [Fact]
+    public async Task PhysicalAliasOverlapIsRejectedBeforeMutation()
+    {
+        using var fixture = new InspectionFixture();
+        string source = fixture.At("source");
+        Directory.CreateDirectory(Path.Combine(source, "nested-destination"));
+        File.WriteAllText(Path.Combine(source, "options.txt"), "source");
+
+        char drive = CreateSubst(source);
+        try
+        {
+            string destination = $"{drive}:\\nested-destination";
+
+            ExecutionMutationResult result =
+                await new WindowsExecutionMutationPort().ApplyAsync(
+                    source,
+                    destination,
+                    new ExecutionJournalEntry(
+                        0,
+                        "options.txt",
+                        ExpectedEntryKind.File,
+                        ExecutionOperationKind.Copy),
+                    TestContext.Current.CancellationToken);
+
+            Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
+            Assert.Equal(
+                ExecutionMutationFailureKind.OverlappingRoots,
+                result.FailureKind);
+            Assert.False(File.Exists(Path.Combine(destination, "options.txt")));
+        }
+        finally
+        {
+            RemoveSubst(drive);
+        }
+    }
+
     [Fact]
     public async Task IndependentVerifierDetectsDestinationTampering()
     {
@@ -257,5 +346,41 @@ public sealed class ExecutionMutationIntegrationTests
         Assert.Equal(
             ExecutionPostWriteVerificationFailureKind.VerificationMismatch,
             verification.FailureKind);
+    }
+
+
+    private static char CreateSubst(string target)
+    {
+        var used = DriveInfo.GetDrives()
+            .Select(drive => char.ToUpperInvariant(drive.Name[0]))
+            .ToHashSet();
+
+        char drive = Enumerable.Range('R', 'Z' - 'R' + 1)
+            .Select(value => (char)value)
+            .Reverse()
+            .First(candidate => !used.Contains(candidate));
+
+        RunSubst($"{drive}:", target);
+        return drive;
+    }
+
+    private static void RemoveSubst(char drive) =>
+        RunSubst($"{drive}:", "/D");
+
+    private static void RunSubst(string drive, string argument)
+    {
+        var start = new ProcessStartInfo("subst.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        start.ArgumentList.Add(drive);
+        start.ArgumentList.Add(argument);
+
+        using Process process = Process.Start(start)!;
+        Assert.True(process.WaitForExit(10000), "SUBST command timed out.");
+        Assert.Equal(0, process.ExitCode);
     }
 }
