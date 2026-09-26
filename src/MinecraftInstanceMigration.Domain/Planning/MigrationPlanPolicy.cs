@@ -7,7 +7,8 @@ public static class MigrationPlanPolicy
     public static MigrationPlan Create(
         InstanceInspectionResult source,
         InstanceInspectionResult destination,
-        IEnumerable<string> selectedEntryNames)
+        IEnumerable<string> selectedEntryNames,
+        IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
@@ -25,18 +26,74 @@ public static class MigrationPlanPolicy
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
+        conflictDecisions ??= new Dictionary<string, DestinationConflictDecision>();
+        var decisionIssues = ValidateDecisionKeys(conflictDecisions, knownNames, selected);
+        var applicableDecisions = conflictDecisions
+            .Where(pair => knownNames.Contains(pair.Key)
+                && selected.Contains(pair.Key)
+                && Enum.IsDefined(pair.Value))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
         var entries = KnownEntryCatalog.All
-            .Select(candidate => CreateEntry(source, destination, candidate, selected.Contains(candidate.Name)))
+            .Select(candidate => CreateEntry(
+                source,
+                destination,
+                candidate,
+                selected.Contains(candidate.Name),
+                applicableDecisions.GetValueOrDefault(candidate.Name, DestinationConflictDecision.Unresolved)))
             .ToArray();
 
-        return new MigrationPlan(source.RootState, destination.RootState, entries, unknown);
+        foreach (var pair in applicableDecisions)
+        {
+            MigrationPlanEntry entry = entries.Single(candidate =>
+                string.Equals(candidate.Name, pair.Key, StringComparison.Ordinal));
+            if (entry.Disposition is not MigrationPlanDisposition.DestinationConflict
+                and not MigrationPlanDisposition.SkippedDestinationConflict
+                and not MigrationPlanDisposition.ReadyToReplace)
+            {
+                decisionIssues.Add(new ConflictDecisionIssue(pair.Key, ConflictDecisionIssueKind.NoDestinationConflict));
+            }
+        }
+
+        return new MigrationPlan(source.RootState, destination.RootState, entries, unknown, decisionIssues);
+    }
+
+    private static List<ConflictDecisionIssue> ValidateDecisionKeys(
+        IReadOnlyDictionary<string, DestinationConflictDecision> conflictDecisions,
+        IReadOnlySet<string> knownNames,
+        IReadOnlySet<string> selected)
+    {
+        var issues = new List<ConflictDecisionIssue>();
+
+        foreach (var pair in conflictDecisions)
+        {
+            if (!knownNames.Contains(pair.Key))
+            {
+                issues.Add(new ConflictDecisionIssue(pair.Key, ConflictDecisionIssueKind.UnknownEntry));
+                continue;
+            }
+
+            if (!selected.Contains(pair.Key))
+            {
+                issues.Add(new ConflictDecisionIssue(pair.Key, ConflictDecisionIssueKind.NotSelected));
+                continue;
+            }
+
+            if (!Enum.IsDefined(pair.Value))
+            {
+                issues.Add(new ConflictDecisionIssue(pair.Key, ConflictDecisionIssueKind.UnsupportedDecision));
+            }
+        }
+
+        return issues;
     }
 
     private static MigrationPlanEntry CreateEntry(
         InstanceInspectionResult source,
         InstanceInspectionResult destination,
         KnownEntryDefinition candidate,
-        bool selected)
+        bool selected,
+        DestinationConflictDecision conflictDecision)
     {
         EntryObservation? sourceObservation = FindUniqueObservation(source, candidate.Name);
         EntryObservation? destinationObservation = FindUniqueObservation(destination, candidate.Name);
@@ -101,10 +158,24 @@ public static class MigrationPlanPolicy
             EntryState.Inaccessible or EntryState.InvalidPath or EntryState.Unavailable =>
                 Entry(candidate, sourceObservation, destinationObservation, MigrationPlanDisposition.BlockedDestinationObservation),
             EntryState.File or EntryState.Directory =>
-                Entry(candidate, sourceObservation, destinationObservation, MigrationPlanDisposition.DestinationConflict),
+                ResolveDestinationConflict(candidate, sourceObservation, destinationObservation, conflictDecision),
             _ => Entry(candidate, sourceObservation, destinationObservation, MigrationPlanDisposition.BlockedDestinationObservation),
         };
     }
+
+    private static MigrationPlanEntry ResolveDestinationConflict(
+        KnownEntryDefinition candidate,
+        EntryObservation source,
+        EntryObservation destination,
+        DestinationConflictDecision decision) =>
+        decision switch
+        {
+            DestinationConflictDecision.Skip =>
+                Entry(candidate, source, destination, MigrationPlanDisposition.SkippedDestinationConflict),
+            DestinationConflictDecision.Replace =>
+                Entry(candidate, source, destination, MigrationPlanDisposition.ReadyToReplace),
+            _ => Entry(candidate, source, destination, MigrationPlanDisposition.DestinationConflict),
+        };
 
     private static MigrationPlanEntry Entry(
         KnownEntryDefinition candidate,

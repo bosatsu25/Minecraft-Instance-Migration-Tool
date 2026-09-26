@@ -174,3 +174,25 @@ The Planner deliberately has no path containment, collision resolution, preset, 
 size/hash, backup, or executor behavior. Those need their own acceptance criteria and tests.
 Because the state space is still eleven fixed candidates with explicit enum states, table-driven
 xUnit tests remain sufficient; FsCheck remains a future candidate rather than a dependency.
+
+
+## Phase 2.1: selection preset and conflict intent
+
+Phase 2.1 remains pure Domain/Application logic and performs no filesystem IO.
+
+Coverage includes:
+
+- the Recommended preset selects all known candidates except `saves` and `screenshots`;
+- an unresolved existing destination remains `NeedsDecision`;
+- explicit Skip becomes a visible no-op and never counts as write-ready;
+- explicit Replace becomes `ReadyToReplace` and is marked backup-requiring;
+- conflict decisions for unknown entries or unselected entries block the plan;
+- stale decisions for entries with no actual destination conflict block instead of being ignored;
+- unsupported enum values block and leave the conflict unresolved;
+- source safety blockers still win even if the caller supplied Replace intent;
+- Application exposes both custom planning and the Domain-owned Recommended preset.
+
+The policy deliberately does not define Merge or the `hanemod-client.json` exclusion scope.
+Those require separate acceptance criteria before implementation. Replace is intent only:
+no backup or write code exists, and future execution must not perform it until backup,
+containment, stale-plan revalidation, and rollback requirements are implemented and tested.

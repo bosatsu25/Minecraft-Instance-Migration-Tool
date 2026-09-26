@@ -5,9 +5,10 @@
 A planned Windows desktop tool for selectively moving Minecraft user data from an old
 instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 2 Planner core.** The app can inspect one local folder in the UI, and the
-Domain/Application layers can now build a read-only migration plan from source/destination inspection
-results plus an explicit selection. It still does not copy, back up, or modify files.
+**Status: Phase 2.1 planning policy.** The app can inspect one local folder in the UI, and the
+Domain/Application layers can build a read-only migration plan from source/destination observations.
+A Recommended selection preset and explicit destination-conflict decisions (Skip / Replace) now exist.
+The tool still does not copy, back up, or modify files.
 
 ## Why
 
@@ -21,7 +22,7 @@ Preview / Dry Run and every write-capable stage remain future work.
 
 ## Architecture
 
-- **Domain:** immutable observation models plus deterministic migration-plan policy; presets and compatibility rules are future work.
+- **Domain:** immutable observation models, deterministic plan policy, Recommended selection defaults, and explicit conflict intent; compatibility/nested exclusion rules remain future work.
 - **Application:** use cases and ports, referencing Domain.
 - **Infrastructure:** Windows metadata adapter, referencing Application/Domain.
 - **App:** WPF view, MVVM presentation state, and composition root.
@@ -91,10 +92,13 @@ See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for 
 1. Phase 0: solution, boundaries, tests, CI, documentation, minimal shell.
 2. Phase 1: read-only Instance Inspector.
 3. Phase 2: deterministic read-only Migration Planner core.
-4. Separate later changes: Rules/presets → Preview → Backup → Executor → Verifier → Report,
+4. Phase 2.1: Recommended selection preset and explicit Skip / Replace conflict intent.
+5. Separate later changes: nested exclusions / compatibility → Preview → Backup → Executor → Verifier → Report,
    with diagnosis and rollback failure paths.
 
 Each node gets a focused issue/PR and its own acceptance tests before the next expansion.
 Legacy selection candidates are documented in [migration rules](docs/migration-rules.md).
-Phase 2 supports explicit selection of those known candidates only; recommended presets,
-the legacy exclusion, compatibility claims, and conflict resolution are not implemented.
+Phase 2.1 implements the legacy Recommended selection direction: all known candidates are selected
+except `saves` and `screenshots`, which remain opt-in. Destination conflicts remain unresolved
+unless the caller explicitly chooses Skip or Replace. The legacy `hanemod-client.json` exclusion,
+Merge semantics, compatibility claims, and write execution are not implemented.

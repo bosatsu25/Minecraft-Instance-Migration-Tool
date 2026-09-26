@@ -15,7 +15,8 @@ public sealed class MigrationPlan
         EntryState sourceRootState,
         EntryState destinationRootState,
         IEnumerable<MigrationPlanEntry> entries,
-        IEnumerable<string> unknownSelections)
+        IEnumerable<string> unknownSelections,
+        IEnumerable<ConflictDecisionIssue>? conflictDecisionIssues = null)
     {
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(unknownSelections);
@@ -24,6 +25,7 @@ public sealed class MigrationPlan
         DestinationRootState = destinationRootState;
         Entries = Array.AsReadOnly(entries.ToArray());
         UnknownSelections = Array.AsReadOnly(unknownSelections.ToArray());
+        ConflictDecisionIssues = Array.AsReadOnly((conflictDecisionIssues ?? []).ToArray());
     }
 
     public EntryState SourceRootState { get; }
@@ -34,10 +36,13 @@ public sealed class MigrationPlan
 
     public IReadOnlyList<string> UnknownSelections { get; }
 
+    public IReadOnlyList<ConflictDecisionIssue> ConflictDecisionIssues { get; }
+
     public MigrationPlanStatus Status =>
         SourceRootState != EntryState.Directory ||
         DestinationRootState != EntryState.Directory ||
         UnknownSelections.Count > 0 ||
+        ConflictDecisionIssues.Count > 0 ||
         Entries.Any(entry => entry.IsBlocked)
             ? MigrationPlanStatus.Blocked
             : Entries.Any(entry => entry.NeedsDecision)
@@ -46,7 +51,14 @@ public sealed class MigrationPlan
 
     public int ReadyToCopyCount => Entries.Count(entry => entry.IsReadyToCopy);
 
+    public int ReadyToReplaceCount => Entries.Count(entry => entry.IsReadyToReplace);
+
+    public int ReadyForWriteCount => Entries.Count(entry => entry.IsReadyForWrite);
+
     public int ConflictCount => Entries.Count(entry => entry.NeedsDecision);
 
     public int BlockedCount => Entries.Count(entry => entry.IsBlocked);
+
+    public int SkippedConflictCount => Entries.Count(entry =>
+        entry.Disposition == MigrationPlanDisposition.SkippedDestinationConflict);
 }

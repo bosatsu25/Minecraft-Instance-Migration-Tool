@@ -8,6 +8,8 @@ public enum MigrationPlanDisposition
     SourceMissing,
     ReadyToCopy,
     DestinationConflict,
+    SkippedDestinationConflict,
+    ReadyToReplace,
     BlockedSourceRoot,
     BlockedDestinationRoot,
     BlockedSourceObservation,
@@ -37,4 +39,10 @@ public sealed record MigrationPlanEntry(
     public bool NeedsDecision => Disposition == MigrationPlanDisposition.DestinationConflict;
 
     public bool IsReadyToCopy => Disposition == MigrationPlanDisposition.ReadyToCopy;
+
+    public bool IsReadyToReplace => Disposition == MigrationPlanDisposition.ReadyToReplace;
+
+    public bool IsReadyForWrite => IsReadyToCopy || IsReadyToReplace;
+
+    public bool RequiresBackup => IsReadyToReplace;
 }

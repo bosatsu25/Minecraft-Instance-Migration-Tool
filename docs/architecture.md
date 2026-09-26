@@ -93,6 +93,33 @@ or execution authorization is inferred.
 Phase 2 does not make a plan executable. Future execution must re-inspect/revalidate roots and
 observations because Phase 1 snapshots are non-atomic and can become stale.
 
+
+## Phase 2.1 selection and conflict policy
+
+`KnownEntryDefinition.RecommendedByDefault` makes the legacy Recommended direction part of the
+same catalog used by Inspector and Planner. `MigrationSelectionPresets.Recommended` selects all
+known candidates except `saves` and `screenshots`; those remain explicit opt-in data.
+
+Destination conflicts still have no implicit behavior. A caller may supply a typed
+`DestinationConflictDecision` for a selected entry:
+
+- `Unresolved` keeps `DestinationConflict` / `NeedsDecision`;
+- `Skip` produces `SkippedDestinationConflict`, an explicit no-op;
+- `Replace` produces `ReadyToReplace` and marks the entry as requiring backup before any future write.
+
+Conflict decisions are accepted only for selected known entries that actually have a destination
+conflict. Unknown, unselected, stale/non-conflicting, or unsupported decisions are preserved as
+typed `ConflictDecisionIssue` values and block the aggregate plan instead of being silently ignored.
+
+This phase intentionally does not define Merge behavior. Directory merge needs nested inventory,
+collision ordering, exclusion precedence, containment, backup, and rollback semantics that the
+current top-level metadata plan cannot prove.
+
+The legacy `hanemod-client.json` exclusion is also still unresolved because the supplied product
+brief does not establish whether it means one exact relative path, basename-at-any-depth, or another
+case-insensitive Windows matching rule. No execution path exists yet, so no code may claim the
+exclusion is enforced.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -111,8 +138,8 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Inspect:** Infrastructure reads explicitly selected instance roots; Application returns
   observations. No destination creation or modification. Unknown/inaccessible entries are
   reported as incomplete inspection, not silently treated as absent.
-- **Plan:** Domain now produces explicit top-level candidate intent, exclusions, blockers, and unresolved
-  destination conflicts from observations. Collision decisions, nested rules, and execution state remain separate.
+- **Plan:** Domain produces explicit top-level candidate intent, selection defaults, blockers, and typed
+  destination conflict intent. Nested exclusions, Merge behavior, compatibility, and execution state remain separate.
 - **Preview / Dry Run:** Present that same plan without writes, including exclusions, conflicts,
   size estimates, uncertainty, and required confirmations. Do not compute a different implicit plan at execution.
 - **Backup:** Establish and verify recoverable destination state before modifying it. Inability

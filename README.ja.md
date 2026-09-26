@@ -5,8 +5,9 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 2 の Planner コアです。** UI ではローカルフォルダを読み取り専用で調査でき、
-Domain / Application では source / destination の観測結果と明示的な選択から移行計画を生成できます。
+**現在は Phase 2.1 の Planning Policy です。** UI ではローカルフォルダを読み取り専用で調査でき、
+Domain / Application では source / destination の観測結果から移行計画を生成できます。
+Recommended の選択 preset と、destination conflict に対する明示的な Skip / Replace 意図も扱えます。
 コピー・バックアップ・変更はまだ行いません。
 
 ## 目的
@@ -21,7 +22,7 @@ Planner のコア契約は実装済みで、Preview / Dry Run 以降の書き込
 
 ## アーキテクチャ
 
-- **Domain:** 不変の観測モデルと決定論的な移行計画ポリシー。preset・互換性ルールは今後実装します。
+- **Domain:** 不変の観測モデル、決定論的な移行計画、Recommended 選択既定値、明示的な conflict 意図。互換性・nested exclusion は今後実装します。
 - **Application:** ユースケースとポート。Domain を参照します。
 - **Infrastructure:** Windows の属性取得。Application / Domain を参照します。
 - **App:** WPF の View、MVVM ViewModel、依存関係の組み立て。
@@ -93,10 +94,13 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
 1. Phase 0: solution、責務境界、テスト、CI、ドキュメント、最小 shell。
 2. Phase 1: 読み取り専用の Instance Inspector。
 3. Phase 2: 読み取り専用で決定論的な Migration Planner コア。
-4. 以後は Rules / preset → Preview → Backup → Executor → Verifier → Report、
+4. Phase 2.1: Recommended 選択 preset と明示的な Skip / Replace conflict 意図。
+5. 以後は nested exclusion / 互換性 → Preview → Backup → Executor → Verifier → Report、
    および失敗時の診断・ロールバックを個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
 旧版由来の移行候補は [migration rules](docs/migration-rules.md) に整理しています。
-Phase 2 はその既知候補の明示選択だけを扱います。Recommended preset、旧版 exclusion、
-互換性保証、衝突解決は未実装です。
+Phase 2.1 では legacy の Recommended 方向として、既知候補のうち `saves` と `screenshots`
+だけを既定 OFF とし、それ以外を選択します。destination conflict は明示的に Skip / Replace
+を指定しない限り未解決のままです。旧版 `hanemod-client.json` exclusion、Merge、
+互換性保証、実際の書き込みは未実装です。
