@@ -148,3 +148,29 @@ Future candidates only: FsCheck may help when path/plan/rule combinations become
 enough for property-based tests. Stryker.NET may help after safety decisions for rules,
 planning, conflicts, backup, rollback, and verification exist. Neither is installed.
 No coverage-percentage gate is defined; behavior and failure-path evidence remain primary.
+
+
+## Phase 2: Migration Planner core
+
+Phase 2 is pure Domain/Application logic and adds no filesystem writes or UI planner flow.
+
+Coverage includes:
+
+- one shared ordered `KnownEntryCatalog` used by both Inspector and Planner;
+- selected present source + missing destination => `ReadyToCopy`;
+- selected missing source => explicit `SourceMissing` no-op;
+- existing destination => `DestinationConflict` / `NeedsDecision`, without guessing replace/merge/skip;
+- source kind mismatch, reparse point, inaccessible/unavailable/invalid observations => blocked;
+- destination reparse point or indeterminate observation => blocked;
+- non-directory source/destination roots => blocked;
+- unknown/case-different selection names => preserved and blocked rather than silently ignored;
+- incomplete observations on unselected candidates do not block a selected safe candidate;
+- blockers outrank conflicts in aggregate plan status;
+- duplicate selections do not duplicate plan entries;
+- missing/duplicate observations are blocked instead of guessed;
+- Application exposes the Domain plan without filesystem access.
+
+The Planner deliberately has no path containment, collision resolution, preset, exclusion,
+size/hash, backup, or executor behavior. Those need their own acceptance criteria and tests.
+Because the state space is still eleven fixed candidates with explicit enum states, table-driven
+xUnit tests remain sufficient; FsCheck remains a future candidate rather than a dependency.

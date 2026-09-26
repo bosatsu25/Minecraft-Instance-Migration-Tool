@@ -63,9 +63,39 @@ messages, and permits retry. Input is held only in memory. No logs or reports ar
 Metadata calls run off the UI thread and cannot be interrupted mid-call. Results are non-atomic,
 can become stale, and must never authorize future writes without revalidation.
 
-## Migration Engine direction (not implemented)
 
-Develop one node at a time, starting with a read-only Inspector.
+## Phase 2 plan contract
+
+Planning is deterministic and performs no filesystem IO. `KnownEntryCatalog` is now the single
+ordered definition of the eleven top-level observation targets, so Inspector and Planner cannot
+silently drift to different candidate sets.
+
+`IMigrationPlanner.CreatePlan` accepts source and destination `InstanceInspectionResult` values
+plus an explicit set of selected known names. Application exposes the use case; Domain owns the
+policy and immutable plan models.
+
+The plan preserves source/destination root states and per-entry observations. Each known candidate
+receives one explicit disposition:
+
+- unselected entries are `ExcludedBySelection`;
+- missing selected sources are explicit no-ops (`SourceMissing`);
+- a matching source with a missing destination is `ReadyToCopy`;
+- an existing destination is `DestinationConflict` and requires a later collision decision;
+- source/destination reparse points, inaccessible/unavailable observations, malformed/duplicate
+  observations, source kind mismatches, and non-directory roots block the affected plan;
+- unknown selection names are preserved and block the plan instead of being ignored.
+
+Plan status is `Ready`, `NeedsDecision`, or `Blocked`. A blocker takes precedence over conflicts.
+An incomplete observation for an unselected candidate does not block an otherwise safe selected
+candidate. No collision policy, preset, nested exclusion, size/hash calculation, containment proof,
+or execution authorization is inferred.
+
+Phase 2 does not make a plan executable. Future execution must re-inspect/revalidate roots and
+observations because Phase 1 snapshots are non-atomic and can become stale.
+
+## Migration Engine direction
+
+Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
 
 ```text
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
@@ -81,8 +111,8 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Inspect:** Infrastructure reads explicitly selected instance roots; Application returns
   observations. No destination creation or modification. Unknown/inaccessible entries are
   reported as incomplete inspection, not silently treated as absent.
-- **Plan:** Domain policies produce explicit relative source/destination mappings, exclusions,
-  conflict decisions, and intended effects from observations. Separate immutable intent from execution state.
+- **Plan:** Domain now produces explicit top-level candidate intent, exclusions, blockers, and unresolved
+  destination conflicts from observations. Collision decisions, nested rules, and execution state remain separate.
 - **Preview / Dry Run:** Present that same plan without writes, including exclusions, conflicts,
   size estimates, uncertainty, and required confirmations. Do not compute a different implicit plan at execution.
 - **Backup:** Establish and verify recoverable destination state before modifying it. Inability

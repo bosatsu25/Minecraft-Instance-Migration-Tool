@@ -5,8 +5,9 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 1 の読み取り専用 Inspector です。** 選択したローカルフォルダと
-既知の直下 11 項目の属性を調査できます。コピー・バックアップ・変更は行いません。移行には使用できません。
+**現在は Phase 2 の Planner コアです。** UI ではローカルフォルダを読み取り専用で調査でき、
+Domain / Application では source / destination の観測結果と明示的な選択から移行計画を生成できます。
+コピー・バックアップ・変更はまだ行いません。
 
 ## 目的
 
@@ -16,11 +17,11 @@ Minecraft のユーザーデータを選択的に移行する Windows デスク�
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
 
 検証失敗時は Diagnose → Rollback → Report を想定しています。
-Inspect より後の機能は今後実装します。
+Planner のコア契約は実装済みで、Preview / Dry Run 以降の書き込みを伴う機能は今後実装します。
 
 ## アーキテクチャ
 
-- **Domain:** 不変の観測モデル。移行ルールは今後実装します。
+- **Domain:** 不変の観測モデルと決定論的な移行計画ポリシー。preset・互換性ルールは今後実装します。
 - **Application:** ユースケースとポート。Domain を参照します。
 - **Infrastructure:** Windows の属性取得。Application / Domain を参照します。
 - **App:** WPF の View、MVVM ViewModel、依存関係の組み立て。
@@ -91,9 +92,11 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
 
 1. Phase 0: solution、責務境界、テスト、CI、ドキュメント、最小 shell。
 2. Phase 1: 読み取り専用の Instance Inspector。
-3. 以後は Planner → Rules → Preview → Backup → Executor → Verifier → Report、
+3. Phase 2: 読み取り専用で決定論的な Migration Planner コア。
+4. 以後は Rules / preset → Preview → Backup → Executor → Verifier → Report、
    および失敗時の診断・ロールバックを個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
 旧版由来の移行候補は [migration rules](docs/migration-rules.md) に整理しています。
-これらは未実装で、互換性の保証ではありません。
+Phase 2 はその既知候補の明示選択だけを扱います。Recommended preset、旧版 exclusion、
+互換性保証、衝突解決は未実装です。

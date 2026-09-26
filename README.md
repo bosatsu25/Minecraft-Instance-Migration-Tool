@@ -5,8 +5,9 @@
 A planned Windows desktop tool for selectively moving Minecraft user data from an old
 instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 1 read-only Inspector.** Select a local folder and inspect its metadata and
-eleven known direct children. It does not copy, back up, or modify files and is not ready for migrations.
+**Status: Phase 2 Planner core.** The app can inspect one local folder in the UI, and the
+Domain/Application layers can now build a read-only migration plan from source/destination inspection
+results plus an explicit selection. It still does not copy, back up, or modify files.
 
 ## Why
 
@@ -15,11 +16,12 @@ explicit backup, and verification. The intended flow is:
 
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
 
-On verification failure: Diagnose → Rollback → Report. Everything after Inspect is future work.
+On verification failure: Diagnose → Rollback → Report. Planner semantics now exist in the core;
+Preview / Dry Run and every write-capable stage remain future work.
 
 ## Architecture
 
-- **Domain:** immutable observation models; migration rules are future work.
+- **Domain:** immutable observation models plus deterministic migration-plan policy; presets and compatibility rules are future work.
 - **Application:** use cases and ports, referencing Domain.
 - **Infrastructure:** Windows metadata adapter, referencing Application/Domain.
 - **App:** WPF view, MVVM presentation state, and composition root.
@@ -88,9 +90,11 @@ See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for 
 
 1. Phase 0: solution, boundaries, tests, CI, documentation, minimal shell.
 2. Phase 1: read-only Instance Inspector.
-3. Separate later changes: Planner → Rules → Preview → Backup → Executor → Verifier → Report,
+3. Phase 2: deterministic read-only Migration Planner core.
+4. Separate later changes: Rules/presets → Preview → Backup → Executor → Verifier → Report,
    with diagnosis and rollback failure paths.
 
 Each node gets a focused issue/PR and its own acceptance tests before the next expansion.
-Legacy selection candidates are documented in [migration rules](docs/migration-rules.md);
-they are not implemented or promises of compatibility.
+Legacy selection candidates are documented in [migration rules](docs/migration-rules.md).
+Phase 2 supports explicit selection of those known candidates only; recommended presets,
+the legacy exclusion, compatibility claims, and conflict resolution are not implemented.
