@@ -244,3 +244,34 @@ No integration filesystem test is claimed for Phase 3.0 because no production fi
 exists. Before adding Backup IO, tests must cover owned temporary roots, path overlap/containment,
 nested reparse points, cancellation/failure injection, partial-state handling, independent backup
 verification, and safe cleanup behavior. Real Minecraft data must never be used as a fixture.
+
+
+## Phase 3.1: Backup IO foundation
+
+Phase 3.1 is the first production filesystem-write phase. Integration tests use only owned temporary
+Windows fixtures and never real Minecraft data.
+
+Coverage includes:
+
+- Application returns `NotRequired`, `InvalidPlan`, or pre-cancelled outcomes without crossing the storage boundary;
+- ready backup plans create a manifest draft and delegate exactly once;
+- real Infrastructure backup copies a nested directory tree and file payload into a new owned
+  `mim-backup-*` root;
+- destination fixture bytes remain unchanged by backup;
+- completion writes both the ownership marker and `backup-manifest.json`;
+- manifest text contains no absolute destination / backup-parent paths;
+- returned verification counts bytes/files/directories and exposes a SHA-256 tree fingerprint;
+- a nested junction/reparse point fails closed and its target payload is never copied;
+- a backup parent inside the destination root is rejected before root creation;
+- stale planned kind versus actual destination kind produces `SourceChanged`, preserves the owned
+  partial root, and does not write a completion manifest;
+- a pre-cancelled Infrastructure request creates no backup root.
+
+The production traversal uses retained directory handles, `NtQueryDirectoryFile`, and relative
+`NtCreateFile` opens with no-follow semantics rather than recursive absolute-path enumeration.
+Post-copy verification fingerprints source, backup, then source again; a changing source or a
+content/structure mismatch fails the operation.
+
+Remaining gaps before Execute: deterministic mid-copy failure injection, restore/rollback behavior,
+ACL / alternate-stream / timestamp preservation decisions, and revalidation of a completed backup
+immediately before destructive migration writes.

@@ -181,6 +181,38 @@ intentional. Before Backup IO is implemented, the next phase must define and tes
 
 A preflight or manifest draft never authorizes Execute.
 
+
+## Phase 3.1 Backup IO foundation
+
+`BackupExecutor` is the Application boundary for starting backup IO. It rejects `Blocked`
+backup plans before the filesystem port, returns `NotRequired` without creating storage, creates
+the schema-v1 manifest draft itself, and preserves typed Completed / Cancelled / Failed outcomes.
+
+`WindowsBackupStorage` is Windows-only and intentionally narrow:
+
+- destination and backup-parent inputs must be absolute local-drive directories;
+- the backup parent may not equal or be inside the destination root;
+- path components are opened one-at-a-time relative to retained handles with
+  `OBJ_DONT_REPARSE` / `FILE_OPEN_REPARSE_POINT`; nested traversal enumerates names from
+  directory handles via `NtQueryDirectoryFile` and opens every child relative to its parent handle;
+- any reparse point encountered at any traversed depth fails the backup;
+- a unique `mim-backup-{guid}` directory is created relative to the held backup-parent handle;
+- an ownership marker is written first; partial roots are retained on cancellation/failure and
+  never receive the completion manifest;
+- planned replacement entries are copied recursively without following links;
+- after copy, the destination tree is fingerprinted, the backup tree is fingerprinted, and the
+  destination tree is fingerprinted again. Source-before/source-after mismatch reports
+  `SourceChanged`; source/backup mismatch reports `VerificationFailed`;
+- `backup-manifest.json` is written only after verification succeeds and contains no absolute paths.
+
+The fingerprint covers deterministic relative structure plus default-stream file bytes, file count,
+directory count, and total bytes. It is an integrity signal for the copied Minecraft payload, not a
+general NTFS clone. Phase 3.1 does **not** preserve ACLs, alternate data streams, or full filesystem
+metadata such as timestamps. Execute / restore must not assume those properties were preserved.
+
+Backup result paths remain in-memory return values. Failure categories do not include exception
+messages that might contain private user paths.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -204,9 +236,9 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Preview / Dry Run:** The implemented read-only preview presents the same plan without writes,
   including exclusions, planned actions, blockers, unresolved conflicts, and backup intent. Size estimates
   remain unavailable until a later bounded inventory design exists. Do not compute a different implicit plan at execution.
-- **Backup:** Phase 3.0 implements a fail-closed preflight and versioned manifest draft only.
-  Future Backup IO must establish and independently verify recoverable destination state before modifying it;
-  inability to prove a complete backup must stop execution.
+- **Backup:** Phase 3.1 implements an owned Windows backup artifact for planned replacements,
+  handle-relative no-follow traversal, partial-state preservation, and independent post-copy fingerprint
+  verification. Completion manifest creation is the final step; a failed/cancelled root is never complete.
 - **Execute:** Revalidate roots and source/destination state against the reviewed plan.
   Reject stale plans, unsafe paths, or changed collision assumptions; cancellation and partial writes need explicit outcomes.
 - **Verify:** Compare actual outcomes against the plan using defined evidence (such as content
