@@ -43,6 +43,8 @@ public sealed class RollbackExecutor(
 
         foreach (RollbackPlanEntry action in request.RollbackPlan.Entries)
         {
+            RollbackBackupEvidence? backupEvidence = null;
+
             if (cancellationToken.IsCancellationRequested)
             {
                 return CancellationResult(completedActions);
@@ -84,12 +86,16 @@ public sealed class RollbackExecutor(
                     return CancellationResult(completedActions);
                 }
 
-                if (!validation.IsValid)
+                if (!validation.IsValid || validation.Verification is null)
                 {
                     return BeforeActionFailure(
                         RollbackExecutionFailureKind.BackupInvalid,
                         completedActions);
                 }
+
+                backupEvidence = new RollbackBackupEvidence(
+                    request.BackupPlan,
+                    validation.Verification);
             }
 
             RollbackStorageResult result;
@@ -98,6 +104,7 @@ public sealed class RollbackExecutor(
                 result = await storage.ApplyAsync(
                     request.DestinationRoot,
                     request.BackupRoot,
+                    backupEvidence,
                     action,
                     CancellationToken.None);
             }
