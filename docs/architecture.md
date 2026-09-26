@@ -288,6 +288,51 @@ restore a backup, delete created entries, or claim crash durability. A future In
 must use durable append/flush semantics and an execution workflow must record evidence before advancing
 to the next destructive operation.
 
+
+## Phase 3.4 Durable execution journal storage
+
+Phase 3.4 persists the Phase 3.3 logical journal without implementing migration writes.
+
+`IExecutionJournalPersistence` is the Application boundary. It rejects blocked/not-required drafts,
+invalid step numbers, and pre-cancelled calls before crossing the Infrastructure port.
+
+`WindowsExecutionJournalStorage` writes one create-only `mim-journal-{guid}.jsonl` file under an
+explicit existing local journal parent. The parent path is opened component-by-component with retained
+handles and no-follow semantics. A reparse point in the journal path fails closed.
+
+The journal is append-only at the logical level:
+
+1. creation writes a header containing schema version, journal id, and the exact ordered draft entries;
+2. `Started(sequence)` is appended and flushed to disk **before** a future executor may mutate that step;
+3. `Applied(sequence, fingerprint)` or `Failed(sequence)` is appended and flushed after the attempt;
+4. a later step cannot start until every earlier step is durably Applied.
+
+Each line contains a SHA-256 checksum over its canonical payload and a previous-checksum pointer. This
+is an integrity chain for corruption detection, not a secret-key tamper-proof signature.
+
+Every acknowledged append writes a newline and calls `FileStream.Flush(flushToDisk: true)`. Cancellation
+is honored before an append begins; once a journal append starts, the storage finishes or reports failure
+rather than deliberately abandoning a half-written acknowledged transition.
+
+Crash recovery deliberately distinguishes an unterminated trailing record from a completed malformed
+record:
+
+- bytes after the final newline are treated as an unacknowledged torn tail;
+- Load ignores that torn tail read-only;
+- the next successful transition truncates the torn tail before appending;
+- a complete malformed/checksum-invalid line fails closed.
+
+Therefore a durable `Started` with a torn/missing terminal record loads as `Uncertain`, while a torn
+`Started` that was never acknowledged is ignored and the step remains `NotStarted`.
+
+The journal file contains no absolute migration, backup, or journal-parent paths. Its file reference is
+returned in memory to the caller. The header is bound to the current journal draft; a different draft
+cannot reuse the file.
+
+This phase does not claim whole-machine power-loss immunity beyond the guarantees exposed by Windows
+file flush semantics, and it is not Execute. The future executor must await a successful durable Started
+append before mutation and await a durable terminal append before advancing to another destructive step.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -314,9 +359,10 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Backup:** Phase 3.1 creates an owned verified artifact; Phase 3.2 can revalidate a completed artifact
   read-only against ownership, manifest, plan, exact top-level membership, no-follow traversal, and a
   recomputed tree fingerprint. A failed/cancelled/invalid artifact is never accepted as recovery evidence.
-- **Execute:** Revalidate roots and source/destination state against the reviewed plan, then persist
-  durable journal evidence around each destructive step. Reject stale plans, unsafe paths, or changed
-  collision assumptions; cancellation and partial writes need explicit outcomes.
+- **Execute:** Phase 3.4 now provides durable journal storage. Future Execute must revalidate roots and
+  source/destination state, await a durable Started record before each mutation, produce a post-write
+  fingerprint, persist Applied/Failed durably, and only then advance. Reject stale plans, unsafe paths,
+  changed collision assumptions, or any journal transition failure.
 - **Verify:** Compare actual outcomes against the plan using defined evidence (such as content
   fingerprints), independently of an executor's success flag.
 - **Diagnose / Rollback:** Phase 3.3 defines reverse-order rollback requirements from journal evidence.
