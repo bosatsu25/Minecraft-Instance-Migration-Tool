@@ -5,10 +5,10 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 3.5 の Execute Orchestration Contract です。** UI は引き続き Inspector / Preview のみです。
-Application では live source / destination revalidation、completed-backup revalidation、durable Started、
-1 step mutation、post-write fingerprint verification、durable Applied / Failed を port 経由で順序制御できます。
-production の Minecraft mutation adapter はまだ無いため、この phase では実 migration write は発生しません。
+**現在は Phase 3.6 の Windows Mutation + Independent Verification です。** UI は引き続き Inspector / Preview のみです。
+Infrastructure に handle-relative / no-follow の単一 entry Copy / Replace と、source / destination を独立比較する
+post-write fingerprint verifier を追加しました。execution pipeline から呼ばれた場合は実 write を行えますが、
+Execute UI と rollback IO はまだありません。
 
 ## 目的
 
@@ -105,7 +105,8 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
 9. Phase 3.3: version 付き execution-journal contract と deterministic rollback planning。migration write はなし。
 10. Phase 3.4: append / flush ordering と crash-tail recovery を備えた durable Windows execution journal storage。
 11. Phase 3.5: live revalidation + execute orchestration contract。mutation / verifier は port のみ。
-12. 以後は production mutation adapter → verifier integration → rollback IO → Report を個別に実装。
+12. Phase 3.6: Windows handle-relative Copy / Replace mutation + independent post-write verification。
+13. 以後は rollback IO → end-to-end Execute UI / Report → release hardening を個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
 旧版由来の移行候補は [migration rules](docs/migration-rules.md) に整理しています。
@@ -113,4 +114,4 @@ Phase 2.1 では legacy の Recommended 方向として、既知候補のうち 
 だけを既定 OFF とし、それ以外を選択します。destination conflict は明示的に Skip / Replace
 を指定しない限り未解決のままです。Phase 2.2 の UI dry run は Recommended preset を使い、
 未解決 conflict をそのまま表示します。旧版 `hanemod-client.json` exclusion、Merge、
-size estimate、互換性保証、production migration mutation IO、restore IO、rollback IO は未実装です。
+size estimate、互換性保証、restore IO、rollback IO、Execute UI / Report は未実装です。

@@ -24,6 +24,7 @@ public sealed class ExecutionOrchestratorTests
         Assert.Equal(
             new[]
             {
+                "workspace",
                 "journal:create",
                 "live:0",
                 "backup",
@@ -33,6 +34,28 @@ public sealed class ExecutionOrchestratorTests
                 "journal:applied:0",
             },
             events);
+    }
+
+
+    [Fact]
+    public async Task UnsafeWorkspaceBlocksBeforeJournalCreation()
+    {
+        var events = new List<string>();
+        MigrationPlan plan = CopyPlan();
+        Fixture fixture = CreateFixture(events, plan);
+        fixture.Workspace.Result = new ExecutionWorkspaceSafetyResult(
+            ExecutionWorkspaceSafetyStatus.Invalid,
+            ExecutionWorkspaceSafetyFailureKind.JournalInsideMigrationRoot);
+
+        ExecutionOrchestrationResult result = await fixture.Orchestrator.ExecuteAsync(
+            Request(plan, null),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionOrchestrationStatus.Blocked, result.Status);
+        Assert.Equal(
+            ExecutionOrchestrationFailureKind.UnsafeWorkspace,
+            result.FailureKind);
+        Assert.Equal(new[] { "workspace" }, events);
     }
 
     [Fact]
@@ -229,6 +252,7 @@ public sealed class ExecutionOrchestratorTests
     {
         var live = new StubLive(events);
         var backup = new StubBackupValidator(events);
+        var workspace = new StubWorkspace(events);
         var journal = new StubJournal(events);
         var mutation = new StubMutation(events);
         var verifier = new StubVerifier(events);
@@ -238,6 +262,7 @@ public sealed class ExecutionOrchestratorTests
             live,
             new BackupPlanner(),
             backup,
+            workspace,
             journal,
             mutation,
             verifier);
@@ -246,6 +271,7 @@ public sealed class ExecutionOrchestratorTests
             orchestrator,
             live,
             backup,
+            workspace,
             journal,
             mutation,
             verifier);
@@ -324,6 +350,7 @@ public sealed class ExecutionOrchestratorTests
         ExecutionOrchestrator Orchestrator,
         StubLive Live,
         StubBackupValidator Backup,
+        StubWorkspace Workspace,
         StubJournal Journal,
         StubMutation Mutation,
         StubVerifier Verifier);
@@ -363,6 +390,24 @@ public sealed class ExecutionOrchestratorTests
             CancellationToken cancellationToken = default)
         {
             events.Add("backup");
+            return Task.FromResult(Result);
+        }
+    }
+
+
+    private sealed class StubWorkspace(List<string> events)
+        : IExecutionWorkspaceSafetyValidator
+    {
+        public ExecutionWorkspaceSafetyResult Result { get; set; } =
+            new(ExecutionWorkspaceSafetyStatus.Safe);
+
+        public Task<ExecutionWorkspaceSafetyResult> ValidateAsync(
+            string sourceRoot,
+            string destinationRoot,
+            string journalParent,
+            CancellationToken cancellationToken = default)
+        {
+            events.Add("workspace");
             return Task.FromResult(Result);
         }
     }
@@ -473,6 +518,7 @@ public sealed class ExecutionOrchestratorTests
                     new string('B', 64)));
 
         public Task<ExecutionPostWriteVerificationResult> VerifyAsync(
+            string sourceRoot,
             string destinationRoot,
             ExecutionJournalEntry step,
             CancellationToken cancellationToken)

@@ -9,6 +9,7 @@ public sealed class ExecutionOrchestrator(
     IExecutionLiveValidator liveValidator,
     IBackupPlanner backupPlanner,
     IBackupArtifactValidator backupValidator,
+    IExecutionWorkspaceSafetyValidator workspaceSafetyValidator,
     IExecutionJournalPersistence journalPersistence,
     IExecutionMutationPort mutationPort,
     IExecutionPostWriteVerifier postWriteVerifier) : IExecutionOrchestrator
@@ -21,6 +22,8 @@ public sealed class ExecutionOrchestrator(
         backupPlanner ?? throw new ArgumentNullException(nameof(backupPlanner));
     private readonly IBackupArtifactValidator backupValidator =
         backupValidator ?? throw new ArgumentNullException(nameof(backupValidator));
+    private readonly IExecutionWorkspaceSafetyValidator workspaceSafetyValidator =
+        workspaceSafetyValidator ?? throw new ArgumentNullException(nameof(workspaceSafetyValidator));
     private readonly IExecutionJournalPersistence journalPersistence =
         journalPersistence ?? throw new ArgumentNullException(nameof(journalPersistence));
     private readonly IExecutionMutationPort mutationPort =
@@ -67,6 +70,38 @@ public sealed class ExecutionOrchestrator(
         {
             return new ExecutionOrchestrationResult(
                 ExecutionOrchestrationStatus.Cancelled);
+        }
+
+        ExecutionWorkspaceSafetyResult workspace;
+        try
+        {
+            workspace = await workspaceSafetyValidator.ValidateAsync(
+                request.SourceRoot,
+                request.DestinationRoot,
+                request.JournalParent,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new ExecutionOrchestrationResult(
+                ExecutionOrchestrationStatus.Cancelled);
+        }
+        catch (Exception)
+        {
+            return Blocked(
+                ExecutionOrchestrationFailureKind.UnsafeWorkspace);
+        }
+
+        if (workspace.Status == ExecutionWorkspaceSafetyStatus.Cancelled)
+        {
+            return new ExecutionOrchestrationResult(
+                ExecutionOrchestrationStatus.Cancelled);
+        }
+
+        if (!workspace.IsSafe)
+        {
+            return Blocked(
+                ExecutionOrchestrationFailureKind.UnsafeWorkspace);
         }
 
         ExecutionJournalWriteResult created;
@@ -233,6 +268,7 @@ public sealed class ExecutionOrchestrator(
             try
             {
                 verification = await postWriteVerifier.VerifyAsync(
+                    request.SourceRoot,
                     request.DestinationRoot,
                     step,
                     CancellationToken.None);
