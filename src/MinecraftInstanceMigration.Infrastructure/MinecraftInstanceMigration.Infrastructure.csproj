@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MinecraftInstanceMigration.Application/MinecraftInstanceMigration.Application.csproj" />
+    <ProjectReference Include="../MinecraftInstanceMigration.Domain/MinecraftInstanceMigration.Domain.csproj" />
+  </ItemGroup>
+</Project>
