@@ -86,3 +86,65 @@ A future Infrastructure journal must satisfy at least:
 
 Until those properties have integration and failure-injection tests, Phase 3.3 must not be described
 as crash-safe execution or implemented rollback.
+
+
+## Phase 3.4 durable storage format
+
+The logical contract is now persisted on Windows as a create-only JSONL file named
+`mim-journal-{journalId}.jsonl` under an explicit existing local journal parent.
+
+The file starts with one Header record that binds schema v1 and the exact ordered
+`ExecutionJournalDraft`. Later records are append-only logical transitions:
+
+```text
+Header
+Started(0)     -- durable before future mutation 0
+Applied(0)     -- includes post-write fingerprint
+Started(1)
+Failed(1)
+```
+
+Each JSON line wraps a canonical payload, a SHA-256 checksum, and a pointer to the previous line's
+checksum. The chain detects truncation/reordering/corruption that does not also rewrite the chain.
+It is not cryptographic authentication against an attacker who can rewrite the file.
+
+### Durability / crash interpretation
+
+A transition is acknowledged only after its complete JSON line plus newline has been flushed with
+`Flush(flushToDisk: true)`.
+
+An unterminated final line is treated as an unacknowledged torn tail. Read-only Load ignores it. Before
+a later transition is appended, the storage truncates that tail back to the last acknowledged newline.
+
+This creates the intended recovery semantics:
+
+| Durable records | Recovered outcome |
+| --- | --- |
+| Header only | NotStarted |
+| Started | Uncertain |
+| Started + Applied(fingerprint) | Applied |
+| Started + Failed | Failed |
+| Started + torn Applied tail | Uncertain |
+| torn Started tail after prior record | prior acknowledged state |
+
+A complete malformed line or checksum/state-machine mismatch is not ignored; the journal is Invalid.
+
+### Ordering rule
+
+Step N may start only when every step before N is durably Applied and all later steps are still
+NotStarted. Once a step is Failed or remains Uncertain, later steps cannot start through this storage.
+
+This rule is deliberately stricter than merely recording events: it gives the future executor a storage
+barrier between destructive operations.
+
+### Path / privacy boundary
+
+The journal parent must be an existing absolute local-drive directory. It is resolved component-by-component
+with no-follow semantics, and a reparse point fails closed.
+
+Absolute source, destination, backup, and journal-parent paths are not serialized into the journal.
+The caller receives the journal path only as an in-memory `ExecutionJournalReference`.
+
+Phase 3.4 is not migration Execute. The next workflow must combine live inspection revalidation,
+completed-backup revalidation, durable Started, actual mutation, post-write fingerprinting, and durable
+terminal evidence in that order.

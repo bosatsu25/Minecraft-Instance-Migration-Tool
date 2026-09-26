@@ -321,3 +321,40 @@ No Infrastructure journal writer or rollback adapter exists in this phase. Befor
 cover durable journal append/flush semantics, crash/interruption points, destination revalidation,
 per-step post-write fingerprinting, and the guarantee that journal evidence is persisted before a
 later destructive step begins.
+
+
+## Phase 3.4: Durable execution journal storage
+
+Phase 3.4 writes only the execution-journal artifact; it still performs no Minecraft migration writes.
+
+Application coverage includes:
+
+- blocked journal drafts never cross the storage boundary;
+- pre-cancelled create requests never cross the storage boundary;
+- invalid step numbers never cross the storage boundary;
+- valid create/start/applied/load operations delegate to the storage port.
+
+Windows Infrastructure coverage includes:
+
+- create-only `mim-journal-{guid}.jsonl` creation under an owned temporary parent;
+- header content contains no absolute fixture/journal-parent paths;
+- initial reload returns every step as `NotStarted`;
+- a durably flushed Started record reloads as `Uncertain` until a terminal record exists;
+- Applied fingerprints survive process-style close/reopen;
+- an unterminated torn terminal record is ignored on Load and truncated before the next acknowledged append;
+- a complete malformed record fails closed;
+- checksum mutation fails closed;
+- later steps cannot start before prior steps are durably Applied;
+- a Failed step prevents later-step execution;
+- a journal cannot be reopened against a different draft;
+- a reparse-point journal parent is rejected without creating a file in its target;
+- pre-cancelled direct Infrastructure create leaves no journal artifact.
+
+The format uses a checksum chain plus strict state-machine validation. Checksums detect accidental or
+uncoordinated edits but are not authentication. Crash tests model the critical storage invariant:
+an unterminated append was never acknowledged, while a durable Started record without a durable terminal
+must recover as Uncertain.
+
+Before Execute is added, the next phase must bind this journal protocol to live source/destination
+revalidation and backup revalidation, and must prove by failure injection that no destructive mutation
+begins before Started is durable and no later mutation begins before the previous terminal evidence is durable.
