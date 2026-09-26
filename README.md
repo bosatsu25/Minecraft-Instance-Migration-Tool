@@ -5,10 +5,10 @@
 A planned Windows desktop tool for selectively moving Minecraft user data from an old
 instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 3.2 Backup Revalidation.** The app UI remains Inspector / Preview only. Application +
-Infrastructure can create a verified Windows backup for `ReadyToReplace` destinations and later
-revalidate that completed artifact read-only before any destructive migration phase. Migration Execute
-is still not implemented.
+**Status: Phase 3.3 Execution Journal / Rollback Contract.** The app UI remains Inspector / Preview only.
+The core can now derive an ordered execution-journal draft from a Ready migration plan and deterministically
+derive rollback requirements from a later execution snapshot. Migration Execute, durable journal persistence,
+restore IO, and destructive rollback are still not implemented.
 
 ## Why
 
@@ -99,8 +99,8 @@ See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for 
    nested reparse rejection, and post-copy fingerprint verification.
 8. Phase 3.2: read-only completed-backup revalidation against ownership marker, manifest, plan, and
    recomputed tree fingerprint.
-9. Separate later changes: execution journal / rollback contract → Executor → Verifier → Report,
-   with diagnosis and rollback failure paths.
+9. Phase 3.3: versioned execution-journal contract and deterministic rollback planning, with no migration writes.
+10. Separate later changes: durable journal storage → Executor → Verifier → rollback IO → Report.
 
 Each node gets a focused issue/PR and its own acceptance tests before the next expansion.
 Legacy selection candidates are documented in [migration rules](docs/migration-rules.md).
@@ -109,4 +109,4 @@ except `saves` and `screenshots`, which remain opt-in. Destination conflicts rem
 unless a caller explicitly chooses Skip or Replace. Phase 2.2 exposes a UI dry-run using the
 Recommended preset; this UI currently displays unresolved conflicts rather than editing decisions.
 The legacy `hanemod-client.json` exclusion, Merge semantics, size estimates, compatibility claims,
-migration write execution, restore, and rollback are not implemented.
+migration write execution, durable execution-journal storage, restore IO, and rollback IO are not implemented.

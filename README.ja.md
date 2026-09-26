@@ -5,9 +5,9 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 3.2 の Backup Revalidation です。** UI は引き続き Inspector / Preview のみです。
-Application + Infrastructure では `ReadyToReplace` destination の検証付き backup を作成し、その完成済み
-artifact を destructive phase の直前に read-only で再検証できます。Migration Execute はまだ実装していません。
+**現在は Phase 3.3 の Execution Journal / Rollback Contract です。** UI は引き続き Inspector / Preview のみです。
+Ready な MigrationPlan から順序付き execution-journal draft を生成し、将来の execution snapshot から rollback 要件を
+決定論的に導出できるようになりました。Migration Execute、durable journal 永続化、restore IO、rollback IO は未実装です。
 
 ## 目的
 
@@ -101,8 +101,8 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
    post-copy fingerprint verification を備えた Windows Backup IO foundation。
 8. Phase 3.2: owner marker、completion manifest、BackupPlan、再計算した tree fingerprint を使う
    completed-backup read-only revalidation。
-9. 以後は execution journal / rollback contract → Executor → Verifier → Report、
-   および失敗時の診断・ロールバックを個別に実装。
+9. Phase 3.3: version 付き execution-journal contract と deterministic rollback planning。migration write はなし。
+10. 以後は durable journal storage → Executor → Verifier → rollback IO → Report を個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
 旧版由来の移行候補は [migration rules](docs/migration-rules.md) に整理しています。
@@ -110,4 +110,4 @@ Phase 2.1 では legacy の Recommended 方向として、既知候補のうち 
 だけを既定 OFF とし、それ以外を選択します。destination conflict は明示的に Skip / Replace
 を指定しない限り未解決のままです。Phase 2.2 の UI dry run は Recommended preset を使い、
 未解決 conflict をそのまま表示します。旧版 `hanemod-client.json` exclusion、Merge、
-size estimate、互換性保証、migration write、restore、rollback は未実装です。
+size estimate、互換性保証、migration write、durable execution journal、restore IO、rollback IO は未実装です。

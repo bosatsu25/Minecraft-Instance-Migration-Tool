@@ -110,3 +110,13 @@ planned tree fingerprint. Any nested reparse point or fingerprint mismatch inval
 The validator never repairs or rewrites the backup. A valid artifact is necessary recovery evidence,
 but it is not sufficient to start destructive Execute: the future workflow must still revalidate the
 live migration inputs and bind the validated backup to an execution journal.
+
+
+## Relationship to execution journal / rollback
+
+Phase 3.3 consumes completed-backup validation as recovery evidence. An applied Replace can become an
+automatic `RestoreFromBackup` rollback requirement only when backup validation is currently valid.
+
+That requirement is still only a Domain plan. Future rollback IO must revalidate both the backup and
+the current destination state against the execution journal's post-write fingerprint before replacing
+anything. A stale or edited destination must become recovery-required rather than being overwritten.
