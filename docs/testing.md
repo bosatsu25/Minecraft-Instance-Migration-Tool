@@ -196,3 +196,28 @@ The policy deliberately does not define Merge or the `hanemod-client.json` exclu
 Those require separate acceptance criteria before implementation. Replace is intent only:
 no backup or write code exists, and future execution must not perform it until backup,
 containment, stale-plan revalidation, and rollback requirements are implemented and tested.
+
+
+## Phase 2.2: Preview / Dry Run
+
+Phase 2.2 adds a pure plan-to-preview projection plus a WPF dry-run flow. It still performs no
+filesystem writes.
+
+Coverage includes:
+
+- every current `MigrationPlanDisposition` maps to one explicit preview action;
+- unsupported future dispositions fail closed instead of being silently reinterpreted;
+- preview preserves aggregate plan status, unknown selections, conflict-decision issues, and backup intent;
+- copy/replace/skip/no-source/needs-decision/blocked counts reflect the plan snapshot;
+- Application previewing uses an existing plan and performs no inspection or IO;
+- the Preview ViewModel inspects source then destination, applies the Recommended plan, and exposes the same preview;
+- existing destination conflicts are visible as `NeedsDecision`;
+- changing either path clears stale preview state;
+- cancellation between inspections does not publish a late result;
+- errors expose only exception type, not private path-bearing messages;
+- hosted FlaUI smoke switches to the Preview tab, generates a preview from owned fixtures, verifies
+  visible Copy / Excluded outcomes, and compares source/destination fixture snapshots before and after.
+
+The UI does not yet edit Skip / Replace decisions. It also does not report size estimates because
+the bounded Phase 1 Inspector intentionally reads metadata only and does not recursively inventory content.
+A passing preview is not execution authorization; Backup / Execute must revalidate state.

@@ -5,10 +5,10 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 2.1 の Planning Policy です。** UI ではローカルフォルダを読み取り専用で調査でき、
-Domain / Application では source / destination の観測結果から移行計画を生成できます。
-Recommended の選択 preset と、destination conflict に対する明示的な Skip / Replace 意図も扱えます。
-コピー・バックアップ・変更はまだ行いません。
+**現在は Phase 2.2 の Preview / Dry Run です。** UI では単一フォルダの Inspector に加え、
+source / destination の両方を読み取り専用で調査して移行 preview を生成できます。
+Recommended preset を適用し、Copy / Replace / Skip / No source / Needs decision / Blocked を表示します。
+コピー・バックアップ・削除・変更は行いません。
 
 ## 目的
 
@@ -18,14 +18,14 @@ Recommended の選択 preset と、destination conflict に対する明示的な
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
 
 検証失敗時は Diagnose → Rollback → Report を想定しています。
-Planner のコア契約は実装済みで、Preview / Dry Run 以降の書き込みを伴う機能は今後実装します。
+Planner と Preview / Dry Run の読み取り専用契約は実装済みで、書き込みを伴う機能は今後実装します。
 
 ## アーキテクチャ
 
 - **Domain:** 不変の観測モデル、決定論的な移行計画、Recommended 選択既定値、明示的な conflict 意図。互換性・nested exclusion は今後実装します。
 - **Application:** ユースケースとポート。Domain を参照します。
 - **Infrastructure:** Windows の属性取得。Application / Domain を参照します。
-- **App:** WPF の View、MVVM ViewModel、依存関係の組み立て。
+- **App:** WPF の Inspector / Preview View、MVVM ViewModel、依存関係の組み立て。
 - **Tests:** xUnit による動作・統合・ViewModel テストと、責務境界の回帰検出。
 
 App は組み立てのため Application / Infrastructure を参照します。
@@ -95,12 +95,14 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
 2. Phase 1: 読み取り専用の Instance Inspector。
 3. Phase 2: 読み取り専用で決定論的な Migration Planner コア。
 4. Phase 2.1: Recommended 選択 preset と明示的な Skip / Replace conflict 意図。
-5. 以後は nested exclusion / 互換性 → Preview → Backup → Executor → Verifier → Report、
+5. Phase 2.2: Preview / Dry Run モデルと WPF preview flow。
+6. 以後は nested exclusion / 互換性 → Backup → Executor → Verifier → Report、
    および失敗時の診断・ロールバックを個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
 旧版由来の移行候補は [migration rules](docs/migration-rules.md) に整理しています。
 Phase 2.1 では legacy の Recommended 方向として、既知候補のうち `saves` と `screenshots`
 だけを既定 OFF とし、それ以外を選択します。destination conflict は明示的に Skip / Replace
-を指定しない限り未解決のままです。旧版 `hanemod-client.json` exclusion、Merge、
-互換性保証、実際の書き込みは未実装です。
+を指定しない限り未解決のままです。Phase 2.2 の UI dry run は Recommended preset を使い、
+未解決 conflict をそのまま表示します。旧版 `hanemod-client.json` exclusion、Merge、
+size estimate、互換性保証、backup、実際の書き込みは未実装です。
