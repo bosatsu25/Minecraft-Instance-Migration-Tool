@@ -16,6 +16,8 @@ internal static class BackupNativeMethods
     internal const uint Synchronize = 0x00100000;
 
     internal const uint ShareRead = 0x00000001;
+    internal const uint ShareWrite = 0x00000002;
+    internal const uint ShareDelete = 0x00000004;
 
     internal const uint FileOpen = 1;
     internal const uint FileCreate = 2;
