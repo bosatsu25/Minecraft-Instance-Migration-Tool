@@ -73,6 +73,14 @@ build, tests, and formatting checks on pushes and pull requests. Warnings fail t
 Use `dotnet format --no-restore` to apply C# formatting locally. The formatter does not
 fully validate Markdown, YAML, or XAML layout; review those diffs too.
 
+The small WPF UI smoke suite runs separately on Windows:
+
+```powershell
+dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release
+```
+
+See [testing](docs/testing.md) for its scope and a manual smoke procedure.
+
 Development follows the [evidence-driven Graph Loop](docs/graph-loop.md).
 See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for verification scope.
 

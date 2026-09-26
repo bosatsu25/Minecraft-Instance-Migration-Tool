@@ -12,6 +12,8 @@
 Dependencies point inward. App may construct Infrastructure at the composition root;
 view models depend on Application contracts, not concrete adapters. Infrastructure must
 never be referenced by Application/Domain. Test projects are not production dependencies.
+The UI smoke project is an external consumer of the built WPF app. FlaUI stays in that
+test project and does not enter any product layer.
 
 Only App targets `net10.0-windows` and enables WPF. Other projects target `net10.0`.
 The Windows metadata implementation remains in Infrastructure; its runtime rejects non-Windows hosts.
