@@ -76,6 +76,14 @@ push / pull request 時に restore・Release build・test・format 検証を行�
 警告はビルド失敗として扱います。C# の整形修正には `dotnet format --no-restore` を使用します。
 Markdown・YAML・XAML のレイアウトすべてを formatter が検証するわけではないため、差分も確認します。
 
+少数の WPF UI スモークテストは Windows 上で別実行します。
+
+```powershell
+dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release
+```
+
+対象範囲と手動スモーク手順は [testing](docs/testing.md) に記載しています。
+
 開発は [Evidence-driven Graph Loop](docs/graph-loop.md) に従います。
 恒久ルールは [AGENTS.md](AGENTS.md)、検証範囲は [testing](docs/testing.md) を参照してください。
 

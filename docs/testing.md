@@ -104,3 +104,47 @@ and the fixture remains as `RootConvertedToJunctionDuringSessionNeverExposesTarg
 These checks do not prove behavior on every Windows filesystem/filter or provide an atomic
 snapshot. UI automation and hosted CI are reported separately; a passing ViewModel test is not
 a visual smoke test. Future writes require their own containment, collision and recovery design.
+
+## Phase 1.6: WPF UI smoke
+
+The solution test command remains the deterministic core gate. The dedicated
+`tests/MinecraftInstanceMigration.UiTests` project uses xUnit v3 and FlaUI.UIA3 5.0.0
+(FlaUI.Core 5.0.0 transitively). It is separate from the solution so that core tests
+never launch a desktop process. Run it explicitly on Windows with the pinned SDK:
+The selected package version is the current stable NuGet release checked during this
+phase ([FlaUI.UIA3 5.0.0](https://www.nuget.org/packages/FlaUI.UIA3),
+[FlaUI repository](https://github.com/FlaUI/FlaUI)).
+
+```powershell
+dotnet restore tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj
+dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release --no-restore
+```
+
+The three smoke checks launch the real WPF executable through UIA3: startup and clean
+shutdown, known entry cells, and a visible expected/actual kind mismatch. Input uses
+the application's path field, so tests do not depend on native folder-picker timing.
+Each fixture is unique and owned by the test; before/after snapshots check relative
+names, bytes, attributes, and last-write timestamps. Tests serialize only their UI
+collection and always attempt to close/kill their own app process on exit.
+UI waits depend on a bounded condition, never a fixed sleep. The UI workflow job is
+separate from `verify`; check its actual run before claiming hosted UI support.
+
+During implementation, `InspectKnownFixture` was temporarily changed to expect
+an impossible state. It failed with an assertion; after restoration it passed. The
+invalid assertion was not committed. This demonstrates that the UI check can go RED
+when rendered data differs from expectations.
+
+For a manual check when interactive automation is unavailable:
+
+1. Run the app on a Windows desktop.
+2. Select or type an owned test folder containing `options.txt`, `config/`, and `saves/`.
+3. Inspect and confirm the root is Directory, the three known states match, and an
+   absent known entry is Missing. Confirm the folder's contents and timestamps stay unchanged.
+4. In a separate owned folder create `config` as a file, inspect, and confirm the
+   table shows expected Directory, observed File, and a false match.
+5. Close the app and remove only the owned test folders.
+
+Future candidates only: FsCheck may help when path/plan/rule combinations become broad
+enough for property-based tests. Stryker.NET may help after safety decisions for rules,
+planning, conflicts, backup, rollback, and verification exist. Neither is installed.
+No coverage-percentage gate is defined; behavior and failure-path evidence remain primary.
