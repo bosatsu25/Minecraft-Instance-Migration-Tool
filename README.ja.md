@@ -5,10 +5,10 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 3.0 の Backup Preflight です。** UI では Inspector / Preview を読み取り専用で利用でき、
-Domain / Application では Ready な MigrationPlan から backup 前提条件を明示的に導出できます。
-`ReadyToReplace` の destination だけを backup 対象とし、Ready でない plan は backup を block します。
-version 付き・path 非保持の manifest draft も生成できます。実際の backup IO や移行 write はまだありません。
+**現在は Phase 3.1 の Backup IO foundation です。** UI は引き続き Inspector / Preview のみですが、
+Application + Infrastructure では `ReadyToReplace` destination を対象に、Windows 上で検証付き backup を
+作成できます。backup は明示した local backup parent 配下に新規 `mim-backup-*` owned directory として
+作成します。Migration Execute はまだ実装していません。
 
 ## 目的
 
@@ -18,14 +18,14 @@ version 付き・path 非保持の manifest draft も生成できます。実際
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
 
 検証失敗時は Diagnose → Rollback → Report を想定しています。
-Planner、Preview / Dry Run、Backup Preflight の読み取り専用契約は実装済みで、
-filesystem backup と移行 write は今後実装します。
+Planner、Preview / Dry Run、Backup Preflight に加えて Backup IO foundation まで実装済みです。
+移行 write、restore、rollback は今後実装します。
 
 ## アーキテクチャ
 
 - **Domain:** 不変の観測モデル、決定論的な移行計画、Recommended 選択既定値、明示的な conflict 意図。互換性・nested exclusion は今後実装します。
 - **Application:** ユースケースとポート。Domain を参照します。
-- **Infrastructure:** Windows の属性取得。Application / Domain を参照します。
+- **Infrastructure:** Windows の属性取得と handle-relative backup。Application / Domain を参照します。
 - **App:** WPF の Inspector / Preview View、MVVM ViewModel、依存関係の組み立て。
 - **Tests:** xUnit による動作・統合・ViewModel テストと、責務境界の回帰検出。
 
@@ -98,7 +98,9 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
 4. Phase 2.1: Recommended 選択 preset と明示的な Skip / Replace conflict 意図。
 5. Phase 2.2: Preview / Dry Run モデルと WPF preview flow。
 6. Phase 3.0: Backup Preflight と version 付き manifest draft。filesystem write はなし。
-7. 以後は nested exclusion / 互換性 → Backup IO → Executor → Verifier → Report、
+7. Phase 3.1: owned backup root、handle-relative traversal、cancellation、nested reparse rejection、
+   post-copy fingerprint verification を備えた Windows Backup IO foundation。
+8. 以後は nested exclusion / 互換性 → Executor → Verifier → Report、
    および失敗時の診断・ロールバックを個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
@@ -107,4 +109,4 @@ Phase 2.1 では legacy の Recommended 方向として、既知候補のうち 
 だけを既定 OFF とし、それ以外を選択します。destination conflict は明示的に Skip / Replace
 を指定しない限り未解決のままです。Phase 2.2 の UI dry run は Recommended preset を使い、
 未解決 conflict をそのまま表示します。旧版 `hanemod-client.json` exclusion、Merge、
-size estimate、互換性保証、backup、実際の書き込みは未実装です。
+size estimate、互換性保証、migration write、restore、rollback は未実装です。
