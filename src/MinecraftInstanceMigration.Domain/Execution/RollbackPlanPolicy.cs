@@ -77,6 +77,7 @@ public static class RollbackPlanPolicy
                     rollbackEntries.Add(Manual(
                         rollbackEntries.Count,
                         step,
+                        draftEntry.ExpectedKind,
                         RollbackRecoveryReason.ExecutionFailed));
                     break;
 
@@ -84,6 +85,7 @@ public static class RollbackPlanPolicy
                     rollbackEntries.Add(Manual(
                         rollbackEntries.Count,
                         step,
+                        draftEntry.ExpectedKind,
                         RollbackRecoveryReason.OutcomeUncertain));
                     break;
 
