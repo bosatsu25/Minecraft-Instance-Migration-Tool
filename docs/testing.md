@@ -402,6 +402,9 @@ Coverage includes:
 - Replace recursively removes the reviewed destination tree and copies the source payload;
 - nested destination junctions fail closed without following or modifying the junction target;
 - equal/ancestor/descendant source/destination roots are rejected before mutation;
+- physical overlap through a SUBST alias is rejected after canonical handle-path comparison;
+- missing source and destination roots retain side-specific failure classification;
+- a journal parent inside either migration root is rejected before journal creation;
 - the independent verifier compares source -> destination -> source and records a path-free
   `ExecutionContentFingerprint`;
 - destination tampering after mutation produces `VerificationMismatch`;
