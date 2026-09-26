@@ -426,6 +426,36 @@ therefore a payload migration operation, not an NTFS clone.
 A mutation failure after durable Started remains recovery-required by the Phase 3.5 orchestrator.
 Phase 3.6 does not implement rollback.
 
+
+## Phase 3.7 Guarded rollback IO
+
+Phase 3.7 connects the existing `RollbackPlan` contract to Windows IO.
+
+`RollbackPlanEntry` now carries `ExpectedEntryKind` from the original execution journal draft so
+rollback can re-check the exact top-level type before touching destination data.
+
+`RollbackExecutor` attempts automatic rollback only for `RollbackPlanStatus.Ready`. It preserves the
+plan's reverse-execution order. `RestoreFromBackup` revalidates the completed backup artifact immediately
+before each restore action; an invalid or missing backup blocks the action before storage mutation.
+
+`WindowsRollbackStorage` enforces a mandatory current-state fingerprint guard:
+
+- `DeleteCreatedEntry` opens the destination entry no-follow with delete access, fingerprints that held
+  node, compares it with the execution journal's post-write fingerprint, and deletes that same held node
+  only when it still matches.
+- `RestoreFromBackup` verifies the held destination node against the post-write fingerprint, fingerprints
+  the backup entry, removes the guarded destination node, copies the backup entry create-only, then
+  fingerprints destination and backup again.
+- backup/destination overlap is rejected lexically and again through canonical handle paths;
+- any reparse point, kind drift, missing entry, or fingerprint mismatch before mutation is a guard
+  rejection rather than an overwrite/delete;
+- an error after rollback mutation begins is `RecoveryRequired`.
+
+This is guarded rollback, not transactional rollback. There is no durable rollback-attempt journal yet.
+A crash or IO failure during recursive delete/restore may leave partial rollback state. A later automatic
+retry will normally fail the original post-write fingerprint guard and require manual recovery rather than
+blindly repeating destructive work.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -457,10 +487,10 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
   Preview, backup, and journal setup succeed.
 - **Verify:** Compare actual outcomes against the plan using defined evidence (such as content
   fingerprints), independently of an executor's success flag.
-- **Diagnose / Rollback:** Phase 3.3 defines reverse-order rollback requirements from journal evidence.
-  Automatic rollback is allowed only with a post-write fingerprint guard; Replace additionally requires
-  currently validated backup evidence. Failed/uncertain outcomes remain recovery-required. Future rollback
-  IO must never blindly undo later user edits.
+- **Diagnose / Rollback:** Phase 3.3 defines reverse-order rollback requirements; Phase 3.7 implements
+  guarded Windows rollback IO. Automatic rollback requires the destination to still match its post-write
+  fingerprint, and Replace additionally requires a freshly validated backup. Failed/uncertain execution
+  outcomes and any partial rollback failure remain recovery-required.
 - **Report:** Distinguish succeeded, failed, cancelled, partially changed, rolled back, and
   recovery-required outcomes. Define bounded, redacted diagnostics before persisting any report.
 
