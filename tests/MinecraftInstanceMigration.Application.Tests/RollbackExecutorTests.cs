@@ -323,6 +323,7 @@ public sealed class RollbackExecutorTests
         public Task<RollbackStorageResult> ApplyAsync(
             string destinationRoot,
             string? backupRoot,
+            RollbackBackupEvidence? backupEvidence,
             RollbackPlanEntry action,
             CancellationToken cancellationToken)
         {
