@@ -5,8 +5,8 @@
 A planned Windows desktop tool for selectively moving Minecraft user data from an old
 instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 0 foundation.** The application is a static WPF shell. It does not inspect,
-copy, back up, or modify Minecraft files. It is not ready for real migrations.
+**Status: Phase 1 read-only Inspector.** Select a local folder and inspect its metadata and
+eleven known direct children. It does not copy, back up, or modify files and is not ready for migrations.
 
 ## Why
 
@@ -15,16 +15,15 @@ explicit backup, and verification. The intended flow is:
 
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
 
-On verification failure: Diagnose → Rollback → Report. These operations are future work;
-Phase 0 establishes the boundaries and checks needed to develop them safely.
+On verification failure: Diagnose → Rollback → Report. Everything after Inspect is future work.
 
 ## Architecture
 
-- **Domain:** pure rules and value models (not yet implemented).
+- **Domain:** immutable observation models; migration rules are future work.
 - **Application:** use cases and ports, referencing Domain.
-- **Infrastructure:** future filesystem adapters, referencing Application/Domain.
-- **App:** WPF views, future MVVM view models, and composition root.
-- **Tests:** one xUnit project per non-UI layer, with architecture regression checks.
+- **Infrastructure:** Windows metadata adapter, referencing Application/Domain.
+- **App:** WPF view, MVVM presentation state, and composition root.
+- **Tests:** xUnit behavior/integration/ViewModel tests and architecture regression checks.
 
 App references Application and Infrastructure for composition; Infrastructure never flows
 back into Application or Domain. See [architecture](docs/architecture.md).
@@ -45,6 +44,20 @@ dotnet run --project src/MinecraftInstanceMigration.App --configuration Release 
 Dependency restore requires access to NuGet. The app itself has no network functionality.
 The libraries target `net10.0`; the WPF host targets `net10.0-windows`.
 Do not change target frameworks to bypass a missing Windows/SDK environment.
+
+## Using the Inspector
+
+Choose **Browse**, select a local folder (any name is accepted), then **Inspect**.
+An absolute local drive path can also be entered. **Cancel** stops between metadata calls.
+Changing the input clears previous observations. Inspect checks only:
+`options.txt`, `config`, `resourcepacks`, `shaderpacks`, `schematics`, `saves`,
+`screenshots`, `XaeroWaypoints`, `XaeroWorldMap`, `itemscroller`, and `g4mespeed`.
+
+The table separates expected kind from actual state. Missing is distinct from inaccessible
+or unavailable. Links are reported without following them; a link anywhere in the root path
+blocks inspection. No recursion or content reading occurs. Known names do not establish a
+Minecraft instance, compatibility, or migration eligibility. Results are not an atomic snapshot.
+UNC, mapped network drives, device paths, relative paths, and parent traversal are unsupported.
 
 ## Verification
 

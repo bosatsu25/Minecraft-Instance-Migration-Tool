@@ -1,10 +1,10 @@
 # Architecture
 
-## Phase 0 boundaries
+## Layer boundaries
 
 | Project | Responsibility | Allowed product references |
 | --- | --- | --- |
-| Domain | Pure migration policies and value models, in later phases | None |
+| Domain | Pure observation models; future migration policies | None |
 | Application | Use cases, orchestration, ports for external effects | Domain |
 | Infrastructure | Filesystem and other adapters implementing Application ports | Application, Domain |
 | App | WPF views, MVVM view models, composition | Application, Infrastructure |
@@ -14,16 +14,52 @@ view models depend on Application contracts, not concrete adapters. Infrastructu
 never be referenced by Application/Domain. Test projects are not production dependencies.
 
 Only App targets `net10.0-windows` and enables WPF. Other projects target `net10.0`.
-Domain, Application, and Infrastructure intentionally contain no product types yet.
-Empty assemblies establish reference boundaries without inventing a migration API.
+The Windows metadata implementation remains in Infrastructure; its runtime rejects non-Windows hosts.
 
 ## MVVM
 
-Views own layout and UI-only behavior. Future view models translate UI commands into
+Views own layout and UI-only behavior. View models translate UI commands into
 Application requests and expose presentation state. Rules, exclusions, plan validation,
 backup policy, and verification decisions must remain outside views/view models.
-The static shell has no state or commands, so there is no artificial view model, service
-container, or MVVM framework. Add those only when a concrete use case warrants them.
+InspectorViewModel exposes input, busy/cancel state and observations. MainWindow composes the
+use case and native adapter and supplies the folder picker. No MVVM framework or DI container is needed.
+
+## Phase 1 observation contract
+
+`IInstanceInspector.InspectAsync` accepts a candidate path and cancellation token.
+`IInspectionFileSystem.OpenRoot` returns a disposable `IInspectionSession`: root state plus
+single-name `ObserveChild`. Application requests exactly eleven catalog names, independent of UI.
+The result has no paths or content. Expected kind and actual state are distinct; mismatch is
+observable data, not migration eligibility. Domain defensively copies the observations.
+
+States: Missing, File, Directory, ReparsePoint, Inaccessible, InvalidPath, Unavailable.
+A non-directory root produces no child observations. ReparsePoint at the root also means
+an ancestor blocked lookup. Unavailable includes sharing violations and other IO errors.
+`KnownEntries` distinguishes NotInspected, NoneObserved, Present, and Indeterminate.
+Presence takes precedence over unknown siblings; `IsComplete` separately exposes gaps.
+Complete means all requested metadata observations succeeded (including known absence/links),
+not that contents, Minecraft validity, compatibility, or migration safety were checked.
+
+The Windows adapter opens existing objects for attributes only. It opens the drive root once,
+then uses single-component `NtCreateFile` names relative to retained parent handles, with
+`OBJ_DONT_REPARSE`, `FILE_OPEN_REPARSE_POINT`, and `FILE_OPEN_NO_RECALL`.
+It queries attributes on the resulting handles, never reopens children by absolute path.
+Ancestors deny write/delete sharing to prevent rename; sharing alone does not prevent reparse
+conversion, which is why handle-relative resolution is required. No data/list/write access,
+enumeration, content read, creation, or diagnostic file is requested by the adapter.
+Input validation rejects nonlocal/ambiguous path syntax before native observation.
+
+Native contract references: [NtCreateFile](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile),
+[OBJECT_ATTRIBUTES](https://learn.microsoft.com/en-us/windows/win32/api/ntdef/ns-ntdef-_object_attributes),
+[CreateFile](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
+Windows may permit attribute reads via the parent's listing permission; the ACL fixture denies
+both routes ([Microsoft explanation](https://devblogs.microsoft.com/oldnewthing/20150428-00/?p=44994)).
+
+Cancellation remains OperationCanceledException in the use case; unexpected programming errors
+propagate. The UI catches boundary failures, displays their exception category without private
+messages, and permits retry. Input is held only in memory. No logs or reports are persisted.
+Metadata calls run off the UI thread and cannot be interrupted mid-call. Results are non-atomic,
+can become stale, and must never authorize future writes without revalidation.
 
 ## Migration Engine direction (not implemented)
 
