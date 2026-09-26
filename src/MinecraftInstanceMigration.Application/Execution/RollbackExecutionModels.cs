@@ -1,3 +1,4 @@
+using MinecraftInstanceMigration.Application.Backup;
 using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Execution;
 
@@ -32,11 +33,16 @@ public sealed record RollbackStorageResult(
     public bool IsApplied => Status == RollbackStorageStatus.Applied;
 }
 
+public sealed record RollbackBackupEvidence(
+    BackupPlan Plan,
+    BackupVerificationSummary Verification);
+
 public interface IRollbackStorage
 {
     Task<RollbackStorageResult> ApplyAsync(
         string destinationRoot,
         string? backupRoot,
+        RollbackBackupEvidence? backupEvidence,
         RollbackPlanEntry action,
         CancellationToken cancellationToken);
 }
