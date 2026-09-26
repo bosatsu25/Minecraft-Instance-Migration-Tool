@@ -5,10 +5,10 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 2.2 の Preview / Dry Run です。** UI では単一フォルダの Inspector に加え、
-source / destination の両方を読み取り専用で調査して移行 preview を生成できます。
-Recommended preset を適用し、Copy / Replace / Skip / No source / Needs decision / Blocked を表示します。
-コピー・バックアップ・削除・変更は行いません。
+**現在は Phase 3.0 の Backup Preflight です。** UI では Inspector / Preview を読み取り専用で利用でき、
+Domain / Application では Ready な MigrationPlan から backup 前提条件を明示的に導出できます。
+`ReadyToReplace` の destination だけを backup 対象とし、Ready でない plan は backup を block します。
+version 付き・path 非保持の manifest draft も生成できます。実際の backup IO や移行 write はまだありません。
 
 ## 目的
 
@@ -18,7 +18,8 @@ Recommended preset を適用し、Copy / Replace / Skip / No source / Needs deci
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
 
 検証失敗時は Diagnose → Rollback → Report を想定しています。
-Planner と Preview / Dry Run の読み取り専用契約は実装済みで、書き込みを伴う機能は今後実装します。
+Planner、Preview / Dry Run、Backup Preflight の読み取り専用契約は実装済みで、
+filesystem backup と移行 write は今後実装します。
 
 ## アーキテクチャ
 
@@ -96,7 +97,8 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
 3. Phase 2: 読み取り専用で決定論的な Migration Planner コア。
 4. Phase 2.1: Recommended 選択 preset と明示的な Skip / Replace conflict 意図。
 5. Phase 2.2: Preview / Dry Run モデルと WPF preview flow。
-6. 以後は nested exclusion / 互換性 → Backup → Executor → Verifier → Report、
+6. Phase 3.0: Backup Preflight と version 付き manifest draft。filesystem write はなし。
+7. 以後は nested exclusion / 互換性 → Backup IO → Executor → Verifier → Report、
    および失敗時の診断・ロールバックを個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。

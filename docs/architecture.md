@@ -149,6 +149,38 @@ analysis, or exclusion enforcement because Phase 1 metadata observation does not
 No preview result authorizes a write. Future Backup / Execute must revalidate roots and observations
 against the reviewed intent because both inspection and preview can become stale.
 
+
+## Phase 3.0 Backup Preflight contract
+
+Backup begins with a read-only Domain preflight rather than immediate filesystem copying.
+
+`BackupPlanPolicy.Create` accepts an existing `MigrationPlan`:
+
+- a migration plan that is not `Ready` produces a blocked backup plan;
+- only entries with `ReadyToReplace` require destination backup;
+- copy-to-missing-destination entries do not require backup;
+- Skip / NoSource / Excluded entries do not require backup;
+- replacement destinations must still be observed as File or Directory; malformed replacement
+  intent fails closed instead of being silently accepted.
+
+A backup plan is one of `NotRequired`, `Ready`, or `Blocked`. A `Ready` plan can produce a
+versioned `BackupManifestDraft` containing only instance-relative known entry names, expected kinds,
+and observed destination states. It deliberately contains no machine-specific source, destination,
+or backup paths and is not evidence that any bytes were copied.
+
+This phase adds no Infrastructure adapter and performs no production filesystem writes. That is
+intentional. Before Backup IO is implemented, the next phase must define and test all of:
+
+- where backup roots may be created and how destination/backup overlap is rejected;
+- handle-safe traversal and containment for nested content;
+- reparse point / junction policy at every depth;
+- how partial backup state is represented after cancellation or failure;
+- how backup completeness is verified independently of a copy success flag;
+- how manifest entries bind to actual copied bytes without leaking private paths;
+- what cleanup is safe after a failed backup, especially under path replacement races.
+
+A preflight or manifest draft never authorizes Execute.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -172,8 +204,9 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Preview / Dry Run:** The implemented read-only preview presents the same plan without writes,
   including exclusions, planned actions, blockers, unresolved conflicts, and backup intent. Size estimates
   remain unavailable until a later bounded inventory design exists. Do not compute a different implicit plan at execution.
-- **Backup:** Establish and verify recoverable destination state before modifying it. Inability
-  to establish a backup must stop execution. Define crash recovery and manifest format before implementing writes.
+- **Backup:** Phase 3.0 implements a fail-closed preflight and versioned manifest draft only.
+  Future Backup IO must establish and independently verify recoverable destination state before modifying it;
+  inability to prove a complete backup must stop execution.
 - **Execute:** Revalidate roots and source/destination state against the reviewed plan.
   Reject stale plans, unsafe paths, or changed collision assumptions; cancellation and partial writes need explicit outcomes.
 - **Verify:** Compare actual outcomes against the plan using defined evidence (such as content

@@ -5,10 +5,10 @@
 A planned Windows desktop tool for selectively moving Minecraft user data from an old
 instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 2.2 Preview / Dry Run.** The app can inspect a single folder or inspect source and
-destination folders together to generate a read-only migration preview. The preview applies the
-Recommended selection preset, shows planned Copy / Replace / Skip / No source / Needs decision /
-Blocked outcomes, and does not copy, back up, delete, or modify files.
+**Status: Phase 3.0 Backup Preflight.** The app can inspect and preview a migration read-only.
+The Domain/Application layers can now derive an explicit backup preflight from a ready migration plan:
+only `ReadyToReplace` destinations require backup, non-ready plans block backup, and a versioned,
+path-free manifest draft can be produced. No production backup IO or migration writes exist yet.
 
 ## Why
 
@@ -17,8 +17,8 @@ explicit backup, and verification. The intended flow is:
 
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
 
-On verification failure: Diagnose → Rollback → Report. Preview / Dry Run is now implemented as a
-read-only projection of the existing plan; every write-capable stage remains future work.
+On verification failure: Diagnose → Rollback → Report. Preview / Dry Run and Backup Preflight are
+implemented as read-only contracts; filesystem backup IO and every migration write remain future work.
 
 ## Architecture
 
@@ -94,7 +94,8 @@ See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for 
 3. Phase 2: deterministic read-only Migration Planner core.
 4. Phase 2.1: Recommended selection preset and explicit Skip / Replace conflict intent.
 5. Phase 2.2: Preview / Dry Run model and WPF preview flow.
-6. Separate later changes: nested exclusions / compatibility → Backup → Executor → Verifier → Report,
+6. Phase 3.0: Backup Preflight and versioned manifest draft, with no filesystem writes.
+7. Separate later changes: nested exclusions / compatibility → Backup IO → Executor → Verifier → Report,
    with diagnosis and rollback failure paths.
 
 Each node gets a focused issue/PR and its own acceptance tests before the next expansion.
