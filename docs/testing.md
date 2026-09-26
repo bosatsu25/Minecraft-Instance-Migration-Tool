@@ -420,3 +420,35 @@ nested traversal use handles and never intentionally follow reparse targets.
 
 This phase does not prove exact NTFS metadata preservation. ACLs, alternate data streams, and complete
 timestamps remain outside the payload contract.
+
+
+## Phase 3.7: Guarded rollback IO
+
+Phase 3.7 performs destructive rollback only on owned temporary Windows fixtures.
+
+Domain/Application coverage includes:
+
+- rollback actions preserve the original expected entry kind;
+- NotRequired / RecoveryRequired plans never cross the automatic storage boundary;
+- DeleteCreatedEntry does not require backup validation;
+- RestoreFromBackup revalidates the completed backup immediately before storage;
+- invalid backup blocks restore before destination mutation;
+- a first fingerprint guard rejection is Blocked;
+- a guard rejection after an earlier rollback action is RecoveryRequired;
+- cancellation before rollback performs no storage action;
+- cancellation after an earlier applied rollback is RecoveryRequired;
+- storage failures after mutation begins remain RecoveryRequired.
+
+Windows integration coverage includes:
+
+- an Applied Copy is deleted only while its current destination fingerprint matches journal evidence;
+- editing a copied destination after migration rejects rollback and preserves the edit;
+- an Applied Replace can restore the verified backup end-to-end;
+- the restored destination is independently fingerprinted against a stable backup;
+- tampering with the completed backup blocks restore before destination mutation;
+- nested backup reparse points fail closed and their target is never followed.
+
+Rollback is intentionally not described as transactionally crash-safe. No durable rollback-attempt
+journal exists in Phase 3.7. A failure after rollback mutation starts may leave partial state and is
+reported as RecoveryRequired. Automatic retry must still satisfy the original post-write fingerprint
+guard; it never blindly deletes or restores over user changes.
