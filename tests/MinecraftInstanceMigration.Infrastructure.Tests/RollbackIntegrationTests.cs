@@ -55,6 +55,7 @@ public sealed class RollbackIntegrationTests
             await new WindowsRollbackStorage().ApplyAsync(
                 destination,
                 null,
+                null,
                 action,
                 TestContext.Current.CancellationToken);
 
@@ -108,6 +109,7 @@ public sealed class RollbackIntegrationTests
         RollbackStorageResult rollback =
             await new WindowsRollbackStorage().ApplyAsync(
                 destination,
+                null,
                 null,
                 action,
                 TestContext.Current.CancellationToken);
@@ -347,6 +349,19 @@ public sealed class RollbackIntegrationTests
                 TestContext.Current.CancellationToken);
         Assert.True(verification.IsVerified);
 
+        BackupArtifactValidationResult backupValidation =
+            await new BackupArtifactValidator(
+                new WindowsBackupStorage()).ValidateAsync(
+                    backup.BackupRootPath!,
+                    backupPlan,
+                    TestContext.Current.CancellationToken);
+        Assert.True(backupValidation.IsValid);
+        Assert.NotNull(backupValidation.Verification);
+
+        var backupEvidence = new RollbackBackupEvidence(
+            backupPlan,
+            backupValidation.Verification);
+
         string backupRelative = Path.GetRelativePath(
             fixture.Root,
             backup.BackupRootPath!);
@@ -366,6 +381,7 @@ public sealed class RollbackIntegrationTests
             await new WindowsRollbackStorage().ApplyAsync(
                 destination,
                 backup.BackupRootPath,
+                backupEvidence,
                 action,
                 TestContext.Current.CancellationToken);
 
