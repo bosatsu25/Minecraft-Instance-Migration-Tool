@@ -232,6 +232,7 @@ public sealed class ExecutionOrchestrationIntegrationTests
             new ExecutionLiveValidator(inspector),
             new BackupPlanner(),
             new BackupArtifactValidator(backupStorage),
+            new WindowsExecutionWorkspaceSafetyValidator(),
             journal,
             new WindowsExecutionMutationPort(),
             new WindowsExecutionPostWriteVerifier());
