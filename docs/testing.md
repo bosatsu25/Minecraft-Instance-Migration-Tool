@@ -387,3 +387,33 @@ Coverage includes:
 The mutation/verifier ports are test doubles only in this phase. The next production phase must add
 handle-safe single-entry Copy/Replace IO plus an independent fingerprint verifier and then run the same
 ordering against real owned temporary fixtures with deterministic failure injection.
+
+
+## Phase 3.6: Windows mutation / post-write verification
+
+Phase 3.6 is the first production migration-write adapter. All integration tests use only owned
+temporary Windows fixtures.
+
+Coverage includes:
+
+- Copy creates a missing file entry without changing the source;
+- Copy refuses an already existing destination instead of overwriting it;
+- nested source junctions fail closed and their target payload is not copied;
+- Replace recursively removes the reviewed destination tree and copies the source payload;
+- nested destination junctions fail closed without following or modifying the junction target;
+- equal/ancestor/descendant source/destination roots are rejected before mutation;
+- the independent verifier compares source -> destination -> source and records a path-free
+  `ExecutionContentFingerprint`;
+- destination tampering after mutation produces `VerificationMismatch`;
+- full real-port Copy orchestration produces a durable Applied journal record;
+- full real-port Replace orchestration first creates/revalidates backup, replaces the destination,
+  preserves the backup payload, independently verifies output, and persists Applied;
+- a nested source reparse that passes top-level live inspection but fails during mutation produces
+  durable Failed recovery evidence.
+
+The mutation adapter rechecks top-level state after durable Started, so a race between Application
+live inspection and mutation still fails closed. Output creation is create-only. Replace deletion and
+nested traversal use handles and never intentionally follow reparse targets.
+
+This phase does not prove exact NTFS metadata preservation. ACLs, alternate data streams, and complete
+timestamps remain outside the payload contract.

@@ -378,6 +378,50 @@ This phase introduces two ports but no Infrastructure implementation:
 Therefore Phase 3.5 proves orchestration ordering and failure semantics only. It performs no production
 Minecraft destination writes.
 
+
+## Phase 3.6 Windows mutation and independent post-write verification
+
+Phase 3.6 implements the two production ports introduced in Phase 3.5.
+
+`WindowsExecutionMutationPort` accepts exactly one reviewed journal step. Both source and destination
+roots must be distinct, non-overlapping local-drive directories. Their path components are opened
+one-at-a-time with retained handles and no-follow semantics.
+
+For Copy:
+
+- the source top-level entry must still match the reviewed kind;
+- the destination top-level name must still be absent;
+- output nodes use create-only semantics;
+- nested source entries are opened relative to held parent handles;
+- any reparse point at any depth fails closed.
+
+For Replace:
+
+- source and destination top-level kinds are rechecked after durable Started;
+- the existing destination tree is removed recursively by handle without following reparse points;
+- source content is then copied create-only into the now-vacant reviewed name;
+- races that make the destination missing/change/collide fail the mutation instead of overwriting an
+  unexpected object.
+
+Source and destination roots may not be equal or ancestor/descendant of each other. This prevents
+self-copy/self-delete recursion.
+
+`WindowsExecutionPostWriteVerifier` is independent of the mutation success flag. It fingerprints:
+
+1. source entry,
+2. destination entry,
+3. source entry again.
+
+The fingerprint covers deterministic relative structure, regular-file default-stream bytes,
+file/directory counts, total bytes, and SHA-256. If source #1 != source #2, verification reports
+`SourceChanged`; if stable source != destination, it reports `VerificationMismatch`.
+
+Mutation still does not preserve ACLs, alternate data streams, or full timestamp metadata. Replace is
+therefore a payload migration operation, not an NTFS clone.
+
+A mutation failure after durable Started remains recovery-required by the Phase 3.5 orchestrator.
+Phase 3.6 does not implement rollback.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -404,9 +448,9 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Backup:** Phase 3.1 creates an owned verified artifact; Phase 3.2 can revalidate a completed artifact
   read-only against ownership, manifest, plan, exact top-level membership, no-follow traversal, and a
   recomputed tree fingerprint. A failed/cancelled/invalid artifact is never accepted as recovery evidence.
-- **Execute:** Phase 3.5 now provides Application orchestration around live metadata revalidation,
-  backup revalidation, durable journal barriers, a mutation port, independent post-write verification,
-  and durable terminal evidence. Production mutation/verification adapters remain future work.
+- **Execute:** Phase 3.5 provides orchestration; Phase 3.6 implements Windows single-entry mutation and
+  independent verification. Future UI/execution entrypoints must still compose these ports only after
+  Preview, backup, and journal setup succeed.
 - **Verify:** Compare actual outcomes against the plan using defined evidence (such as content
   fingerprints), independently of an executor's success flag.
 - **Diagnose / Rollback:** Phase 3.3 defines reverse-order rollback requirements from journal evidence.

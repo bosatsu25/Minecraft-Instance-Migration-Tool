@@ -9,8 +9,23 @@ public enum ExecutionMutationStatus
     Cancelled,
 }
 
+public enum ExecutionMutationFailureKind
+{
+    InvalidPath,
+    OverlappingRoots,
+    SourceChanged,
+    DestinationChanged,
+    ReparsePoint,
+    AccessDenied,
+    IoFailure,
+}
+
 public sealed record ExecutionMutationResult(
-    ExecutionMutationStatus Status);
+    ExecutionMutationStatus Status,
+    ExecutionMutationFailureKind? FailureKind = null)
+{
+    public bool IsApplied => Status == ExecutionMutationStatus.Applied;
+}
 
 public interface IExecutionMutationPort
 {
@@ -25,11 +40,25 @@ public enum ExecutionPostWriteVerificationStatus
 {
     Verified,
     Failed,
+    Cancelled,
+}
+
+public enum ExecutionPostWriteVerificationFailureKind
+{
+    InvalidPath,
+    OverlappingRoots,
+    SourceChanged,
+    DestinationMissing,
+    ReparsePoint,
+    VerificationMismatch,
+    AccessDenied,
+    IoFailure,
 }
 
 public sealed record ExecutionPostWriteVerificationResult(
     ExecutionPostWriteVerificationStatus Status,
-    ExecutionContentFingerprint? Fingerprint = null)
+    ExecutionContentFingerprint? Fingerprint = null,
+    ExecutionPostWriteVerificationFailureKind? FailureKind = null)
 {
     public bool IsVerified =>
         Status == ExecutionPostWriteVerificationStatus.Verified &&
@@ -39,6 +68,7 @@ public sealed record ExecutionPostWriteVerificationResult(
 public interface IExecutionPostWriteVerifier
 {
     Task<ExecutionPostWriteVerificationResult> VerifyAsync(
+        string sourceRoot,
         string destinationRoot,
         ExecutionJournalEntry step,
         CancellationToken cancellationToken);

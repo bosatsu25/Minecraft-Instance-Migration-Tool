@@ -233,6 +233,7 @@ public sealed class ExecutionOrchestrator(
             try
             {
                 verification = await postWriteVerifier.VerifyAsync(
+                    request.SourceRoot,
                     request.DestinationRoot,
                     step,
                     CancellationToken.None);

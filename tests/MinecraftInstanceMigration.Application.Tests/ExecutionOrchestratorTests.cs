@@ -473,6 +473,7 @@ public sealed class ExecutionOrchestratorTests
                     new string('B', 64)));
 
         public Task<ExecutionPostWriteVerificationResult> VerifyAsync(
+            string sourceRoot,
             string destinationRoot,
             ExecutionJournalEntry step,
             CancellationToken cancellationToken)

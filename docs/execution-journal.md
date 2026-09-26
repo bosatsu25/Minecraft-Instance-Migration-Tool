@@ -169,3 +169,22 @@ Started as Uncertain.
 Phase 3.5 intentionally leaves `IExecutionMutationPort` and `IExecutionPostWriteVerifier` without
 production implementations. This keeps destructive filesystem behavior out until handle-safe Copy /
 Replace and independent verification can be tested together on owned fixtures.
+
+
+## Phase 3.6 production mutation binding
+
+The Phase 3.5 mutation and verifier ports now have Windows implementations.
+
+The mutation adapter is called only after the orchestrator has persisted Started. It reopens source
+and destination roots with handle-relative no-follow rules, rechecks the top-level reviewed kind/state,
+and performs exactly one Copy or Replace step.
+
+The post-write verifier does not trust the mutation return value. It independently reopens both roots,
+computes source/destination/source fingerprints, and only returns Verified when the source was stable
+and destination bytes/tree structure match it.
+
+Only that verifier-produced fingerprint is eligible for durable Applied. If mutation or verification
+fails, the orchestrator persists Failed where possible and returns RecoveryRequired.
+
+Rollback IO remains separate work and must use the journal fingerprint guard before deleting or
+restoring any destination content.
