@@ -221,3 +221,26 @@ Coverage includes:
 The UI does not yet edit Skip / Replace decisions. It also does not report size estimates because
 the bounded Phase 1 Inspector intentionally reads metadata only and does not recursively inventory content.
 A passing preview is not execution authorization; Backup / Execute must revalidate state.
+
+
+## Phase 3.0: Backup Preflight
+
+Phase 3.0 is deliberately read-only. It adds Domain/Application backup preparation without an
+Infrastructure backup writer.
+
+Coverage includes:
+
+- copy-only plans produce `NotRequired`;
+- `ReadyToReplace` produces a `Ready` backup entry;
+- multiple replacement entries preserve migration-plan order;
+- `NeedsDecision` and `Blocked` migration plans block backup;
+- malformed replacement intent whose destination is not File/Directory fails closed;
+- a manifest draft can be created only from a ready backup plan;
+- the manifest draft is schema-versioned and contains relative known names / kinds / observed states only;
+- backup models defensively copy caller collections;
+- Application exposes the same deterministic preflight without filesystem access.
+
+No integration filesystem test is claimed for Phase 3.0 because no production filesystem write
+exists. Before adding Backup IO, tests must cover owned temporary roots, path overlap/containment,
+nested reparse points, cancellation/failure injection, partial-state handling, independent backup
+verification, and safe cleanup behavior. Real Minecraft data must never be used as a fixture.
