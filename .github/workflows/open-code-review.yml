@@ -1,0 +1,47 @@
+name: OpenCodeReview
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ocr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: ${{ vars.OCR_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate configuration
+        shell: bash
+        env:
+          OCR_LLM_URL: ${{ secrets.OCR_LLM_URL }}
+          OCR_LLM_AUTH_TOKEN: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
+          OCR_LLM_MODEL: ${{ vars.OCR_LLM_MODEL }}
+        run: |
+          test -n "$OCR_LLM_URL" || { echo "::error::OCR_LLM_URL secret is required when OCR_ENABLED=true"; exit 1; }
+          test -n "$OCR_LLM_AUTH_TOKEN" || { echo "::error::OCR_LLM_AUTH_TOKEN secret is required when OCR_ENABLED=true"; exit 1; }
+          test -n "$OCR_LLM_MODEL" || { echo "::error::OCR_LLM_MODEL variable is required when OCR_ENABLED=true"; exit 1; }
+
+      - name: Run OpenCodeReview
+        uses: alibaba/open-code-review@bccbc15f785269400735d5255540c231e6c02b6d # v1.12.9
+        with:
+          ocr_version: '1.12.9'
+          llm_url: ${{ secrets.OCR_LLM_URL }}
+          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
+          llm_model: ${{ vars.OCR_LLM_MODEL }}
+          llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
+          language: Japanese
+          effort: medium
+          sticky_summary: 'true'
+          incremental: 'false'
+          resolve_outdated: 'false'
+          route_severity_below: low
+          route_categories: style,documentation
+          upload_artifacts: 'true'
