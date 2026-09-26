@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32.SafeHandles;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
@@ -12,6 +13,7 @@ internal static class ExecutionNativeMethods
     private const uint FileDispositionFlagDelete = 0x00000001;
     private const uint FileDispositionFlagPosixSemantics = 0x00000002;
     private const uint FileDispositionFlagIgnoreReadonlyAttribute = 0x00000010;
+    private const uint VolumeNameGuid = 0x00000001;
 
     internal static void DeleteByHandle(SafeFileHandle handle)
     {
@@ -32,6 +34,34 @@ internal static class ExecutionNativeMethods
         }
     }
 
+    internal static string GetCanonicalVolumePath(SafeFileHandle handle)
+    {
+        uint capacity = 512;
+
+        while (true)
+        {
+            var buffer = new StringBuilder(checked((int)capacity));
+            uint length = GetFinalPathNameByHandleW(
+                handle,
+                buffer,
+                capacity,
+                VolumeNameGuid);
+
+            if (length == 0)
+            {
+                throw new System.ComponentModel.Win32Exception(
+                    Marshal.GetLastWin32Error());
+            }
+
+            if (length < capacity)
+            {
+                return buffer.ToString();
+            }
+
+            capacity = checked(length + 1);
+        }
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct FileDispositionInfoExData
     {
@@ -45,4 +75,11 @@ internal static class ExecutionNativeMethods
         int fileInformationClass,
         ref FileDispositionInfoExData fileInformation,
         uint bufferSize);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandleW(
+        SafeFileHandle fileHandle,
+        StringBuilder filePath,
+        uint filePathLength,
+        uint flags);
 }
