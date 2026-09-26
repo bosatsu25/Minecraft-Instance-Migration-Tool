@@ -1,6 +1,6 @@
 # Testing and verification
 
-## Phase 0 commands
+## Verification commands
 
 Run from the repository root on Windows using the SDK selected by `global.json`:
 
@@ -74,3 +74,33 @@ and clean up only their owned directory. Do not persist private payloads or iden
 Scope Inspector to reads. Define explicit input roots, safe observation models, missing versus
 inaccessible results, reparse-point policy, bounded enumeration, cancellation, and redacted errors.
 Add behavior tests before connecting UI. Phase 0 architecture tests alone do not prove these properties.
+
+## Phase 1 coverage and negative evidence
+
+- Domain: expected/actual kind, missing versus incomplete summaries, immutable result collection.
+- Application: exact eleven-name catalog, root failure without child lookups, partial failure,
+  cancellation before/during inspection, unexpected exceptions and session disposal.
+- Infrastructure: owned temporary Windows fixtures; missing/file/empty roots, mismatches,
+  unknown names, nested locked content, real ACL denial, root/child/ancestor junctions,
+  unsafe inputs and names, and retained ancestor lifetime.
+- App.Tests: input invalidation, folder-picker cancellation, duplicate-start prevention,
+  cancellation of a pending operation (including a late result), and path-free error display.
+
+The read-only integration test snapshots relative names, file bytes, attributes and last-write
+timestamps before/after real inspection. Test setup/snapshot/cleanup may read/write fixture data;
+the product Inspector may not. Last-access times are excluded because Windows may update them.
+Only owned temporary directories are cleaned; ACLs are restored and junctions removed first.
+
+Controlled experiment performed during implementation: temporarily inserted a file write into
+the adapter. `ReadsOnlyKnownMetadataAndChangesNothing` failed its snapshot equality assertion.
+Removed the write; the same test passed. The violating code was never committed.
+
+Review also identified an in-place reparse conversion race. A fixture converts an open root into
+a junction using an attribute-only handle; the former absolute-path child lookup incorrectly
+observed the target directory (RED). Handle-relative lookup now receives Windows status
+`STATUS_REPARSE_POINT_NOT_RESOLVED` and reports Unavailable (GREEN),
+and the fixture remains as `RootConvertedToJunctionDuringSessionNeverExposesTargetChildren`.
+
+These checks do not prove behavior on every Windows filesystem/filter or provide an atomic
+snapshot. UI automation and hosted CI are reported separately; a passing ViewModel test is not
+a visual smoke test. Future writes require their own containment, collision and recovery design.

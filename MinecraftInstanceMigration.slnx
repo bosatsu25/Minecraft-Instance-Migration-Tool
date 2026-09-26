@@ -6,6 +6,7 @@
     <Project Path="src/MinecraftInstanceMigration.Infrastructure/MinecraftInstanceMigration.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/MinecraftInstanceMigration.App.Tests/MinecraftInstanceMigration.App.Tests.csproj" />
     <Project Path="tests/MinecraftInstanceMigration.Application.Tests/MinecraftInstanceMigration.Application.Tests.csproj" />
     <Project Path="tests/MinecraftInstanceMigration.Domain.Tests/MinecraftInstanceMigration.Domain.Tests.csproj" />
     <Project Path="tests/MinecraftInstanceMigration.Infrastructure.Tests/MinecraftInstanceMigration.Infrastructure.Tests.csproj" />

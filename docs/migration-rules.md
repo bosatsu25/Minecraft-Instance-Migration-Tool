@@ -1,6 +1,7 @@
 # Future migration rules
 
-**Design inventory only. No rules or presets are implemented in Phase 0.**
+**Design inventory only. No rules or presets are implemented through Phase 1.**
+Phase 1 observes these eleven names without applying selections, exclusions, or presets.
 The legacy behavior below is supplied by the product brief, not inferred from an inspected legacy codebase.
 
 | Instance-relative candidate | Legacy intent | Recommended preset direction |

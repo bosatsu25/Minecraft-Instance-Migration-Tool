@@ -5,8 +5,8 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 0 の開発基盤です。** アプリは静的な WPF shell のみで、
-Minecraft ファイルの調査・コピー・バックアップ・変更は行いません。実際の移行には使用できません。
+**現在は Phase 1 の読み取り専用 Inspector です。** 選択したローカルフォルダと
+既知の直下 11 項目の属性を調査できます。コピー・バックアップ・変更は行いません。移行には使用できません。
 
 ## 目的
 
@@ -16,15 +16,15 @@ Minecraft ファイルの調査・コピー・バックアップ・変更は行�
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
 
 検証失敗時は Diagnose → Rollback → Report を想定しています。
-これらの機能は今後実装し、Phase 0 では責務境界と検証手段を整備します。
+Inspect より後の機能は今後実装します。
 
 ## アーキテクチャ
 
-- **Domain:** 純粋なルールと値モデル。まだ実装しません。
+- **Domain:** 不変の観測モデル。移行ルールは今後実装します。
 - **Application:** ユースケースとポート。Domain を参照します。
-- **Infrastructure:** 将来のファイルシステム実装。Application / Domain を参照します。
-- **App:** WPF の View、将来の MVVM ViewModel、依存関係の組み立て。
-- **Tests:** UI 以外の各層に xUnit プロジェクトを設け、境界の回帰を検出します。
+- **Infrastructure:** Windows の属性取得。Application / Domain を参照します。
+- **App:** WPF の View、MVVM ViewModel、依存関係の組み立て。
+- **Tests:** xUnit による動作・統合・ViewModel テストと、責務境界の回帰検出。
 
 App は組み立てのため Application / Infrastructure を参照します。
 Application / Domain から Infrastructure を参照しません。
@@ -47,6 +47,20 @@ dotnet run --project src/MinecraftInstanceMigration.App --configuration Release 
 依存関係の restore には NuGet への接続が必要です。アプリ自体に通信機能はありません。
 ライブラリは `net10.0`、WPF は `net10.0-windows` を使用します。
 Windows や SDK がないことを理由にターゲットを変更しないでください。
+
+## Inspector の使い方
+
+**Browse** で任意の名前のローカルフォルダを選び、**Inspect** を押します。
+ローカルドライブの絶対パスを入力することもできます。**Cancel** は属性取得の合間に適用されます。
+入力変更時には以前の結果を消去します。対象は直下の次の 11 項目だけです。
+`options.txt`、`config`、`resourcepacks`、`shaderpacks`、`schematics`、`saves`、
+`screenshots`、`XaeroWaypoints`、`XaeroWorldMap`、`itemscroller`、`g4mespeed`。
+
+期待する種類と実際の状態を別々に表示します。欠落とアクセス拒否・取得失敗は区別します。
+リンクは追跡せず、ルートまたはその祖先がリンクなら調査を停止します。
+再帰走査や内容の読み取りは行いません。既知名の存在は Minecraft インスタンス・互換性・
+移行可否の証明ではありません。結果は複数時点の観測です。
+UNC・ネットワークドライブ・デバイスパス・相対パス・親への遡上は未対応です。
 
 ## 検証
 
