@@ -36,6 +36,7 @@ public sealed class RollbackPlanPolicyTests
         Assert.True(rollback.CanAttemptAutomaticRollback);
         RollbackPlanEntry action = Assert.Single(rollback.Entries);
         Assert.Equal(RollbackActionKind.DeleteCreatedEntry, action.Action);
+        Assert.Equal(ExpectedEntryKind.File, action.ExpectedKind);
         Assert.Equal(fingerprint, action.ExpectedCurrentFingerprint);
     }
 
@@ -54,6 +55,7 @@ public sealed class RollbackPlanPolicyTests
         Assert.Equal(RollbackPlanStatus.Ready, rollback.Status);
         RollbackPlanEntry action = Assert.Single(rollback.Entries);
         Assert.Equal(RollbackActionKind.RestoreFromBackup, action.Action);
+        Assert.Equal(ExpectedEntryKind.Directory, action.ExpectedKind);
         Assert.Equal(fingerprint, action.ExpectedCurrentFingerprint);
     }
 
@@ -99,6 +101,7 @@ public sealed class RollbackPlanPolicyTests
 
         Assert.Equal(RollbackPlanStatus.RecoveryRequired, rollback.Status);
         RollbackPlanEntry action = Assert.Single(rollback.Entries);
+        Assert.Equal(ExpectedEntryKind.Directory, action.ExpectedKind);
         Assert.Equal(reason, action.RecoveryReason);
     }
 
