@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
+using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Execution;
 using MinecraftInstanceMigration.Domain.Inspection;
 using MinecraftInstanceMigration.Infrastructure.Backup;
@@ -361,6 +362,40 @@ internal static class WindowsExecutionTree
         using OpenedNode node = OpenExistingNode(root, name);
         EnsureExpectedKind(node, expectedKind);
         return FingerprintOpenedNode(node, name, cancellationToken);
+    }
+
+    internal static TreeFingerprint FingerprintBackupPlan(
+        SafeFileHandle root,
+        BackupPlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        int files = 0;
+        int directories = 0;
+        long totalBytes = 0;
+
+        foreach (BackupPlanEntry entry in plan.Entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using OpenedNode node = OpenExistingNode(root, entry.Name);
+            EnsureExpectedKind(node, entry.ExpectedKind);
+            AppendFingerprint(
+                node,
+                entry.Name,
+                hash,
+                ref files,
+                ref directories,
+                ref totalBytes,
+                cancellationToken);
+        }
+
+        return new TreeFingerprint(
+            files,
+            directories,
+            totalBytes,
+            Convert.ToHexString(hash.GetHashAndReset()));
     }
 
     internal static TreeFingerprint FingerprintOpenedNode(
