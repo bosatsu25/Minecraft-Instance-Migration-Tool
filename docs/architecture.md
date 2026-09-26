@@ -120,6 +120,35 @@ brief does not establish whether it means one exact relative path, basename-at-a
 case-insensitive Windows matching rule. No execution path exists yet, so no code may claim the
 exclusion is enforced.
 
+
+## Phase 2.2 Preview / Dry Run contract
+
+Preview is a projection of an already-created `MigrationPlan`; it does not recompute selection,
+conflict policy, or filesystem observations. `MigrationPreviewPolicy` maps each current plan
+disposition to a user-facing typed action while preserving the original disposition for detail:
+
+- `ReadyToCopy` -> `Copy`
+- `ReadyToReplace` -> `Replace` and backup required
+- `SkippedDestinationConflict` -> `Skip`
+- `SourceMissing` -> `NoSource`
+- `DestinationConflict` -> `NeedsDecision`
+- unselected candidates -> `Excluded`
+- safety blockers -> `Blocked`
+
+Unknown future plan dispositions fail closed with an exception so Preview cannot silently invent a
+meaning after Planner evolves. Preview copies plan status, unknown selections, and conflict-decision
+issues into its own immutable snapshot.
+
+The WPF Preview tab inspects source and destination with the existing read-only Inspector, creates a
+Recommended plan, and projects that exact plan into Preview. It does not offer conflict editing yet:
+an existing destination is visibly `NeedsDecision`. Changing either input clears the prior preview;
+cancellation and error handling do not retain a late or partial result.
+
+Phase 2.2 intentionally has no recursive size estimate, hash, nested file inventory, compatibility
+analysis, or exclusion enforcement because Phase 1 metadata observation does not provide those facts.
+No preview result authorizes a write. Future Backup / Execute must revalidate roots and observations
+against the reviewed intent because both inspection and preview can become stale.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -140,8 +169,9 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
   reported as incomplete inspection, not silently treated as absent.
 - **Plan:** Domain produces explicit top-level candidate intent, selection defaults, blockers, and typed
   destination conflict intent. Nested exclusions, Merge behavior, compatibility, and execution state remain separate.
-- **Preview / Dry Run:** Present that same plan without writes, including exclusions, conflicts,
-  size estimates, uncertainty, and required confirmations. Do not compute a different implicit plan at execution.
+- **Preview / Dry Run:** The implemented read-only preview presents the same plan without writes,
+  including exclusions, planned actions, blockers, unresolved conflicts, and backup intent. Size estimates
+  remain unavailable until a later bounded inventory design exists. Do not compute a different implicit plan at execution.
 - **Backup:** Establish and verify recoverable destination state before modifying it. Inability
   to establish a backup must stop execution. Define crash recovery and manifest format before implementing writes.
 - **Execute:** Revalidate roots and source/destination state against the reviewed plan.

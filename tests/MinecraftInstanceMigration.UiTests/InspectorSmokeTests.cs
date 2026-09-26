@@ -18,7 +18,7 @@ public sealed class InspectorSmokeTests
     {
         using var session = UiSession.Open();
         Assert.Equal("Minecraft Instance Migration", session.Window.Title);
-        foreach (string id in new[] { "CandidatePath", "Inspect", "Cancel", "RootState", "Entries" })
+        foreach (string id in new[] { "CandidatePath", "Inspect", "Cancel", "RootState", "Entries", "PreviewTab" })
         {
             Assert.NotNull(session.Find(id));
         }
@@ -37,11 +37,11 @@ public sealed class InspectorSmokeTests
         using var session = UiSession.Open();
         session.Inspect(fixture.Root);
         Assert.Contains("Directory", session.Find("RootState").Name);
-        Assert.Equal(new[] { "options.txt", "File", "File", "True" }, session.RenderedEntryCells("options.txt"));
-        Assert.Equal(new[] { "config", "Directory", "Directory", "True" }, session.RenderedEntryCells("config"));
-        Assert.Equal(new[] { "saves", "Directory", "Directory", "True" }, session.RenderedEntryCells("saves"));
+        Assert.Equal(new[] { "options.txt", "File", "File", "True" }, session.RenderedEntryCells("Entries", "options.txt"));
+        Assert.Equal(new[] { "config", "Directory", "Directory", "True" }, session.RenderedEntryCells("Entries", "config"));
+        Assert.Equal(new[] { "saves", "Directory", "Directory", "True" }, session.RenderedEntryCells("Entries", "saves"));
         Assert.Equal(new[] { "resourcepacks", "Directory", "Missing", "Unknown" },
-            session.RenderedEntryCells("resourcepacks"));
+            session.RenderedEntryCells("Entries", "resourcepacks"));
 
         Assert.Equal(before, fixture.Snapshot());
     }
@@ -54,9 +54,39 @@ public sealed class InspectorSmokeTests
         string[] before = fixture.Snapshot();
         using var session = UiSession.Open();
         session.Inspect(fixture.Root);
-        Assert.Equal(new[] { "config", "Directory", "File", "False" }, session.RenderedEntryCells("config"));
+        Assert.Equal(new[] { "config", "Directory", "File", "False" },
+            session.RenderedEntryCells("Entries", "config"));
 
         Assert.Equal(before, fixture.Snapshot());
+    }
+
+    [Fact]
+    public void GeneratesReadOnlyMigrationPreview()
+    {
+        using var source = new UiFixture();
+        using var destination = new UiFixture();
+        Directory.CreateDirectory(source.At("config"));
+        Directory.CreateDirectory(source.At("saves"));
+        string[] sourceBefore = source.Snapshot();
+        string[] destinationBefore = destination.Snapshot();
+
+        using var session = UiSession.Open();
+        session.SelectPreviewTab();
+        session.GeneratePreview(source.Root, destination.Root);
+
+        Assert.Contains("Ready", session.Find("PreviewPlanStatus").Name);
+        string[] config = session.RenderedEntryCells("PreviewEntries", "config");
+        Assert.Contains("Copy", config);
+        Assert.Contains("ReadyToCopy", config);
+        Assert.Contains("Directory", config);
+        Assert.Contains("Missing", config);
+
+        string[] saves = session.RenderedEntryCells("PreviewEntries", "saves");
+        Assert.Contains("Excluded", saves);
+        Assert.Contains("ExcludedBySelection", saves);
+
+        Assert.Equal(sourceBefore, source.Snapshot());
+        Assert.Equal(destinationBefore, destination.Snapshot());
     }
 
     private sealed class UiSession : IDisposable
@@ -113,12 +143,38 @@ public sealed class InspectorSmokeTests
             Assert.True(finished.Success, "Inspector did not finish in ten seconds.");
         }
 
-        public string[] RenderedEntryCells(string name) => Find("Entries")
-            .FindAllDescendants(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.DataItem))
-            .Single(row => row.Name.StartsWith($"EntryObservation {{ Name = {name},", StringComparison.Ordinal))
-            .FindAllDescendants(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Text))
-            .Select(cell => cell.Name)
-            .ToArray();
+        public void SelectPreviewTab()
+        {
+            Find("PreviewTab").AsTabItem().Select();
+            var visible = Retry.WhileTrue(
+                () => Window.FindFirstDescendant(cf => cf.ByAutomationId("PreviewSourcePath")) is null,
+                timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false);
+            Assert.True(visible.Success, "Preview tab did not become available.");
+        }
+
+        public void GeneratePreview(string sourcePath, string destinationPath)
+        {
+            Find("PreviewSourcePath").AsTextBox().Text = sourcePath;
+            Find("PreviewDestinationPath").AsTextBox().Text = destinationPath;
+            Find("GeneratePreview").AsButton().Invoke();
+            var finished = Retry.WhileFalse(
+                () => Find("PreviewStatus").Name.StartsWith("Dry-run preview ", StringComparison.Ordinal),
+                timeout: TimeSpan.FromSeconds(15), throwOnTimeout: false);
+            Assert.True(finished.Success, "Dry-run preview did not finish in fifteen seconds.");
+        }
+
+        public string[] RenderedEntryCells(string gridId, string name)
+        {
+            string[][] rows = Find(gridId)
+                .FindAllDescendants(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.DataItem))
+                .Select(row => row
+                    .FindAllDescendants(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Text))
+                    .Select(cell => cell.Name)
+                    .ToArray())
+                .ToArray();
+
+            return Assert.Single(rows, cells => cells.Contains(name, StringComparer.Ordinal));
+        }
 
         public bool CloseGracefully()
         {
