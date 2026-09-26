@@ -5,10 +5,10 @@
 A planned Windows desktop tool for selectively moving Minecraft user data from an old
 instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 3.6 Windows Mutation + Independent Verification.** The app UI remains Inspector / Preview only.
-Infrastructure now implements handle-relative, no-follow single-entry Copy / Replace mutation and an
-independent source-vs-destination post-write fingerprint verifier. These adapters can perform real writes
-only when invoked through the execution pipeline; UI Execute controls and rollback IO are still absent.
+**Status: Phase 3.7 Guarded Rollback IO.** The app UI remains Inspector / Preview only. Infrastructure can
+now execute guarded automatic rollback for journal-proven Applied steps: copied entries are deleted only
+while their post-write fingerprint still matches, and replaced entries are restored only from a currently
+validated backup. Execute / rollback UI controls and reporting are still absent.
 
 ## Why
 
@@ -17,8 +17,9 @@ explicit backup, and verification. The intended flow is:
 
 Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
 
-On verification failure: Diagnose → Rollback → Report. Backup IO can now create and independently
-verify a backup artifact, but migration Execute and rollback remain future work.
+On verification failure: Diagnose → Rollback → Report. The backend now contains verified backup,
+durable execution evidence, production Copy / Replace, independent verification, and guarded rollback IO.
+User-facing Execute / Rollback controls and reporting remain future work.
 
 ## Architecture
 
@@ -103,7 +104,8 @@ See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for 
 10. Phase 3.4: durable Windows execution-journal storage with append/flush ordering and crash-tail recovery.
 11. Phase 3.5: live revalidation + execution orchestration contract, with mutation/verifier ports only.
 12. Phase 3.6: Windows handle-relative Copy / Replace mutation plus independent post-write verification.
-13. Separate later changes: rollback IO → end-to-end execution UI/reporting → release hardening.
+13. Phase 3.7: fingerprint-guarded DeleteCreatedEntry / RestoreFromBackup rollback IO.
+14. Separate later changes: end-to-end execution UI/reporting → rollback-attempt durability → release hardening.
 
 Each node gets a focused issue/PR and its own acceptance tests before the next expansion.
 Legacy selection candidates are documented in [migration rules](docs/migration-rules.md).
@@ -112,4 +114,4 @@ except `saves` and `screenshots`, which remain opt-in. Destination conflicts rem
 unless a caller explicitly chooses Skip or Replace. Phase 2.2 exposes a UI dry-run using the
 Recommended preset; this UI currently displays unresolved conflicts rather than editing decisions.
 The legacy `hanemod-client.json` exclusion, Merge semantics, size estimates, compatibility claims,
-restore IO, rollback IO, and execution UI/reporting are not implemented.
+execution UI/reporting and durable resumable rollback-attempt journaling are not implemented.
