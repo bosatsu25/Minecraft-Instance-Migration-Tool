@@ -104,8 +104,8 @@ Completed / Cancelled / Blocked / RecoveryRequired
 - Execute 前には journal parent を必須にする
 - execution から例外や cancellation exception が漏れた場合は保守的に `RecoveryRequired` とする
 
-Phase 4.0 自体は WPF UI や filesystem adapter を追加していません。
-次の Phase 4.1 では、この workflow に selection と Skip / Replace conflict 編集 UI を接続する予定です。
+Phase 4.0 自体では WPF UI や filesystem adapter を追加していませんでした。
+Phase 4.1 では、この workflow に selection と Skip / Replace conflict 編集 UI を接続し、Backup / Execute UI は引き続き対象外としています。
 
 ## Phase 4.1 selection / conflict 編集
 
@@ -377,10 +377,10 @@ warnings は build failure として扱います。
 13. Phase 3.7 — guarded rollback IO
 14. Phase 3.8 — durable rollback-attempt journal
 15. Phase 4.0 — Application 所有の migration workflow / session
+16. Phase 4.1 — selection / conflict 編集 UI
 
 次の大きな領域:
 
-16. Phase 4.1 — selection / conflict 編集 UI
 17. End-to-end Execute / Rollback UI
 18. explicit Recovery UX と Report
 19. release hardening
