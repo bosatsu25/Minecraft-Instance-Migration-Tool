@@ -74,7 +74,7 @@ public sealed class InspectorSmokeTests
         session.SelectPreviewTab();
         session.GeneratePreview(source.Root, destination.Root);
 
-        Assert.Contains("Ready", session.Find("PreviewPlanStatus").Name);
+        Assert.Contains("Ready", session.ReadName("PreviewPlanStatus"));
         string[] config = session.RenderedEntryCells("PreviewEntries", "config");
         Assert.Contains("Copy", config);
         Assert.Contains("ReadyToCopy", config);
@@ -103,14 +103,13 @@ public sealed class InspectorSmokeTests
         session.SelectPreviewTab();
         session.GeneratePreview(source.Root, destination.Root);
 
-        AutomationElement planStatus = session.Find("PreviewPlanStatus");
-        Assert.Contains("NeedsDecision", planStatus.Name);
+        Assert.Contains("NeedsDecision", session.ReadName("PreviewPlanStatus"));
         ComboBox conflict = session.FindByName("config conflict decision").AsComboBox();
         conflict.Select("Replace");
         session.Find("ApplyPreviewChoices").AsButton().Invoke();
 
         var finished = Retry.WhileFalse(
-            () => planStatus.Name.Contains("Ready", StringComparison.Ordinal),
+            () => session.ReadName("PreviewPlanStatus").Contains("Ready", StringComparison.Ordinal),
             timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false, ignoreException: true);
         Assert.True(finished.Success, "Conflict decision did not refresh the preview.");
 
@@ -166,9 +165,39 @@ public sealed class InspectorSmokeTests
             Window.FindFirstDescendant(cf => cf.ByAutomationId(id))
             ?? throw new InvalidOperationException($"Missing UI control: {id}");
 
-        public AutomationElement FindByName(string name) =>
-            Window.FindFirstDescendant(cf => cf.ByName(name))
-            ?? throw new InvalidOperationException($"Missing UI control: {name}");
+        public AutomationElement FindByName(string name)
+        {
+            AutomationElement? found = null;
+            var result = Retry.WhileFalse(
+                () =>
+                {
+                    found = Window.FindFirstDescendant(cf => cf.ByName(name));
+                    return found is not null;
+                },
+                timeout: TimeSpan.FromSeconds(5),
+                throwOnTimeout: false,
+                ignoreException: true);
+
+            Assert.True(result.Success, $"Missing UI control: {name}");
+            return found!;
+        }
+
+        public string ReadName(string id)
+        {
+            string? value = null;
+            var result = Retry.WhileFalse(
+                () =>
+                {
+                    value = Find(id).Name;
+                    return value is not null;
+                },
+                timeout: TimeSpan.FromSeconds(5),
+                throwOnTimeout: false,
+                ignoreException: true);
+
+            Assert.True(result.Success, $"Unable to read UI control: {id}");
+            return value!;
+        }
 
         public void Inspect(string path)
         {
@@ -193,12 +222,24 @@ public sealed class InspectorSmokeTests
         {
             Find("PreviewSourcePath").AsTextBox().Text = sourcePath;
             Find("PreviewDestinationPath").AsTextBox().Text = destinationPath;
-            AutomationElement status = Find("PreviewStatus");
-            Find("GeneratePreview").AsButton().Invoke();
+
+            Button generate = Find("GeneratePreview").AsButton();
+            Button cancel = Find("PreviewCancel").AsButton();
+            var ready = Retry.WhileFalse(
+                () => generate.IsEnabled,
+                timeout: TimeSpan.FromSeconds(5),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(ready.Success, "Generate Preview did not become enabled.");
+
+            generate.Invoke();
+
             var finished = Retry.WhileFalse(
-                () => status.Name.StartsWith("Dry-run preview ", StringComparison.Ordinal),
-                timeout: TimeSpan.FromSeconds(15), throwOnTimeout: false, ignoreException: true);
-            Assert.True(finished.Success, $"Dry-run preview did not finish in fifteen seconds. Last status: {status.Name}");
+                () => generate.IsEnabled && !cancel.IsEnabled,
+                timeout: TimeSpan.FromSeconds(15),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(finished.Success, "Dry-run preview did not finish in fifteen seconds.");
         }
 
         public string[] RenderedEntryCells(string gridId, string name)
