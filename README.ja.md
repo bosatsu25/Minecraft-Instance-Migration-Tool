@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 4.3 の Recovery Diagnosis / Guarded Rollback UI を実装済みです。**
+**Phase 4.3 の Recovery Diagnosis / Guarded Rollback UI まで実装し、`main` へマージ済みです。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -303,7 +303,7 @@ Application ports
 - **Domain** — 観測モデル、MigrationPlan、選択 / conflict policy、backup / execution / rollback policy
 - **Application** — use case、orchestration、外部 effect 用 port
 - **Infrastructure** — Windows filesystem、backup、journal、mutation、verification、rollback adapter
-- **App** — WPF / MVVM、Inspector / Preview / selection / conflict / Execute UI、composition root
+- **App** — WPF / MVVM、Inspector / Preview / selection / conflict / Execute / Recovery Diagnosis / Guarded Rollback UI、composition root
 - **Tests** — Domain / Application / Infrastructure / App / FlaUI UI smoke
 
 依存は内向きです。
@@ -408,8 +408,8 @@ warnings は build failure として扱います。
 
 次の大きな領域:
 
-19. migration Report
-20. release hardening
+19. **Phase 4.4 — Migration Report**
+20. **Phase 5.0 — Release hardening**
 
 旧版由来の移行候補と未解決 rule は [migration rules](docs/migration-rules.md)、
 rollback の保証範囲は [rollback](docs/rollback.md)、
