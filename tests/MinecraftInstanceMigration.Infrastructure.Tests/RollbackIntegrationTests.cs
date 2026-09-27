@@ -403,11 +403,13 @@ public sealed class RollbackIntegrationTests
                 snapshot,
                 validation);
 
+        var attemptPersistence = new RollbackAttemptPersistence(
+            new WindowsRollbackAttemptStorage());
+
         RollbackExecutionResult result =
             await new RollbackExecutor(
                 validator,
-                new RollbackAttemptPersistence(
-                    new WindowsRollbackAttemptStorage()),
+                attemptPersistence,
                 new WindowsRollbackStorage()).ExecuteAsync(
                     new RollbackExecutionRequest(
                         destination,
@@ -419,6 +421,17 @@ public sealed class RollbackIntegrationTests
 
         Assert.Equal(RollbackExecutionStatus.Completed, result.Status);
         Assert.Equal(1, result.CompletedActions);
+        Assert.NotNull(result.Attempt);
+
+        RollbackAttemptReadResult attempt =
+            await attemptPersistence.LoadAsync(
+                result.Attempt,
+                rollbackPlan,
+                TestContext.Current.CancellationToken);
+        Assert.True(attempt.IsLoaded);
+        Assert.Equal(
+            RollbackAttemptStepOutcome.Applied,
+            Assert.Single(attempt.Snapshot!.Steps).Outcome);
         Assert.False(File.Exists(Path.Combine(destination, "config", "new.json")));
         Assert.Equal(
             "old-value",
