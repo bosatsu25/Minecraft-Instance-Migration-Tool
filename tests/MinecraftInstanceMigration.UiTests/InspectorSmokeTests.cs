@@ -110,7 +110,7 @@ public sealed class InspectorSmokeTests
 
         var finished = Retry.WhileFalse(
             () => session.Find("PreviewPlanStatus").Name.Contains("Ready", StringComparison.Ordinal),
-            timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false);
+            timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false, ignoreException: true);
         Assert.True(finished.Success, "Conflict decision did not refresh the preview.");
 
         string[] config = session.RenderedEntryCells("PreviewEntries", "config");
@@ -175,7 +175,7 @@ public sealed class InspectorSmokeTests
             Find("Inspect").AsButton().Invoke();
             var finished = Retry.WhileFalse(
                 () => Find("Status").Name.StartsWith("Observation ", StringComparison.Ordinal),
-                timeout: TimeSpan.FromSeconds(10), throwOnTimeout: false);
+                timeout: TimeSpan.FromSeconds(10), throwOnTimeout: false, ignoreException: true);
             Assert.True(finished.Success, "Inspector did not finish in ten seconds.");
         }
 
@@ -184,7 +184,7 @@ public sealed class InspectorSmokeTests
             Find("PreviewTab").AsTabItem().Select();
             var visible = Retry.WhileTrue(
                 () => Window.FindFirstDescendant(cf => cf.ByAutomationId("PreviewSourcePath")) is null,
-                timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false);
+                timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false, ignoreException: true);
             Assert.True(visible.Success, "Preview tab did not become available.");
         }
 
@@ -195,7 +195,7 @@ public sealed class InspectorSmokeTests
             Find("GeneratePreview").AsButton().Invoke();
             var finished = Retry.WhileFalse(
                 () => Find("PreviewStatus").Name.StartsWith("Dry-run preview ", StringComparison.Ordinal),
-                timeout: TimeSpan.FromSeconds(15), throwOnTimeout: false);
+                timeout: TimeSpan.FromSeconds(15), throwOnTimeout: false, ignoreException: true);
             Assert.True(finished.Success, "Dry-run preview did not finish in fifteen seconds.");
         }
 

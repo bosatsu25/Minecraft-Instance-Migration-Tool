@@ -236,9 +236,9 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             MigrationPlanStatus.Ready when choicesApplied =>
                 "Choices applied. Dry-run preview is ready. No files were changed.",
             MigrationPlanStatus.Ready =>
-                "Dry-run preview ready. Edit selection or conflict choices if needed; no files were changed.",
+                "Dry-run preview ready. Edit selection or conflict choices if needed. No files were changed.",
             MigrationPlanStatus.NeedsDecision =>
-                "Dry-run preview needs conflict decisions. Choose Skip or Replace, then apply choices.",
+                "Dry-run preview needs conflict decisions. Choose Skip or Replace, then apply choices. No files were changed.",
             _ =>
                 "Dry-run preview is blocked. Review the listed states; no files were changed.",
         };
