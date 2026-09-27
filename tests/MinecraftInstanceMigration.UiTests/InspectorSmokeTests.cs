@@ -212,6 +212,13 @@ public sealed class InspectorSmokeTests
 
             generate.Invoke();
 
+            var started = Retry.WhileFalse(
+                () => !generate.IsEnabled || cancel.IsEnabled,
+                timeout: TimeSpan.FromSeconds(5),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(started.Success, "Dry-run preview did not start in five seconds.");
+
             var finished = Retry.WhileFalse(
                 () => generate.IsEnabled && !cancel.IsEnabled,
                 timeout: TimeSpan.FromSeconds(15),
