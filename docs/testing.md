@@ -506,3 +506,22 @@ The crash-window table and limits of simulated interruption are documented in [r
 
 Phase 3.8 improves crash diagnosis but does not implement automatic rollback resume. An Uncertain or Failed
 action remains recovery-required.
+
+
+## Phase 4.0: Migration workflow / session
+
+Application workflow tests use ports and controlled stubs; they never access the filesystem. They verify:
+
+- a new session starts at `SelectRoots` and valid roots advance it to `Inspect`;
+- inspection publishes source before destination evidence and advances to `ConfigurePlan`;
+- plan configuration records selections and conflict decisions before preview;
+- a ready preview is the only path to `ReadyForBackup`;
+- unresolved conflicts remain at `Preview` and never create a backup plan;
+- backup execution must complete or be `NotRequired` before `ReadyForExecution`;
+- execution receives the reviewed roots, plan, backup result, and journal parent through its port;
+- completed execution reaches `Completed`, while recovery-required execution reaches `RecoveryRequired`;
+- cancellation during inspection discards partial observations.
+
+The workflow does not choose conflict policy, perform IO, expose private exception messages, or implement
+automatic resume. Phase 4.1 can add selection/conflict editing by re-entering `ConfigurePlan` with the
+same inspected evidence.

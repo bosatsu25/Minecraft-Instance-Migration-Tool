@@ -495,6 +495,50 @@ A `GuardRejected` terminal means the action did not pass the storage guard and n
 may start in that attempt. A `Failed` terminal means destructive rollback may be partial and therefore
 requires recovery.
 
+## Phase 4.0 Migration workflow / session
+
+Phase 4.0 adds the Application-owned product workflow that connects the existing read-only planning,
+backup, execution, and recovery ports. It does not add UI behavior or new filesystem adapters.
+
+`MigrationWorkflowSession` is an immutable snapshot carrying only the evidence needed by the next
+stage: selected roots, inspection results, selected names and conflict decisions, migration plan and
+preview, backup plan/result, execution result, and a typed failure kind. It contains no private exception
+messages and performs no filesystem access itself.
+
+The allowed product sequence is:
+
+```text
+SelectRoots -> Inspect -> ConfigurePlan -> Preview
+                                      |
+                         plan not ready / conflict
+                                      v
+                                   Preview
+                                      |
+                                      v
+                              ReadyForBackup
+                                      |
+                              ExecuteBackup
+                                      v
+                                BackupReady
+                                      |
+                              ReadyForExecution
+                                      |
+                                  Executing
+                           /          |          \
+                      Completed   Blocked   RecoveryRequired
+```
+
+`MigrationWorkflow` delegates each stage through existing Application contracts. It creates no backup,
+journal, or migration artifact directly. A preview with unresolved decisions or blockers remains in
+`Preview`, so a later selection/conflict UI can reconfigure the same session without bypassing planning.
+Backup and journal parents are recorded before backup execution; execution can start only after a
+completed or not-required backup result and a journal parent are present. Execution cancellation after
+applied steps is surfaced as `RecoveryRequired` rather than a clean cancellation.
+
+The workflow is an orchestration boundary, not a replacement for Domain policies. Selection, conflict,
+backup, live validation, mutation, verification, and rollback safety remain owned by their existing
+contracts.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.

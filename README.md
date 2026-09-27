@@ -5,8 +5,8 @@
 A planned Windows desktop tool for selectively moving Minecraft user data from an old
 instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 3.8 Durable Rollback Attempt Journal.** The app UI remains Inspector / Preview only.
-Guarded automatic rollback now creates a separate append-only, checksummed rollback-attempt journal before
+**Status: Phase 4.0 Migration Workflow / Session.** The app UI remains Inspector / Preview only.
+Guarded automatic rollback creates a separate append-only, checksummed rollback-attempt journal before
 any destructive rollback action. Each action must durably record Started before storage mutation and then
 Applied / GuardRejected / Failed afterward. Execute / rollback UI controls and reporting are still absent.
 
@@ -106,7 +106,8 @@ See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for 
 12. Phase 3.6: Windows handle-relative Copy / Replace mutation plus independent post-write verification.
 13. Phase 3.7: fingerprint-guarded DeleteCreatedEntry / RestoreFromBackup rollback IO.
 14. Phase 3.8: durable rollback-attempt journal with crash-safe Started / terminal evidence.
-15. Separate later changes: end-to-end execution UI/reporting → explicit recovery UX → release hardening.
+15. Phase 4.0: Application-owned migration workflow/session connecting inspection, planning, preview, backup, and execution.
+16. Separate later changes: selection/conflict UI → Backup/Execute UI → recovery/reporting UX → release hardening.
 
 Each node gets a focused issue/PR and its own acceptance tests before the next expansion.
 Legacy selection candidates are documented in [migration rules](docs/migration-rules.md).
