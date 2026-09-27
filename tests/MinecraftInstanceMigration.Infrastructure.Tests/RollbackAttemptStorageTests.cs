@@ -226,7 +226,7 @@ public sealed class RollbackAttemptStorageTests
 
         await File.AppendAllTextAsync(
             attempt.JournalPath,
-            "{"payload":",
+            "{\"payload\":",
             TestContext.Current.CancellationToken);
 
         RollbackAttemptReadResult afterCrash =
@@ -247,8 +247,7 @@ public sealed class RollbackAttemptStorageTests
             TestContext.Current.CancellationToken)).IsSuccess);
 
         Assert.EndsWith(
-            "
-",
+            "\n",
             File.ReadAllText(attempt.JournalPath),
             StringComparison.Ordinal);
 
