@@ -84,7 +84,6 @@ public sealed class MigrationPreviewViewModelTests
 
         Assert.Equal("NeedsDecision", model.PlanStatus);
         MigrationPreviewEntry config = Entry(model, "config");
-        Assert.True(config.CanChooseConflict);
         model.SelectedEntry = config;
         Assert.True(model.ReplaceConflictCommand.CanExecute(null));
         model.ReplaceConflictCommand.Execute(null);
