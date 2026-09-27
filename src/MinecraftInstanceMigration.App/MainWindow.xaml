@@ -65,7 +65,9 @@
       </TabItem>
 
       <TabItem Header="Migration Preview" AutomationProperties.AutomationId="PreviewTab">
-        <Grid Margin="12" DataContext="{Binding Preview}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+          <Grid Margin="12" DataContext="{Binding Preview}">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -177,7 +179,8 @@
 
           <TextBlock Grid.Row="6" Margin="0,12,0,0" TextWrapping="Wrap"
                      Text="Recommended leaves saves and screenshots unselected. Select a preview row and use Include / Exclude; for a destination conflict use Skip / Replace, then Apply choices. Preview remains metadata-only and never authorizes writes; observations can become stale." />
-        </Grid>
+          </Grid>
+        </ScrollViewer>
       </TabItem>
     </TabControl>
   </Grid>
