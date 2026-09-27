@@ -2,45 +2,278 @@
 
 [English](README.md)
 
-MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
-Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
+MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
+ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**現在は Phase 3.8 の Durable Rollback Attempt Journal です。** UI は引き続き Inspector / Preview のみです。
-guarded rollback は destructive action の前に専用の append-only / checksum 付き rollback-attempt journal を作成し、
-各 action で durable Started → storage mutation → durable Applied / GuardRejected / Failed を記録するようになりました。
-Execute / Rollback UI と report はまだありません。
+**現在は Phase 3.8 まで実装済みです。**
+バックエンドでは、読み取り専用 Inspector / Plan / Preview から、検証済み Backup、
+durable execution journal、Windows Copy / Replace、独立 post-write verification、
+fingerprint guard 付き rollback、durable rollback-attempt journal まで実装されています。
 
-## 目的
+一方、**WPF UI で操作できるのは現在 Inspector と Migration Preview まで**です。
+Execute / Rollback / Recovery / Report のユーザー向け UI はまだ接続していません。
 
-設定やワールドなどの個人データを守るため、移行計画を事前確認し、
-バックアップと検証を伴う移行を目指します。
+## 現在の実装範囲
 
-Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
+バックエンドの実行フローは次の状態まで実装されています。
 
-検証失敗時は Diagnose → Rollback → Report を想定しています。
-backend では Planner、Preview / Dry Run、verified Backup、durable execution journal、
-Windows Copy / Replace、independent verification、guarded rollback IO まで実装しています。
-ユーザー向け Execute / Rollback UI と report は今後実装します。
+```text
+Inspect
+  ↓
+Plan
+  ↓
+Preview / Dry Run
+  ↓
+Backup Preflight
+  ↓
+Backup IO
+  ↓
+Backup Revalidation
+  ↓
+Execution Workspace Safety
+  ↓
+Durable Execution Journal
+  ↓
+Live Revalidation
+  ↓
+Copy / Replace
+  ↓
+Independent Post-write Verification
+  ↓
+Durable Applied / Failed evidence
+```
+
+検証失敗後の rollback 側も実装済みです。
+
+```text
+Execution evidence
+  ↓
+RollbackPlan
+  ↓
+Backup Revalidation（Replace のみ）
+  ↓
+Durable Rollback Started
+  ↓
+Fingerprint-guarded Rollback IO
+  ↓
+Applied / GuardRejected / Failed
+  ↓
+Durable Rollback Attempt evidence
+```
+
+プロセス停止後に rollback journal が `Started` だけ残っている場合は
+`Uncertain` として復旧し、成功・失敗・再実行可能を推測しません。
+Phase 3.8 は **復旧診断を永続化する段階**であり、自動 resume は実装していません。
+
+## UI で現在できること
+
+### Inspector
+
+任意名のローカルフォルダを選択し、直下の既知 11 項目を読み取り専用で観測します。
+
+- `options.txt`
+- `config`
+- `resourcepacks`
+- `shaderpacks`
+- `schematics`
+- `saves`
+- `screenshots`
+- `XaeroWaypoints`
+- `XaeroWorldMap`
+- `itemscroller`
+- `g4mespeed`
+
+期待 kind と実際の state を分離して表示します。
+Missing / Inaccessible / Unavailable / ReparsePoint などを区別し、
+junction / symlink / reparse point は追跡しません。
+
+### Migration Preview / Dry Run
+
+Source / Destination を読み取り専用で再観測し、Recommended preset の MigrationPlan を表示します。
+
+Recommended では `saves` と `screenshots` は既定 OFF です。
+既存 destination conflict は UI 上では `NeedsDecision` のまま表示されます。
+Domain には Skip / Replace が存在しますが、**現在の Preview UI では conflict を編集できません**。
+
+Preview は metadata-only であり、将来の write を承認するものではありません。
+
+## 安全設計
+
+現在の実装は、単純な再帰コピーではなく、失敗時に状態を証明できる migration engine を目指しています。
+
+### Windows filesystem
+
+- ローカルドライブの絶対パスのみを対象
+- handle-relative traversal
+- retained parent handles
+- no-follow reparse policy
+- nested junction / symlink / reparse point を fail closed
+- lexical root overlap と canonical handle path の両方を検査
+- SUBST 等の物理 alias を考慮
+- Copy は create-only
+- Replace は backup と live state を再検証してから実行
+- user path を untrusted input として扱う
+
+### Backup
+
+Replace 対象だけを事前 backup します。
+
+- owned backup root
+- owner marker
+- version 付き completion manifest
+- planned top-level membership の検証
+- tree fingerprint の再計算
+- nested reparse rejection
+- completed backup の read-only revalidation
+- failed / cancelled backup を recovery evidence として扱わない
+
+Backup は完全な NTFS clone ではありません。
+ACL、alternate data streams、完全な timestamp / metadata fidelity は保証していません。
+
+### Execution journal
+
+実 write の前に `Started` を durable に保存し、
+mutation と独立 verifier が成功した後だけ `Applied` を保存します。
+
+```text
+Live Revalidation
+  ↓
+Backup Revalidation（Replace）
+  ↓
+durable Started
+  ↓
+single-entry mutation
+  ↓
+independent verification
+  ↓
+durable Applied
+```
+
+JSONL record は SHA-256 checksum と previous-checksum chain を持ち、
+acknowledged record は `Flush(flushToDisk: true)` 後にのみ成功扱いになります。
+
+unterminated final record は torn tail として扱えますが、
+newline 済みの malformed / checksum-invalid / state-invalid record は fail closed です。
+
+### Independent verification
+
+mutation の成功フラグだけを信用せず、
+
+```text
+source fingerprint #1
+destination fingerprint
+source fingerprint #2
+```
+
+を比較します。
+
+source が途中で変化した場合は `SourceChanged`、
+stable source と destination が一致しない場合は `VerificationMismatch` になります。
+
+fingerprint は path を含まず、相対 tree 構造、通常 file stream の bytes、
+file / directory count、total bytes、SHA-256 を使用します。
+
+### Guarded rollback
+
+rollback は execution journal の post-write fingerprint を mandatory guard として使います。
+
+- Copy: 現在 destination が execution 時 fingerprint と一致するときだけ削除
+- Replace: backup を再検証し、現在 destination が fingerprint と一致するときだけ restore
+- destination / backup の nested tree は handle で保持したまま guard と mutation を行う
+- migration 後にユーザーや別プロセスが変更したデータは自動で削除・上書きしない
+- destructive rollback 開始後の失敗は `RecoveryRequired`
+
+### Durable rollback-attempt journal
+
+Phase 3.8 では rollback 自体の証拠も別 journal に保存します。
+
+```text
+NotStarted
+   ↓
+durable Started
+   ↓
+guarded rollback IO
+   ↓
+Applied / GuardRejected / Failed
+```
+
+`Started` の後に terminal record が無ければ再読込時は `Uncertain` です。
+
+rollback journal は exact `RollbackPlan` に binding され、
+order、name、expected kind、execution operation、rollback action、
+post-write fingerprint を検証します。
+
+未知 JSON property、重複 property、必須 field 欠落、checksum / chain / order 不整合は拒否します。
+entry name は single Windows name として検証され、絶対パスや path fragment を journal に保存しません。
+
+checksum は accidental corruption の検出用であり、
+journal 全体を書き換えて checksum chain を再計算できる攻撃者に対する authentication ではありません。
 
 ## アーキテクチャ
 
-- **Domain:** 不変の観測モデル、決定論的な移行計画、Recommended 選択既定値、明示的な conflict 意図。互換性・nested exclusion は今後実装します。
-- **Application:** ユースケースとポート。Domain を参照します。
-- **Infrastructure:** Windows の属性取得と handle-relative backup。Application / Domain を参照します。
-- **App:** WPF の Inspector / Preview View、MVVM ViewModel、依存関係の組み立て。
-- **Tests:** xUnit による動作・統合・ViewModel テストと、責務境界の回帰検出。
+```text
+App (WPF)
+   ↓
+Application
+   ↓
+Domain
 
-App は組み立てのため Application / Infrastructure を参照します。
-Application / Domain から Infrastructure を参照しません。
-詳しくは [architecture](docs/architecture.md) を参照してください。
+Infrastructure
+   ↑
+Application ports
+```
 
-## 開発
+- **Domain** — 観測モデル、MigrationPlan、選択 / conflict policy、backup / execution / rollback policy
+- **Application** — use case、orchestration、外部 effect 用 port
+- **Infrastructure** — Windows filesystem、backup、journal、mutation、verification、rollback adapter
+- **App** — WPF / MVVM、Inspector / Preview UI、composition root
+- **Tests** — Domain / Application / Infrastructure / App / FlaUI UI smoke
+
+依存は内向きです。
+Application / Domain は Infrastructure や UI を参照しません。
+
+採用技術:
+
+- C#
+- .NET 10
+- WPF
+- MVVM
+- System.IO / Windows native filesystem APIs
+- System.Text.Json
+- xUnit v3
+- FlaUI
+- GitHub Actions
+
+production code では不要な DI / MVVM / logging framework を追加せず、
+BCL と明示的な port / adapter を中心に構成しています。
+
+詳細は [architecture](docs/architecture.md) を参照してください。
+
+## 現在未実装のもの
+
+以下はまだ完成扱いではありません。
+
+- End-to-end Execute UI
+- Rollback UI
+- Recovery UX
+- Report UI / persistent report
+- UI からの custom selection 編集
+- UI からの Skip / Replace conflict 編集
+- automatic rollback resume
+- legacy `hanemod-client.json` exclusion
+- Merge conflict semantics
+- size / free-space estimate
+- Minecraft / mod / loader compatibility 判定
+- exact NTFS clone semantics
+- release packaging / signing / installer
+
+特に、**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
+現在の実装は compatibility を保証しません。
+
+## 開発環境
 
 Windows と [global.json](global.json) 指定の .NET 10 SDK
-（10.0.401、同じ feature band の最新パッチを許容）が必要です。
-WPF ビルドツールは SDK に含まれます。IDE は必須ではありません。
-
-リポジトリのルートで実行します。
+（10.0.401、同じ feature band の最新 patch を許容）が必要です。
 
 ```powershell
 dotnet restore
@@ -48,73 +281,66 @@ dotnet build --configuration Release --no-restore
 dotnet run --project src/MinecraftInstanceMigration.App --configuration Release --no-build
 ```
 
-依存関係の restore には NuGet への接続が必要です。アプリ自体に通信機能はありません。
-ライブラリは `net10.0`、WPF は `net10.0-windows` を使用します。
-Windows や SDK がないことを理由にターゲットを変更しないでください。
-
-## Inspector の使い方
-
-**Browse** で任意の名前のローカルフォルダを選び、**Inspect** を押します。
-ローカルドライブの絶対パスを入力することもできます。**Cancel** は属性取得の合間に適用されます。
-入力変更時には以前の結果を消去します。対象は直下の次の 11 項目だけです。
-`options.txt`、`config`、`resourcepacks`、`shaderpacks`、`schematics`、`saves`、
-`screenshots`、`XaeroWaypoints`、`XaeroWorldMap`、`itemscroller`、`g4mespeed`。
-
-期待する種類と実際の状態を別々に表示します。欠落とアクセス拒否・取得失敗は区別します。
-リンクは追跡せず、ルートまたはその祖先がリンクなら調査を停止します。
-再帰走査や内容の読み取りは行いません。既知名の存在は Minecraft インスタンス・互換性・
-移行可否の証明ではありません。結果は複数時点の観測です。
-UNC・ネットワークドライブ・デバイスパス・相対パス・親への遡上は未対応です。
+ライブラリは `net10.0`、WPF host は `net10.0-windows` です。
+依存 restore には NuGet 接続が必要ですが、アプリ自体に network 機能はありません。
 
 ## 検証
 
+通常の deterministic gate:
+
 ```powershell
+dotnet restore
+dotnet build --configuration Release --no-restore
 dotnet test --configuration Release --no-build --no-restore
 dotnet format --verify-no-changes --no-restore
 git diff --check
 git status --short --branch
 ```
 
-先に restore / build を実行します。[Windows CI](.github/workflows/ci.yml) も
-push / pull request 時に restore・Release build・test・format 検証を行います。
-警告はビルド失敗として扱います。C# の整形修正には `dotnet format --no-restore` を使用します。
-Markdown・YAML・XAML のレイアウトすべてを formatter が検証するわけではないため、差分も確認します。
-
-少数の WPF UI スモークテストは Windows 上で別実行します。
+WPF UI smoke:
 
 ```powershell
-dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release
+dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release --no-restore
 ```
 
-対象範囲と手動スモーク手順は [testing](docs/testing.md) に記載しています。
+GitHub Actions は Windows 上で build / test / format と UI smoke を実行します。
+warnings は build failure として扱います。
 
-開発は [Evidence-driven Graph Loop](docs/graph-loop.md) に従います。
-恒久ルールは [AGENTS.md](AGENTS.md)、検証範囲は [testing](docs/testing.md) を参照してください。
+高リスクな filesystem write / rollback のテストは、owned temporary fixture のみを使用します。
+実 Minecraft instance を test fixture として変更しません。
+
+詳細は [testing](docs/testing.md) を参照してください。
 
 ## ロードマップ
 
-1. Phase 0: solution、責務境界、テスト、CI、ドキュメント、最小 shell。
-2. Phase 1: 読み取り専用の Instance Inspector。
-3. Phase 2: 読み取り専用で決定論的な Migration Planner コア。
-4. Phase 2.1: Recommended 選択 preset と明示的な Skip / Replace conflict 意図。
-5. Phase 2.2: Preview / Dry Run モデルと WPF preview flow。
-6. Phase 3.0: Backup Preflight と version 付き manifest draft。filesystem write はなし。
-7. Phase 3.1: owned backup root、handle-relative traversal、cancellation、nested reparse rejection、
-   post-copy fingerprint verification を備えた Windows Backup IO foundation。
-8. Phase 3.2: owner marker、completion manifest、BackupPlan、再計算した tree fingerprint を使う
-   completed-backup read-only revalidation。
-9. Phase 3.3: version 付き execution-journal contract と deterministic rollback planning。migration write はなし。
-10. Phase 3.4: append / flush ordering と crash-tail recovery を備えた durable Windows execution journal storage。
-11. Phase 3.5: live revalidation + execute orchestration contract。mutation / verifier は port のみ。
-12. Phase 3.6: Windows handle-relative Copy / Replace mutation + independent post-write verification。
-13. Phase 3.7: fingerprint guard 付き DeleteCreatedEntry / RestoreFromBackup rollback IO。
-14. Phase 3.8: crash-safe Started / terminal evidence を持つ durable rollback-attempt journal。
-15. 以後は end-to-end Execute UI / Report → 明示的な recovery UX → release hardening を個別に実装。
+実装済み:
 
-ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
-旧版由来の移行候補は [migration rules](docs/migration-rules.md) に整理しています。
-Phase 2.1 では legacy の Recommended 方向として、既知候補のうち `saves` と `screenshots`
-だけを既定 OFF とし、それ以外を選択します。destination conflict は明示的に Skip / Replace
-を指定しない限り未解決のままです。Phase 2.2 の UI dry run は Recommended preset を使い、
-未解決 conflict をそのまま表示します。旧版 `hanemod-client.json` exclusion、Merge、
-size estimate、互換性保証、Execute UI / Report、自動 rollback resume は未実装です。
+1. Phase 0 — solution / layer boundary / test / CI / minimal WPF shell
+2. Phase 1 — read-only Instance Inspector
+3. Phase 2 — deterministic Migration Planner
+4. Phase 2.1 — Recommended preset + Skip / Replace conflict intent
+5. Phase 2.2 — Preview / Dry Run + WPF preview
+6. Phase 3.0 — Backup Preflight
+7. Phase 3.1 — Windows Backup IO
+8. Phase 3.2 — completed-backup revalidation
+9. Phase 3.3 — execution journal / rollback contract
+10. Phase 3.4 — durable execution journal
+11. Phase 3.5 — live revalidation + execute orchestration
+12. Phase 3.6 — Windows Copy / Replace + independent verification
+13. Phase 3.7 — guarded rollback IO
+14. Phase 3.8 — durable rollback-attempt journal
+
+次の大きな領域:
+
+15. End-to-end Execute / Rollback UI
+16. explicit Recovery UX
+17. Report
+18. release hardening
+
+旧版由来の移行候補と未解決 rule は [migration rules](docs/migration-rules.md)、
+rollback の保証範囲は [rollback](docs/rollback.md)、
+execution evidence は [execution journal](docs/execution-journal.md) を参照してください。
+
+開発ルールは [AGENTS.md](AGENTS.md)、
+検証方針は [testing](docs/testing.md)、
+Evidence-driven Graph Loop は [graph loop](docs/graph-loop.md) を参照してください。
