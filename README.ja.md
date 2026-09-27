@@ -5,16 +5,14 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**現在は Phase 4.0 の Migration Workflow / Session です。**
-Application の workflow が、Inspect、Plan、Preview、Backup 準備、Backup 実行、
-Execute を明示的な session state で接続しています。WPF UI は引き続き Inspector と
-Migration Preview までです。
-バックエンドでは、読み取り専用 Inspector / Plan / Preview から、検証済み Backup、
-durable execution journal、Windows Copy / Replace、独立 post-write verification、
-fingerprint guard 付き rollback、durable rollback-attempt journal まで実装されています。
+**Phase 4.0 の Migration Workflow / Session まで実装・main へマージ済みです。**
+Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
+明示的な session state で接続する product-level workflow を所有するようになりました。
+バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
+Windows Copy / Replace、独立 post-write verification、fingerprint guard 付き rollback まで含まれます。
 
-一方、**WPF UI で操作できるのは現在 Inspector と Migration Preview まで**です。
-Execute / Rollback / Recovery / Report のユーザー向け UI はまだ接続していません。
+**WPF UI で操作できるのは現在 Inspector と Migration Preview まで**です。
+selection / conflict 編集、Execute / Rollback、Recovery、Report のユーザー向け UI はまだ接続していません。
 
 ## 現在の実装範囲
 
@@ -67,6 +65,47 @@ Durable Rollback Attempt evidence
 プロセス停止後に rollback journal が `Started` だけ残っている場合は
 `Uncertain` として復旧し、成功・失敗・再実行可能を推測しません。
 Phase 3.8 は **復旧診断を永続化する段階**であり、自動 resume は実装していません。
+
+### Phase 4.0 Application workflow / session
+
+Phase 4.0 では、既存の use case 群を接続する Application 所有の workflow 境界を追加しました。
+product-level な session 遷移は `MigrationWorkflow` が管理し、
+呼び出し側は `MigrationWorkflowSession` の evidence を読み取れますが、
+public API から任意の state を構築したり state / evidence setter を変更したりはできません。
+
+```text
+SelectRoots
+  ↓
+Inspect
+  ↓
+ConfigurePlan
+  ↓
+Preview
+  ↓
+ReadyForBackup
+  ↓
+BackupReady
+  ↓
+ReadyForExecution
+  ↓
+Executing
+  ↓
+Completed / Cancelled / Blocked / RecoveryRequired
+```
+
+独立監査後の Phase 4.0 では、次を固定しています。
+
+- root を選び直すと以前の plan / backup / execution evidence を持ち越さず fresh state へ戻る
+- selection / conflict 入力は defensive copy する
+- plan を再設定すると downstream の Preview / Backup / Execution evidence を破棄する
+- `NeedsDecision` など Ready でない Preview は backup へ進めない
+- `BackupPlanStatus.NotRequired` は backup path を捏造せず、backup IO も呼ばずに進行できる
+- Replace 用の実 backup が必要な場合だけ backup parent を必須にする
+- Execute 前には journal parent を必須にする
+- execution から例外や cancellation exception が漏れた場合は保守的に `RecoveryRequired` とする
+
+Phase 4.0 自体は WPF UI や filesystem adapter を追加していません。
+次の Phase 4.1 では、この workflow に selection と Skip / Replace conflict 編集 UI を接続する予定です。
 
 ## UI で現在できること
 
