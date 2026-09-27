@@ -456,3 +456,53 @@ Rollback is intentionally not described as transactionally crash-safe. No durabl
 journal exists in Phase 3.7. A failure after rollback mutation starts may leave partial state and is
 reported as RecoveryRequired. Automatic retry must still satisfy the original post-write fingerprint
 guard; it never blindly deletes or restores over user changes.
+
+
+## Phase 3.8: Durable rollback-attempt journal
+
+Phase 3.8 adds deterministic Application and hosted-Windows coverage for durable rollback evidence.
+
+Application coverage includes:
+
+- NotRequired / RecoveryRequired rollback plans never create an attempt journal;
+- a journal is created before any automatic rollback action;
+- Restore backup validation completes before durable Started;
+- storage is never called when Started cannot be persisted;
+- GuardRejected and storage recovery failures receive durable terminal records;
+- an Applied storage mutation whose Applied journal write fails returns RecoveryRequired;
+- cancellation before the first action creates no attempt;
+- cancellation after an earlier durably Applied action returns RecoveryRequired;
+- the journal parent is mandatory for automatic rollback.
+
+Windows journal coverage includes:
+
+- path-free create-only header bound to the exact RollbackPlan;
+- initial NotStarted recovery;
+- durable Started without a terminal record recovers as Uncertain;
+- Applied / GuardRejected / Failed terminals survive close/reopen;
+- later actions cannot start before earlier Applied;
+- an unterminated torn terminal record is ignored and truncated before the next acknowledged append;
+- a journal parent inside destination is rejected before artifact creation;
+- a different rollback plan cannot reuse an existing attempt journal.
+
+Independent audit regression coverage also includes:
+
+- path-shaped plan entry names are rejected before creating any artifact;
+- null header entries, unknown/duplicate JSON properties, invalid checksum links, index gaps,
+  duplicated/reordered records and complete malformed JSON fail closed without changing journal bytes;
+- each safety field in the ordered plan is bound to the header;
+- duplicate starts/terminals and terminals without Started cannot change journal bytes;
+- every truncated header/Started/terminal prefix preserves only the prior complete evidence;
+- Applied plus NotStarted or GuardRejected remains recovery-required after reload;
+- journal placement inside backup and inside either protected root through SUBST aliases is rejected;
+- reparse parents and parent replacement with a junction fail closed;
+- cancellation after durable Started still completes non-cancellable storage and terminal persistence;
+- cancellation during backup validation never starts an action;
+- storage exceptions attempt a durable Failed terminal and require recovery.
+
+Real rollback integration reloads the durable attempt after guarded Copy deletion, verified Replace
+restore, and a modified-destination rejection, requiring Applied or GuardRejected respectively.
+The crash-window table and limits of simulated interruption are documented in [rollback](rollback.md).
+
+Phase 3.8 improves crash diagnosis but does not implement automatic rollback resume. An Uncertain or Failed
+action remains recovery-required.

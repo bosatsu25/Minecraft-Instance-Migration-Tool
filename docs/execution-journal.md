@@ -210,3 +210,19 @@ The execution journal is not extended with rollback-attempt records in Phase 3.7
 after rollback mutation begins is reported as RecoveryRequired and must not be described as resumable
 automatic rollback. A later retry must still pass the original fingerprint guard; partial rollback
 normally causes that guard to fail closed.
+
+
+## Phase 3.8 separate rollback-attempt evidence
+
+Rollback durability is intentionally stored in a separate `mim-rollback-{guid}.jsonl` artifact rather
+than extending the immutable execution journal with a second state machine.
+
+The rollback-attempt header is bound to the exact `RollbackPlan`, including the execution fingerprint
+guard for each automatic action. Before destructive rollback storage runs, Started is durably appended.
+Applied, GuardRejected, or Failed is appended afterward.
+
+A Started record without a terminal record reloads as Uncertain. This closes the previous evidence gap
+where a process crash during rollback could not distinguish NotStarted from possibly-partial mutation.
+
+The execution journal remains the authoritative record of migration writes. The rollback-attempt journal
+records repair attempts against that evidence. Phase 3.8 does not automatically resume Uncertain rollback.

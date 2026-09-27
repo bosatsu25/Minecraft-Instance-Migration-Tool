@@ -456,6 +456,45 @@ A crash or IO failure during recursive delete/restore may leave partial rollback
 retry will normally fail the original post-write fingerprint guard and require manual recovery rather than
 blindly repeating destructive work.
 
+
+## Phase 3.8 Durable rollback-attempt journal
+
+Phase 3.8 adds durable evidence around Phase 3.7 rollback actions without claiming automatic crash resume.
+
+`RollbackExecutor` now requires an explicit rollback journal parent. Before the first automatic action,
+`RollbackAttemptPersistence` creates a schema-v1 rollback-attempt artifact bound to the exact ordered
+`RollbackPlan`: order, name, expected kind, execution operation, rollback action, and post-write fingerprint.
+
+The Windows adapter persists `mim-rollback-{guid}.jsonl` with the same durability principles as the
+execution journal:
+
+- the journal parent must be physically outside destination and backup roots;
+- the header is create-only and contains no absolute source/destination/backup paths;
+- each line has a SHA-256 checksum plus previous-checksum pointer;
+- each acknowledged line ends in a newline and is flushed with `Flush(flushToDisk: true)`;
+- an unterminated final record is treated as an unacknowledged torn tail;
+- a complete malformed/checksum-invalid record fails closed.
+
+For every rollback action the required ordering is:
+
+```text
+backup revalidation when Restore
+  -> durable rollback Started
+  -> guarded rollback storage mutation
+  -> durable Applied / GuardRejected / Failed
+```
+
+A later rollback action cannot start unless every earlier action is durably `Applied`.
+
+On restart, a durable `Started` with no terminal record loads as `Uncertain`. That evidence means the
+process cannot prove whether the destructive repair completed. Phase 3.8 does not automatically replay
+or skip such an action. Recovery UI / policy must treat it as manual recovery unless a future phase adds
+an independently provable resume protocol.
+
+A `GuardRejected` terminal means the action did not pass the storage guard and no automatic later action
+may start in that attempt. A `Failed` terminal means destructive rollback may be partial and therefore
+requires recovery.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.

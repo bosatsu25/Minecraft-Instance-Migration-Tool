@@ -51,6 +51,7 @@ public sealed record RollbackExecutionRequest(
     string DestinationRoot,
     string? BackupRoot,
     BackupPlan? BackupPlan,
+    string JournalParent,
     RollbackPlan RollbackPlan);
 
 public enum RollbackExecutionStatus
@@ -67,6 +68,8 @@ public enum RollbackExecutionFailureKind
     InvalidPlan,
     BackupRequired,
     BackupInvalid,
+    JournalRequired,
+    JournalFailure,
     GuardRejected,
     StorageFailure,
     CancelledAfterPartialRollback,
@@ -75,7 +78,8 @@ public enum RollbackExecutionFailureKind
 public sealed record RollbackExecutionResult(
     RollbackExecutionStatus Status,
     RollbackExecutionFailureKind? FailureKind = null,
-    int CompletedActions = 0)
+    int CompletedActions = 0,
+    RollbackAttemptReference? Attempt = null)
 {
     public bool IsComplete =>
         Status is RollbackExecutionStatus.NotRequired or

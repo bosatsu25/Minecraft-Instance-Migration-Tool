@@ -797,8 +797,8 @@ internal static class WindowsExecutionTree
             StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsSingleName(string name) =>
-        name.Length > 0 &&
+    internal static bool IsSingleName(string? name) =>
+        !string.IsNullOrEmpty(name) &&
         name is not "." and not ".." &&
         !name.EndsWith('.') &&
         !name.EndsWith(' ') &&

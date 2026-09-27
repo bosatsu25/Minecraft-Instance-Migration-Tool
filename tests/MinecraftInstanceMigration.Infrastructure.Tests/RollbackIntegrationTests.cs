@@ -15,6 +15,58 @@ namespace MinecraftInstanceMigration.Infrastructure.Tests;
 [SupportedOSPlatform("windows")]
 public sealed class RollbackIntegrationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CopyRollbackAndEditedDestinationGuardHaveDurableTerminals(bool edited)
+    {
+        using var fixture = new InspectionFixture();
+        string source = fixture.At("source");
+        string destination = fixture.At("destination");
+        string journals = fixture.At("journals");
+        Directory.CreateDirectory(source);
+        Directory.CreateDirectory(destination);
+        Directory.CreateDirectory(journals);
+        File.WriteAllText(Path.Combine(source, "options.txt"), "copied");
+        var step = new ExecutionJournalEntry(0, "options.txt",
+            ExpectedEntryKind.File, ExecutionOperationKind.Copy);
+        var token = TestContext.Current.CancellationToken;
+        Assert.True((await new WindowsExecutionMutationPort().ApplyAsync(
+            source, destination, step, token)).IsApplied);
+        var verified = await new WindowsExecutionPostWriteVerifier().VerifyAsync(
+            source, destination, step, token);
+        Assert.True(verified.IsVerified);
+        if (edited)
+        {
+            File.WriteAllText(Path.Combine(destination, "options.txt"), "user-edit");
+        }
+
+        var plan = new RollbackPlan(RollbackPlanStatus.Ready,
+            [new RollbackPlanEntry(0, step.Name, step.ExpectedKind, step.Operation,
+                RollbackActionKind.DeleteCreatedEntry, verified.Fingerprint)], []);
+        var persistence = new RollbackAttemptPersistence(new WindowsRollbackAttemptStorage());
+        var result = await new RollbackExecutor(
+            new BackupArtifactValidator(new WindowsBackupStorage()), persistence,
+            new WindowsRollbackStorage()).ExecuteAsync(new RollbackExecutionRequest(
+                destination, null, null, journals, plan), token);
+        Assert.Equal(edited ? RollbackExecutionStatus.Blocked : RollbackExecutionStatus.Completed,
+            result.Status);
+        Assert.NotNull(result.Attempt);
+        var loaded = await new WindowsRollbackAttemptStorage().LoadAsync(result.Attempt, plan, token);
+        Assert.True(loaded.IsLoaded);
+        Assert.Equal(edited ? RollbackAttemptStepOutcome.GuardRejected : RollbackAttemptStepOutcome.Applied,
+            Assert.Single(loaded.Snapshot!.Steps).Outcome);
+        Assert.Equal(3, File.ReadAllLines(result.Attempt.JournalPath).Length);
+        if (edited)
+        {
+            Assert.Equal("user-edit", File.ReadAllText(Path.Combine(destination, "options.txt")));
+        }
+        else
+        {
+            Assert.False(File.Exists(Path.Combine(destination, "options.txt")));
+        }
+    }
+
     [Fact]
     public void HeldRollbackTreeDeniesNestedWritesUntilDeletion()
     {
@@ -332,9 +384,11 @@ public sealed class RollbackIntegrationTests
         string source = fixture.At("source");
         string destination = fixture.At("destination");
         string backups = fixture.At("backups");
+        string journals = fixture.At("journals");
         Directory.CreateDirectory(Path.Combine(source, "config"));
         Directory.CreateDirectory(Path.Combine(destination, "config"));
         Directory.CreateDirectory(backups);
+        Directory.CreateDirectory(journals);
         File.WriteAllText(Path.Combine(source, "config", "new.json"), "new-value");
         File.WriteAllText(Path.Combine(destination, "config", "old.json"), "old-value");
 
@@ -401,19 +455,35 @@ public sealed class RollbackIntegrationTests
                 snapshot,
                 validation);
 
+        var attemptPersistence = new RollbackAttemptPersistence(
+            new WindowsRollbackAttemptStorage());
+
         RollbackExecutionResult result =
             await new RollbackExecutor(
                 validator,
+                attemptPersistence,
                 new WindowsRollbackStorage()).ExecuteAsync(
                     new RollbackExecutionRequest(
                         destination,
                         backup.BackupRootPath,
                         backupPlan,
+                        journals,
                         rollbackPlan),
                     TestContext.Current.CancellationToken);
 
         Assert.Equal(RollbackExecutionStatus.Completed, result.Status);
         Assert.Equal(1, result.CompletedActions);
+        Assert.NotNull(result.Attempt);
+
+        RollbackAttemptReadResult attempt =
+            await attemptPersistence.LoadAsync(
+                result.Attempt,
+                rollbackPlan,
+                TestContext.Current.CancellationToken);
+        Assert.True(attempt.IsLoaded);
+        Assert.Equal(
+            RollbackAttemptStepOutcome.Applied,
+            Assert.Single(attempt.Snapshot!.Steps).Outcome);
         Assert.False(File.Exists(Path.Combine(destination, "config", "new.json")));
         Assert.Equal(
             "old-value",
@@ -433,9 +503,11 @@ public sealed class RollbackIntegrationTests
         string source = fixture.At("source");
         string destination = fixture.At("destination");
         string backups = fixture.At("backups");
+        string journals = fixture.At("journals");
         Directory.CreateDirectory(Path.Combine(source, "config"));
         Directory.CreateDirectory(Path.Combine(destination, "config"));
         Directory.CreateDirectory(backups);
+        Directory.CreateDirectory(journals);
         File.WriteAllText(Path.Combine(source, "config", "new.json"), "new-value");
         File.WriteAllText(Path.Combine(destination, "config", "old.json"), "old-value");
 
@@ -491,11 +563,14 @@ public sealed class RollbackIntegrationTests
         RollbackExecutionResult result =
             await new RollbackExecutor(
                 new BackupArtifactValidator(backupStorage),
+                new RollbackAttemptPersistence(
+                    new WindowsRollbackAttemptStorage()),
                 new WindowsRollbackStorage()).ExecuteAsync(
                     new RollbackExecutionRequest(
                         destination,
                         backup.BackupRootPath,
                         backupPlan,
+                        journals,
                         rollbackPlan),
                     TestContext.Current.CancellationToken);
 
