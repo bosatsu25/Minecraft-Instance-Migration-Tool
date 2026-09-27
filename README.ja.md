@@ -5,7 +5,10 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**現在は Phase 3.8 まで実装済みです。**
+**現在は Phase 4.0 の Migration Workflow / Session です。**
+Application の workflow が、Inspect、Plan、Preview、Backup 準備、Backup 実行、
+Execute を明示的な session state で接続しています。WPF UI は引き続き Inspector と
+Migration Preview までです。
 バックエンドでは、読み取り専用 Inspector / Plan / Preview から、検証済み Backup、
 durable execution journal、Windows Copy / Replace、独立 post-write verification、
 fingerprint guard 付き rollback、durable rollback-attempt journal まで実装されています。
@@ -329,13 +332,14 @@ warnings は build failure として扱います。
 12. Phase 3.6 — Windows Copy / Replace + independent verification
 13. Phase 3.7 — guarded rollback IO
 14. Phase 3.8 — durable rollback-attempt journal
+15. Phase 4.0 — Application 所有の migration workflow / session
 
 次の大きな領域:
 
-15. End-to-end Execute / Rollback UI
-16. explicit Recovery UX
-17. Report
-18. release hardening
+16. selection / conflict 編集 UI
+17. End-to-end Execute / Rollback UI
+18. explicit Recovery UX と Report
+19. release hardening
 
 旧版由来の移行候補と未解決 rule は [migration rules](docs/migration-rules.md)、
 rollback の保証範囲は [rollback](docs/rollback.md)、

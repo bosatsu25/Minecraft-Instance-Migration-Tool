@@ -5,7 +5,10 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Implementation is complete through Phase 3.8.**
+**Status: Phase 4.0 Migration Workflow / Session.**
+The Application workflow now connects inspection, planning, preview, backup preparation,
+backup execution, and execution through explicit session states. The WPF UI still exposes
+only Inspector and Migration Preview.
 The backend now includes read-only Inspect / Plan / Preview, verified Backup,
 a durable execution journal, Windows Copy / Replace, independent post-write verification,
 fingerprint-guarded rollback, and a durable rollback-attempt journal.
@@ -332,13 +335,14 @@ Implemented:
 12. Phase 3.6 — Windows Copy / Replace + independent verification
 13. Phase 3.7 — guarded rollback IO
 14. Phase 3.8 — durable rollback-attempt journal
+15. Phase 4.0 — Application-owned migration workflow/session
 
 Next major areas:
 
-15. end-to-end Execute / Rollback UI
-16. explicit Recovery UX
-17. Report
-18. release hardening
+16. selection / conflict editing UI
+17. end-to-end Execute / Rollback UI
+18. explicit Recovery UX and Report
+19. release hardening
 
 See [migration rules](docs/migration-rules.md) for legacy candidates and unresolved rules,
 [rollback](docs/rollback.md) for rollback guarantees,
