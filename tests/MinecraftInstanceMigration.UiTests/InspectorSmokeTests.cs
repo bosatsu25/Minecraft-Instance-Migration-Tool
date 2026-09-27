@@ -214,8 +214,18 @@ public sealed class InspectorSmokeTests
             Assert.True(
                 finished.Success,
                 $"Dry-run preview did not render the config row in fifteen seconds. " +
-                $"Status='{TryReadName("PreviewStatus")}', PlanStatus='{TryReadName("PreviewPlanStatus")}'.");
+                $"Status='{TryReadName("PreviewStatus")}', PlanStatus='{TryReadName("PreviewPlanStatus")}', " +
+                $"PreviewIds='{PreviewAutomationIds()}'.");
         }
+
+        public string PreviewAutomationIds() =>
+            string.Join(
+                ",",
+                Window.FindAllDescendants()
+                    .Select(element => element.AutomationId)
+                    .Where(id => !string.IsNullOrWhiteSpace(id) && id.StartsWith("Preview", StringComparison.Ordinal))
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal));
 
         public string TryReadName(string id)
         {
