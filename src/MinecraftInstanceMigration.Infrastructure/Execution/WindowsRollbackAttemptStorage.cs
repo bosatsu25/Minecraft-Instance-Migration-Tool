@@ -1257,8 +1257,7 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
         RollbackAttemptPersistenceFailureKind kind)
         : Exception
     {
-        internal RollbackAttemptPersistenceFailureKind
-            Kind { get; } = kind;
+        internal RollbackAttemptPersistenceFailureKind Kind { get; } = kind;
     }
 
     private sealed record PersistedFingerprint(
