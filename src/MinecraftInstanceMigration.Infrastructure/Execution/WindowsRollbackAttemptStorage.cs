@@ -250,6 +250,12 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
         {
             return WriteFailure(error.Kind, reference);
         }
+        catch (ExecutionTreeException error)
+        {
+            return WriteFailure(
+                MapTreeFailure(error.Kind),
+                reference);
+        }
         catch (UnauthorizedAccessException)
         {
             return WriteFailure(
@@ -391,6 +397,12 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
         {
             return WriteFailure(error.Kind, attempt);
         }
+        catch (ExecutionTreeException error)
+        {
+            return WriteFailure(
+                MapTreeFailure(error.Kind),
+                attempt);
+        }
         catch (UnauthorizedAccessException)
         {
             return WriteFailure(
@@ -468,6 +480,11 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
         catch (RollbackAttemptStorageException error)
         {
             return ReadFailure(error.Kind);
+        }
+        catch (ExecutionTreeException error)
+        {
+            return ReadFailure(
+                MapTreeFailure(error.Kind));
         }
         catch (UnauthorizedAccessException)
         {
@@ -1162,6 +1179,23 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
             : new RollbackAttemptReadResult(
                 RollbackAttemptReadStatus.Failed,
                 FailureKind: kind);
+
+    private static RollbackAttemptPersistenceFailureKind
+        MapTreeFailure(ExecutionTreeFailureKind kind) =>
+        kind switch
+        {
+            ExecutionTreeFailureKind.InvalidPath =>
+                RollbackAttemptPersistenceFailureKind.InvalidPath,
+            ExecutionTreeFailureKind.Missing or
+            ExecutionTreeFailureKind.Changed =>
+                RollbackAttemptPersistenceFailureKind.InvalidReference,
+            ExecutionTreeFailureKind.ReparsePoint =>
+                RollbackAttemptPersistenceFailureKind.ReparsePoint,
+            ExecutionTreeFailureKind.AccessDenied =>
+                RollbackAttemptPersistenceFailureKind.AccessDenied,
+            _ =>
+                RollbackAttemptPersistenceFailureKind.IoFailure,
+        };
 
     private static RollbackAttemptPersistenceFailureKind
         MapNativeFailure(int status)
