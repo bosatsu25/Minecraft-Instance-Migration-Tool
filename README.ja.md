@@ -5,14 +5,14 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 4.0 の Migration Workflow / Session まで実装・main へマージ済みです。**
+**Phase 4.1 の Selection / Conflict Editing UI を現在の開発ブランチへ実装済みです。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
 Windows Copy / Replace、独立 post-write verification、fingerprint guard 付き rollback まで含まれます。
 
 **WPF UI で操作できるのは現在 Inspector と Migration Preview まで**です。
-selection / conflict 編集、Execute / Rollback、Recovery、Report のユーザー向け UI はまだ接続していません。
+Migration Preview では custom selection と明示的な Skip / Replace conflict 編集が可能になりました。Execute / Rollback、Recovery、Report のユーザー向け UI はまだ接続していません。
 
 ## 現在の実装範囲
 
@@ -106,6 +106,13 @@ Completed / Cancelled / Blocked / RecoveryRequired
 
 Phase 4.0 自体は WPF UI や filesystem adapter を追加していません。
 次の Phase 4.1 では、この workflow に selection と Skip / Replace conflict 編集 UI を接続する予定です。
+
+## Phase 4.1 selection / conflict 編集
+
+Migration Preview を Phase 4.0 の workflow に接続し、Recommended を初期値にしつつ各候補を Include / Exclude できるようにしました。
+現在の destination conflict には、Domain ですでに定義済みの `Skip` / `Replace` だけを明示的に選べます。Merge はまだありません。
+編集内容は **Apply choices** を押すまで pending とし、既存 inspection evidence から plan / preview を再構築します。choice 編集だけでは再 inspection も filesystem write も行いません。
+Source / Destination を変更すると以前の choice/session は破棄し、**Reset Recommended** で既定 preset に戻せます。
 
 ## UI で現在できること
 
@@ -299,8 +306,6 @@ BCL と明示的な port / adapter を中心に構成しています。
 - Rollback UI
 - Recovery UX
 - Report UI / persistent report
-- UI からの custom selection 編集
-- UI からの Skip / Replace conflict 編集
 - automatic rollback resume
 - legacy `hanemod-client.json` exclusion
 - Merge conflict semantics
@@ -375,7 +380,7 @@ warnings は build failure として扱います。
 
 次の大きな領域:
 
-16. selection / conflict 編集 UI
+16. Phase 4.1 — selection / conflict 編集 UI
 17. End-to-end Execute / Rollback UI
 18. explicit Recovery UX と Report
 19. release hardening
