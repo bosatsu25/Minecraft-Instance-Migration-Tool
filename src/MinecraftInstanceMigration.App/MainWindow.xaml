@@ -65,9 +65,7 @@
       </TabItem>
 
       <TabItem Header="Migration Preview" AutomationProperties.AutomationId="PreviewTab">
-        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled">
-          <Grid Margin="12" DataContext="{Binding Preview}">
+        <Grid Margin="12" DataContext="{Binding Preview}">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -173,14 +171,13 @@
               <DataGridTextColumn Header="Plan detail" Binding="{Binding PlanDisposition}" Width="190" />
               <DataGridTextColumn Header="Source" Binding="{Binding SourceState, TargetNullValue=Unknown}" Width="115" />
               <DataGridTextColumn Header="Destination" Binding="{Binding DestinationState, TargetNullValue=Unknown}" Width="115" />
-              <DataGridCheckBoxColumn Header="Backup" Binding="{Binding RequiresBackup}" Width="75" />
+              <DataGridCheckBoxColumn Header="Backup" Binding="{Binding RequiresBackup, Mode=OneWay}" Width="75" />
             </DataGrid.Columns>
           </DataGrid>
 
           <TextBlock Grid.Row="6" Margin="0,12,0,0" TextWrapping="Wrap"
                      Text="Recommended leaves saves and screenshots unselected. Select a preview row and use Include / Exclude; for a destination conflict use Skip / Replace, then Apply choices. Preview remains metadata-only and never authorizes writes; observations can become stale." />
-          </Grid>
-        </ScrollViewer>
+        </Grid>
       </TabItem>
     </TabControl>
   </Grid>
