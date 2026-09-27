@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using MinecraftInstanceMigration.Application.Backup;
+using MinecraftInstanceMigration.Application.Capacity;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
@@ -12,6 +13,7 @@ public sealed class MigrationWorkflow(
     IInstanceInspector inspector,
     IMigrationPlanner planner,
     IMigrationPreviewer previewer,
+    IMigrationCapacityPreflight capacityPreflight,
     IBackupPlanner backupPlanner,
     IBackupExecutor backupExecutor,
     IExecutionOrchestrator executionOrchestrator) : IMigrationWorkflow
@@ -22,6 +24,8 @@ public sealed class MigrationWorkflow(
         planner ?? throw new ArgumentNullException(nameof(planner));
     private readonly IMigrationPreviewer previewer =
         previewer ?? throw new ArgumentNullException(nameof(previewer));
+    private readonly IMigrationCapacityPreflight capacityPreflight =
+        capacityPreflight ?? throw new ArgumentNullException(nameof(capacityPreflight));
     private readonly IBackupPlanner backupPlanner =
         backupPlanner ?? throw new ArgumentNullException(nameof(backupPlanner));
     private readonly IBackupExecutor backupExecutor =
@@ -158,6 +162,8 @@ public sealed class MigrationWorkflow(
                 ConflictDecisions = new ReadOnlyDictionary<string, DestinationConflictDecision>(decisions),
                 MigrationPlan = plan,
                 MigrationPreview = null,
+                CapacityEstimate = null,
+                CapacityWorkspaceRoot = null,
                 BackupPlan = null,
                 BackupResult = null,
                 ExecutionResult = null,
@@ -190,12 +196,16 @@ public sealed class MigrationWorkflow(
                 {
                     State = MigrationWorkflowState.ReadyForBackup,
                     MigrationPreview = preview,
+                    CapacityEstimate = null,
+                    CapacityWorkspaceRoot = null,
                     FailureKind = null,
                 }
                 : session with
                 {
                     State = MigrationWorkflowState.Preview,
                     MigrationPreview = preview,
+                    CapacityEstimate = null,
+                    CapacityWorkspaceRoot = null,
                     FailureKind = MigrationWorkflowFailureKind.PlanNotReady,
                 };
         }
@@ -203,6 +213,85 @@ public sealed class MigrationWorkflow(
         {
             return Failure(session, MigrationWorkflowFailureKind.PlanFailed);
         }
+    }
+
+    public async Task<MigrationWorkflowSession> EvaluateCapacityAsync(
+        MigrationWorkflowSession session,
+        string safetyWorkspaceRoot,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        if (session.State != MigrationWorkflowState.ReadyForBackup ||
+            session.MigrationPlan is null ||
+            session.SourceRoot is null ||
+            session.DestinationRoot is null ||
+            string.IsNullOrWhiteSpace(safetyWorkspaceRoot))
+        {
+            return Failure(session, MigrationWorkflowFailureKind.InvalidState);
+        }
+
+        MigrationCapacityEstimate estimate;
+        try
+        {
+            estimate = await capacityPreflight.EvaluateAsync(
+                new MigrationCapacityRequest(
+                    session.SourceRoot,
+                    session.DestinationRoot,
+                    safetyWorkspaceRoot,
+                    session.MigrationPlan),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            estimate = new MigrationCapacityEstimate(
+                MigrationCapacityStatus.Cancelled,
+                MigrationCapacityFailureKind.Cancelled);
+        }
+        catch (Exception)
+        {
+            estimate = new MigrationCapacityEstimate(
+                MigrationCapacityStatus.Unavailable,
+                MigrationCapacityFailureKind.MeasurementUnavailable);
+        }
+        MigrationWorkflowFailureKind? failure = estimate.Status switch
+        {
+            MigrationCapacityStatus.Ready => null,
+            MigrationCapacityStatus.InsufficientDestinationSpace or
+            MigrationCapacityStatus.InsufficientWorkspaceSpace or
+            MigrationCapacityStatus.InsufficientSharedVolumeSpace =>
+                MigrationWorkflowFailureKind.CapacityInsufficient,
+            MigrationCapacityStatus.Cancelled => MigrationWorkflowFailureKind.Cancelled,
+            _ => MigrationWorkflowFailureKind.CapacityUnavailable,
+        };
+
+        return session with
+        {
+            CapacityEstimate = estimate,
+            CapacityWorkspaceRoot = safetyWorkspaceRoot,
+            FailureKind = failure,
+        };
+    }
+
+    public MigrationWorkflowSession InvalidateCapacity(MigrationWorkflowSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (session.State != MigrationWorkflowState.ReadyForBackup)
+        {
+            return session;
+        }
+
+        return session with
+        {
+            CapacityEstimate = null,
+            CapacityWorkspaceRoot = null,
+            FailureKind = session.FailureKind is
+                MigrationWorkflowFailureKind.CapacityInsufficient or
+                MigrationWorkflowFailureKind.CapacityUnavailable or
+                MigrationWorkflowFailureKind.Cancelled
+                    ? null
+                    : session.FailureKind,
+        };
     }
 
     public MigrationWorkflowSession PrepareBackup(
@@ -213,6 +302,7 @@ public sealed class MigrationWorkflow(
         ArgumentNullException.ThrowIfNull(session);
 
         if (!session.CanPrepareBackup ||
+            !string.Equals(session.CapacityWorkspaceRoot, journalParent, StringComparison.Ordinal) ||
             session.MigrationPlan is null)
         {
             return Failure(session, MigrationWorkflowFailureKind.InvalidState);

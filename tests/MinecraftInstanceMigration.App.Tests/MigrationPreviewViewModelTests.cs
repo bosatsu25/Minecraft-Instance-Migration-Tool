@@ -1,5 +1,6 @@
 using MinecraftInstanceMigration.App.Presentation;
 using MinecraftInstanceMigration.Application.Backup;
+using MinecraftInstanceMigration.Application.Capacity;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
@@ -26,6 +27,7 @@ public sealed class MigrationPreviewViewModelTests
         model.SafetyWorkspacePath = "workspace";
 
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         Assert.True(model.ExecuteMigrationCommand.CanExecute(null));
         await model.ExecuteMigrationAsync();
@@ -45,9 +47,86 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Contains("verification: Succeeded", report.ExecutionSummary, StringComparison.Ordinal);
 
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         Assert.False(report.HasReport);
         Assert.Equal("Not available", report.OverallOutcome);
+    }
+
+    [Theory]
+    [InlineData(MigrationCapacityStatus.InsufficientDestinationSpace, "destination")]
+    [InlineData(MigrationCapacityStatus.InsufficientWorkspaceSpace, "workspace")]
+    [InlineData(MigrationCapacityStatus.Unavailable, "unavailable")]
+    public async Task UnsafeCapacityStatusKeepsExecutionDisabled(
+        MigrationCapacityStatus capacityStatus,
+        string expectedMessage)
+    {
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(true),
+            capacity: new StubCapacityPreflight(new MigrationCapacityEstimate(
+                capacityStatus,
+                capacityStatus == MigrationCapacityStatus.Unavailable
+                    ? MigrationCapacityFailureKind.VolumeUnavailable
+                    : MigrationCapacityFailureKind.None)));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
+
+        Assert.Equal(capacityStatus, model.CapacityStatus);
+        Assert.False(model.ExecuteMigrationCommand.CanExecute(null));
+        Assert.Contains(expectedMessage, model.CapacitySummary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SameVolumeCapacityIsVisibleAndWorkspaceChangeInvalidatesIt()
+    {
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(true),
+            capacity: new StubCapacityPreflight(new MigrationCapacityEstimate(
+                MigrationCapacityStatus.Ready,
+                MigrationCapacityFailureKind.None,
+                CopyBytes: 1024,
+                DestinationRequiredBytes: 4096,
+                SafetyWorkspaceRequiredBytes: 4096,
+                SharedVolumeRequiredBytes: 4096,
+                DestinationAvailableBytes: 8192,
+                SafetyWorkspaceAvailableBytes: 8192,
+                SharesVolume: true)));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
+
+        Assert.Equal("1 KiB", model.CopySize);
+        Assert.Contains("share the same volume", model.CapacityVolumeSummary, StringComparison.OrdinalIgnoreCase);
+        Assert.True(model.ExecuteMigrationCommand.CanExecute(null));
+
+        model.SafetyWorkspacePath = "other-workspace";
+
+        Assert.Null(model.CapacityStatus);
+        Assert.False(model.ExecuteMigrationCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task CapacityFailureDoesNotExposePrivateMessage()
+    {
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(true),
+            capacity: new ThrowingCapacityPreflight());
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
+
+        Assert.DoesNotContain("private", model.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.False(model.ExecuteMigrationCommand.CanExecute(null));
     }
 
     [Fact]
@@ -62,6 +141,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         await model.ExecuteMigrationAsync();
 
@@ -79,6 +159,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         await model.ExecuteMigrationAsync();
 
@@ -94,6 +175,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         model.SelectedEntry = Entry(model, "config");
 
         model.ExcludeSelectedCommand.Execute(null);
@@ -146,9 +228,11 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         model.SelectedEntry = Entry(model, "config");
         model.ReplaceConflictCommand.Execute(null);
         model.ApplyChoicesCommand.Execute(null);
+        await model.CheckCapacityAsync();
 
         await model.ExecuteMigrationAsync();
 
@@ -177,9 +261,11 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         model.SelectedEntry = Entry(model, "config");
         model.ReplaceConflictCommand.Execute(null);
         model.ApplyChoicesCommand.Execute(null);
+        await model.CheckCapacityAsync();
 
         await model.ExecuteMigrationAsync();
 
@@ -204,6 +290,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         await model.ExecuteMigrationAsync();
 
@@ -229,6 +316,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         await model.ExecuteMigrationAsync();
 
@@ -251,6 +339,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         Task first = model.ExecuteMigrationAsync();
         Assert.True(model.IsBusy);
@@ -279,6 +368,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         Assert.True(model.ExecuteMigrationCommand.CanExecute(null));
 
         model.SourcePath = "new-source";
@@ -298,6 +388,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         await model.ExecuteMigrationAsync();
 
@@ -319,6 +410,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         model.SelectedEntry = Entry(model, "config");
 
         await model.ExecuteMigrationAsync();
@@ -350,6 +442,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         await model.ExecuteMigrationAsync();
 
@@ -369,6 +462,7 @@ public sealed class MigrationPreviewViewModelTests
         completed.DestinationPath = "destination";
         completed.SafetyWorkspacePath = "workspace";
         await completed.GeneratePreviewAsync();
+        await completed.CheckCapacityAsync();
         await completed.ExecuteMigrationAsync();
         Assert.False(completed.IsRecoveryVisible);
         Assert.False(completed.RollbackMigrationCommand.CanExecute(null));
@@ -383,6 +477,7 @@ public sealed class MigrationPreviewViewModelTests
         blocked.DestinationPath = "destination";
         blocked.SafetyWorkspacePath = "workspace";
         await blocked.GeneratePreviewAsync();
+        await blocked.CheckCapacityAsync();
         await blocked.ExecuteMigrationAsync();
         Assert.Equal("Blocked", blocked.RecoveryDiagnosisStatus);
         Assert.False(blocked.RollbackMigrationCommand.CanExecute(null));
@@ -402,6 +497,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         await model.ExecuteMigrationAsync();
 
         await model.RollbackMigrationAsync();
@@ -434,6 +530,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         await model.ExecuteMigrationAsync();
 
         await model.RollbackMigrationAsync();
@@ -458,6 +555,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         await model.ExecuteMigrationAsync();
 
         Task first = model.RollbackMigrationAsync();
@@ -488,6 +586,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         await model.ExecuteMigrationAsync();
 
@@ -507,6 +606,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         Task running = model.ExecuteMigrationAsync();
         await execution.Started.Task;
@@ -533,6 +633,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
 
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         Assert.Equal(new[] { "source", "destination" }, calls);
         Assert.Equal("Ready", model.PlanStatus);
@@ -559,6 +660,7 @@ public sealed class MigrationPreviewViewModelTests
         model.SourcePath = "source";
         model.DestinationPath = "destination";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         MigrationSelectionEntryViewModel saves = Entry(model, "saves");
         model.SelectedEntry = saves;
@@ -588,6 +690,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
 
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         Assert.Equal("NeedsDecision", model.PlanStatus);
         MigrationSelectionEntryViewModel config = Entry(model, "config");
@@ -616,6 +719,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
 
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         MigrationSelectionEntryViewModel config = Entry(model, "config");
         model.SelectedEntry = config;
@@ -643,6 +747,7 @@ public sealed class MigrationPreviewViewModelTests
         model.SourcePath = "source";
         model.DestinationPath = "destination";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         model.SelectedEntry = Entry(model, "config");
         model.ReplaceConflictCommand.Execute(null);
@@ -685,6 +790,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
 
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         model.SelectedEntry = Entry(model, "config");
         model.SkipConflictCommand.Execute(null);
         model.ApplyChoicesCommand.Execute(null);
@@ -705,6 +811,7 @@ public sealed class MigrationPreviewViewModelTests
         model.SourcePath = "source";
         model.DestinationPath = "destination";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         MigrationSelectionEntryViewModel saves = Entry(model, "saves");
         model.SelectedEntry = saves;
@@ -730,6 +837,7 @@ public sealed class MigrationPreviewViewModelTests
         model.SourcePath = "source";
         model.DestinationPath = "destination";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         model.SelectedEntry = Entry(model, "config");
 
@@ -749,6 +857,7 @@ public sealed class MigrationPreviewViewModelTests
         model.SourcePath = "source";
         model.DestinationPath = "destination";
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         model.SelectedEntry = Entry(model, "config");
         model.ExcludeSelectedCommand.Execute(null);
@@ -771,6 +880,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
 
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
         model.SelectedEntry = Entry(model, "config");
         model.ExcludeSelectedCommand.Execute(null);
         Assert.True(model.HasPendingChoices);
@@ -820,6 +930,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
 
         await model.GeneratePreviewAsync();
+        await model.CheckCapacityAsync();
 
         Assert.Contains("InspectionFailed", model.Status);
         Assert.DoesNotContain("private", model.Status);
@@ -860,7 +971,8 @@ public sealed class MigrationPreviewViewModelTests
         IMigrationRecoveryCoordinator? recovery = null,
         IMigrationRollbackConfirmation? rollbackConfirmation = null,
         MigrationReportViewModel? reportViewModel = null,
-        IBackupPlanner? backupPlanner = null)
+        IBackupPlanner? backupPlanner = null,
+        IMigrationCapacityPreflight? capacity = null)
     {
         return new MigrationPreviewViewModel(
             new MigrationWorkflow(
@@ -872,6 +984,7 @@ public sealed class MigrationPreviewViewModelTests
                             : Inspection())),
                 new MigrationPlanner(),
                 new MigrationPreviewer(),
+                capacity ?? new ReadyCapacityPreflight(),
                 backupPlanner ?? new BackupPlanner(),
                 new RecordingBackupExecutor(calls, backupResult),
                 execution ?? new RecordingExecutionOrchestrator(calls)),
@@ -891,6 +1004,7 @@ public sealed class MigrationPreviewViewModelTests
                 inspector,
                 planner,
                 previewer,
+                new ReadyCapacityPreflight(),
                 new BackupPlanner(),
                 new NeverCalledBackupExecutor(),
                 new NeverCalledExecutionOrchestrator()),
@@ -903,9 +1017,45 @@ public sealed class MigrationPreviewViewModelTests
             inspector,
             new MigrationPlanner(),
             new MigrationPreviewer(),
+            new ReadyCapacityPreflight(),
             backupPlanner,
             new NeverCalledBackupExecutor(),
             new NeverCalledExecutionOrchestrator());
+    }
+
+    private sealed class ReadyCapacityPreflight : IMigrationCapacityPreflight
+    {
+        public Task<MigrationCapacityEstimate> EvaluateAsync(
+            MigrationCapacityRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new MigrationCapacityEstimate(
+                MigrationCapacityStatus.Ready,
+                MigrationCapacityFailureKind.None,
+                CopyBytes: 10,
+                DestinationRequiredBytes: 20,
+                SafetyWorkspaceRequiredBytes: 20,
+                DestinationAvailableBytes: 100,
+                SafetyWorkspaceAvailableBytes: 100));
+        }
+    }
+
+    private sealed class StubCapacityPreflight(
+        MigrationCapacityEstimate estimate) : IMigrationCapacityPreflight
+    {
+        public Task<MigrationCapacityEstimate> EvaluateAsync(
+            MigrationCapacityRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(estimate);
+    }
+
+    private sealed class ThrowingCapacityPreflight : IMigrationCapacityPreflight
+    {
+        public Task<MigrationCapacityEstimate> EvaluateAsync(
+            MigrationCapacityRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("private C:\\Users\\person\\instance");
     }
 
     private static MigrationSelectionEntryViewModel Entry(MigrationPreviewViewModel model, string name) =>

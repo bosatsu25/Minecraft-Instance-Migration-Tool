@@ -5,7 +5,7 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.4 Migration Report is implemented.**
+**Status: Phase 4.5 Capacity / Free-space Preflight is implemented.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
@@ -14,6 +14,7 @@ Windows Copy / Replace, independent post-write verification, and fingerprint-gua
 The WPF UI exposes Inspector, Migration Preview, selection/conflict editing, explicit execution
 confirmation, Backup when required, verified Copy / Replace execution, Recovery diagnosis,
 explicitly confirmed guarded rollback, and a read-only Migration Report.
+Execution also requires a current capacity preflight result for the selected safety workspace.
 
 ## Current implementation
 
@@ -25,6 +26,8 @@ Inspect
 Plan
   ↓
 Preview / Dry Run
+  ↓
+Capacity Preflight
   ↓
 Backup Preflight
   ↓
@@ -156,6 +159,21 @@ The report tab shows action counts, backup outcome, verification outcome, and re
 when recovery evidence exists. The report model contains no filesystem paths or raw exception text.
 Phase 4.4 keeps reports in memory: automatic persistence and user export remain deferred until an
 owned destination, collision policy, and partial-write strategy are defined. See [report](docs/report.md).
+
+## Phase 4.5 capacity / free-space preflight
+
+Before Backup or migration writes can begin, Application measures logical source bytes for Copy and
+Replace, plus current destination bytes that Replace must back up. Infrastructure performs that bounded
+measurement through the existing handle-relative, no-follow Windows traversal. It also resolves canonical
+volume identities and available capacity, so destination and safety workspace requirements are combined
+when both paths share a physical volume, including aliases such as SUBST.
+
+The estimate adds a bounded reserve: 5% of logical bytes, with a 64 MiB minimum and 1 GiB maximum.
+Unavailable measurements, unsafe trees, invalid values, overflow, and cancellation never produce Ready.
+Changing roots, choices, Preview, or safety workspace invalidates the result. Execute stays disabled until
+the current Preview and workspace have a Ready result. This preflight reduces obvious capacity failures;
+execution still performs live validation and handles disk-full or other IO failures conservatively.
+See [capacity preflight](docs/capacity-preflight.md).
 
 ## What the current UI can do
 
@@ -352,7 +370,6 @@ The following are not complete:
 - automatic rollback resume
 - legacy `hanemod-client.json` exclusion
 - Merge conflict semantics
-- size / free-space estimation
 - Minecraft / mod / loader compatibility analysis
 - exact NTFS clone semantics
 - release packaging / signing / installer
@@ -424,10 +441,13 @@ Implemented:
 17. Phase 4.2 — confirmed end-to-end Execute UI
 18. Phase 4.3 — Recovery Diagnosis / Guarded Rollback UI
 19. Phase 4.4 — read-only Migration Report
+20. Phase 4.5 — capacity / free-space preflight
 
 Next major areas:
 
-20. **Phase 5.0 — Release hardening**
+21. **Phase 4.6 — ModPackTransfer compatibility closure**
+22. Phase 5.0 — Release hardening
+23. Phase 5.1 — v1.0 release validation
 
 See [migration rules](docs/migration-rules.md) for legacy candidates and unresolved rules,
 [rollback](docs/rollback.md) for rollback guarantees,

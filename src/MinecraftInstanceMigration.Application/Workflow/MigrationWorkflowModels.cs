@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using MinecraftInstanceMigration.Application.Backup;
+using MinecraftInstanceMigration.Application.Capacity;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Inspection;
@@ -30,6 +31,8 @@ public enum MigrationWorkflowFailureKind
     InspectionFailed,
     PlanFailed,
     PlanNotReady,
+    CapacityUnavailable,
+    CapacityInsufficient,
     BackupRequired,
     JournalRequired,
     BackupNotReady,
@@ -72,6 +75,10 @@ public sealed record MigrationWorkflowSession
 
     public MigrationPreview? MigrationPreview { get; internal init; }
 
+    public MigrationCapacityEstimate? CapacityEstimate { get; internal init; }
+
+    public string? CapacityWorkspaceRoot { get; internal init; }
+
     public BackupPlan? BackupPlan { get; internal init; }
 
     public BackupExecutionResult? BackupResult { get; internal init; }
@@ -85,7 +92,8 @@ public sealed record MigrationWorkflowSession
 
     public bool CanPrepareBackup =>
         State == MigrationWorkflowState.ReadyForBackup &&
-        MigrationPreview?.Status == MigrationPlanStatus.Ready;
+        MigrationPreview?.Status == MigrationPlanStatus.Ready &&
+        CapacityEstimate?.IsReady == true;
 
     public bool CanExecute =>
         State == MigrationWorkflowState.ReadyForExecution &&

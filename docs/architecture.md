@@ -640,8 +640,9 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Plan:** Domain produces explicit top-level candidate intent, selection defaults, blockers, and typed
   destination conflict intent. Nested exclusions, Merge behavior, compatibility, and execution state remain separate.
 - **Preview / Dry Run:** The implemented read-only preview presents the same plan without writes,
-  including exclusions, planned actions, blockers, unresolved conflicts, and backup intent. Size estimates
-  remain unavailable until a later bounded inventory design exists. Do not compute a different implicit plan at execution.
+  including exclusions, planned actions, blockers, unresolved conflicts, and backup intent. Phase 4.5
+  measures only plan-selected write and backup entries through a bounded, no-follow capacity adapter.
+  Do not compute a different implicit plan at execution.
 - **Backup:** Phase 3.1 creates an owned verified artifact; Phase 3.2 can revalidate a completed artifact
   read-only against ownership, manifest, plan, exact top-level membership, no-follow traversal, and a
   recomputed tree fingerprint. A failed/cancelled/invalid artifact is never accepted as recovery evidence.
@@ -684,3 +685,21 @@ These are regression guards, not a sandbox or full static analyzer: indirect thi
 reflection, native calls, source-level business-rule placement, custom MSBuild target side
 effects, and every possible UI framework are not exhaustively detected. Review dependency
 changes and adapter behavior explicitly. See [testing](testing.md) and [ADR 0001](adr/0001-technology-and-architecture.md).
+
+## Phase 4.5 capacity preflight
+
+`MigrationCapacityPreflight` is an Application use case over `ILogicalSizeProbe` and
+`IVolumeCapacityProbe`. It consumes the reviewed `MigrationPlan`, calculates Copy, Replace-write, and
+Replace-backup logical bytes, applies the documented bounded reserve, and returns typed Ready,
+insufficient, unavailable, blocked, or cancelled evidence. Domain remains independent of Windows IO.
+
+`WindowsMigrationCapacityProbe` implements both ports. It reuses `WindowsExecutionTree` held-handle,
+no-follow traversal and sums `RandomAccess.GetLength` without reading file content. Volume identity comes
+from the canonical volume GUID path of an opened handle; free space comes from Windows for that canonical
+path. Reparse points and uncertain traversal fail closed.
+
+The workflow session owns capacity evidence. `CanPrepareBackup` requires Ready evidence, and
+`PrepareBackup` additionally requires that the journal/workspace matches the evaluated workspace.
+Reconfiguration and new Preview creation clear capacity alongside downstream evidence. The ViewModel
+exposes only a Check Capacity command and read-only projections; it does not inspect drives or duplicate
+the margin/same-volume policy. See [capacity preflight](capacity-preflight.md).

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using MinecraftInstanceMigration.Application.Capacity;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Reporting;
 using MinecraftInstanceMigration.Application.Workflow;
@@ -80,6 +81,9 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             () => SetSelectedConflict(DestinationConflictDecision.Unresolved),
             () => CanSetSelectedConflict() &&
                 SelectedChoice?.ConflictDecision != DestinationConflictDecision.Unresolved);
+        CheckCapacityCommand = new RelayCommand(
+            async () => await CheckCapacityAsync(),
+            CanCheckCapacity);
         CancelCommand = new RelayCommand(Cancel, () => IsBusy);
         ExecuteMigrationCommand = new RelayCommand(
             async () => await ExecuteMigrationAsync(),
@@ -112,6 +116,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     public RelayCommand ReplaceConflictCommand { get; }
 
     public RelayCommand ClearConflictCommand { get; }
+
+    public RelayCommand CheckCapacityCommand { get; }
 
     public RelayCommand CancelCommand { get; }
 
@@ -152,7 +158,13 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             }
 
             safetyWorkspacePath = value;
+            if (session is not null)
+            {
+                session = workflow.InvalidateCapacity(session);
+            }
             Notify();
+            NotifyCapacity();
+            CheckCapacityCommand.Refresh();
             ExecuteMigrationCommand.Refresh();
         }
     }
@@ -197,6 +209,30 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     public string PlanStatus => preview?.Status.ToString() ?? "Not generated";
 
     public string Status => status;
+
+    public MigrationCapacityStatus? CapacityStatus => session?.CapacityEstimate?.Status;
+
+    public string CopySize => FormatBytes(session?.CapacityEstimate?.CopyBytes);
+
+    public string ReplaceWriteSize => FormatBytes(session?.CapacityEstimate?.ReplaceWriteBytes);
+
+    public string BackupSize => FormatBytes(session?.CapacityEstimate?.BackupBytes);
+
+    public string DestinationFreeSpace => FormatBytes(session?.CapacityEstimate?.DestinationAvailableBytes);
+
+    public string SafetyWorkspaceFreeSpace => FormatBytes(session?.CapacityEstimate?.SafetyWorkspaceAvailableBytes);
+
+    public string CapacitySummary => session?.CapacityEstimate is { } estimate
+        ? CapacityStatusText(estimate)
+        : "Capacity has not been checked for the current preview and workspace.";
+
+    public string CapacityVolumeSummary => session?.CapacityEstimate switch
+    {
+        { SharesVolume: true } =>
+            "Destination and Safety workspace share the same volume; write and backup requirements are combined.",
+        not null => "Destination and Safety workspace are evaluated independently.",
+        _ => "Volume relationship has not been checked.",
+    };
 
     public bool IsRecoveryVisible => session?.State == MigrationWorkflowState.RecoveryRequired;
 
@@ -367,6 +403,46 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         finally
         {
             cancellation = null;
+            NotifyBusy();
+            NotifyExecution();
+        }
+    }
+
+    public async Task CheckCapacityAsync()
+    {
+        if (!CanCheckCapacity() || session is null)
+        {
+            return;
+        }
+
+        using var operation = new CancellationTokenSource();
+        cancellation = operation;
+        status = "Checking logical sizes and available capacity…";
+        NotifyBusy();
+        Notify(nameof(Status));
+
+        try
+        {
+            session = await workflow.EvaluateCapacityAsync(
+                session,
+                SafetyWorkspacePath,
+                operation.Token);
+            status = CapacityStatusText(session.CapacityEstimate);
+        }
+        catch (OperationCanceledException) when (operation.IsCancellationRequested)
+        {
+            session = workflow.InvalidateCapacity(session);
+            status = "Capacity check cancelled. Migration remains blocked.";
+        }
+        catch (Exception)
+        {
+            session = workflow.InvalidateCapacity(session);
+            status = "Capacity information is unavailable. Migration remains blocked.";
+        }
+        finally
+        {
+            cancellation = null;
+            NotifyCapacity();
             NotifyBusy();
             NotifyExecution();
         }
@@ -594,6 +670,13 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         preview?.Status == MigrationPlanStatus.Ready &&
         session?.CanPrepareBackup == true;
 
+    private bool CanCheckCapacity() =>
+        !IsBusy &&
+        !hasPendingChoices &&
+        !string.IsNullOrWhiteSpace(SafetyWorkspacePath) &&
+        preview?.Status == MigrationPlanStatus.Ready &&
+        session?.State == MigrationWorkflowState.ReadyForBackup;
+
     private bool CanRollbackMigration() =>
         !IsBusy &&
         recoveryResult is null &&
@@ -681,6 +764,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         };
 
         NotifyPreview();
+        NotifyCapacity();
         Notify(nameof(SelectedEntry));
         NotifySelectedChoice();
         RefreshChoiceCommands();
@@ -708,7 +792,12 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         }
 
         hasPendingChoices = true;
+        if (session is not null)
+        {
+            session = workflow.InvalidateCapacity(session);
+        }
         status = "Selection or conflict choices changed. Apply choices to refresh the dry-run preview.";
+        NotifyCapacity();
         Notify(nameof(HasPendingChoices));
         Notify(nameof(Status));
         NotifySelectedChoice();
@@ -742,6 +831,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         Notify(nameof(SourcePath));
         Notify(nameof(DestinationPath));
         NotifyPreview();
+        NotifyCapacity();
         NotifyExecution();
         NotifyRecovery();
         GeneratePreviewCommand.Refresh();
@@ -755,6 +845,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         hasPendingChoices = false;
         Notify(nameof(SelectedEntry));
         NotifySelectedChoice();
+        NotifyCapacity();
         RefreshChoiceCommands();
     }
 
@@ -779,6 +870,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         GeneratePreviewCommand.Refresh();
         CancelCommand.Refresh();
         BrowseSafetyWorkspaceCommand.Refresh();
+        CheckCapacityCommand.Refresh();
         ExecuteMigrationCommand.Refresh();
         RollbackMigrationCommand.Refresh();
         RefreshChoiceCommands();
@@ -793,6 +885,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         SkipConflictCommand.Refresh();
         ReplaceConflictCommand.Refresh();
         ClearConflictCommand.Refresh();
+        CheckCapacityCommand.Refresh();
         ExecuteMigrationCommand.Refresh();
         RollbackMigrationCommand.Refresh();
     }
@@ -818,6 +911,58 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             session,
             recoveryDiagnosis,
             recoveryResult));
+    }
+
+    private void NotifyCapacity()
+    {
+        Notify(nameof(CapacityStatus));
+        Notify(nameof(CopySize));
+        Notify(nameof(ReplaceWriteSize));
+        Notify(nameof(BackupSize));
+        Notify(nameof(DestinationFreeSpace));
+        Notify(nameof(SafetyWorkspaceFreeSpace));
+        Notify(nameof(CapacitySummary));
+        Notify(nameof(CapacityVolumeSummary));
+        CheckCapacityCommand.Refresh();
+        ExecuteMigrationCommand.Refresh();
+    }
+
+    private static string CapacityStatusText(MigrationCapacityEstimate? estimate) =>
+        estimate?.Status switch
+        {
+            MigrationCapacityStatus.Ready =>
+                "Capacity check passed. Backup and migration may be started after confirmation.",
+            MigrationCapacityStatus.InsufficientDestinationSpace =>
+                "Insufficient space on the destination volume. Migration remains blocked.",
+            MigrationCapacityStatus.InsufficientWorkspaceSpace =>
+                "Insufficient space on the safety workspace volume. Migration remains blocked.",
+            MigrationCapacityStatus.InsufficientSharedVolumeSpace =>
+                "Insufficient shared volume space for migration writes and backup. Migration remains blocked.",
+            MigrationCapacityStatus.Cancelled =>
+                "Capacity check cancelled. Migration remains blocked.",
+            MigrationCapacityStatus.Blocked =>
+                "Capacity check is blocked by the current migration plan.",
+            _ =>
+                "Capacity information is unavailable. Migration remains blocked.",
+        };
+
+    private static string FormatBytes(long? value)
+    {
+        if (value is null)
+        {
+            return "Not available";
+        }
+
+        string[] units = ["B", "KiB", "MiB", "GiB"];
+        decimal amount = value.Value;
+        int unit = 0;
+        while (amount >= 1024 && unit < units.Length - 1)
+        {
+            amount /= 1024;
+            unit++;
+        }
+
+        return $"{amount:0.##} {units[unit]}";
     }
 
     private static string RecoveryDiagnosisStatusText(MigrationRecoveryDiagnosis diagnosis) =>

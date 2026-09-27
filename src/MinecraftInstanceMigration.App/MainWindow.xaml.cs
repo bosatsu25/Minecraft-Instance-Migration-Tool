@@ -2,6 +2,7 @@ using System.Windows;
 using Microsoft.Win32;
 using MinecraftInstanceMigration.App.Presentation;
 using MinecraftInstanceMigration.Application.Backup;
+using MinecraftInstanceMigration.Application.Capacity;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
@@ -23,6 +24,7 @@ public partial class MainWindow : Window
         var backupPlanner = new BackupPlanner();
         var backupStorage = new WindowsBackupStorage();
         var backupValidator = new BackupArtifactValidator(backupStorage);
+        var capacityProbe = new WindowsMigrationCapacityProbe();
         var safetyPlanner = new ExecutionSafetyPlanner();
         var journalPersistence = new ExecutionJournalPersistence(new WindowsExecutionJournalStorage());
         var rollbackAttemptPersistence = new RollbackAttemptPersistence(new WindowsRollbackAttemptStorage());
@@ -41,6 +43,7 @@ public partial class MainWindow : Window
             inspector,
             new MigrationPlanner(),
             new MigrationPreviewer(),
+            new MigrationCapacityPreflight(capacityProbe, capacityProbe),
             backupPlanner,
             new BackupExecutor(backupStorage, backupPlanner),
             new ExecutionOrchestrator(

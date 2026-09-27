@@ -62,6 +62,21 @@ internal static class ExecutionNativeMethods
         }
     }
 
+    internal static long GetAvailableBytes(string canonicalPath)
+    {
+        if (!GetDiskFreeSpaceExW(
+                canonicalPath,
+                out ulong available,
+                out _,
+                out _))
+        {
+            throw new System.ComponentModel.Win32Exception(
+                Marshal.GetLastWin32Error());
+        }
+
+        return checked((long)available);
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct FileDispositionInfoExData
     {
@@ -82,4 +97,12 @@ internal static class ExecutionNativeMethods
         StringBuilder filePath,
         uint filePathLength,
         uint flags);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetDiskFreeSpaceExW(
+        string directoryName,
+        out ulong freeBytesAvailableToCaller,
+        out ulong totalNumberOfBytes,
+        out ulong totalNumberOfFreeBytes);
 }

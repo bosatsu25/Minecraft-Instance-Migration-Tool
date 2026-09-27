@@ -594,3 +594,20 @@ The hosted FlaUI normal path extends the real confirmed Copy-only migration thro
 observes Completed, Copy count 1, and successful verification from stable AutomationIds. Recovery report
 paths remain at Application/App level because Phase 4.4 adds no production failure injection solely for
 UI automation. No report persistence tests exist because Phase 4.4 performs no report filesystem writes.
+
+## Phase 4.5: capacity preflight
+
+Application tests use deterministic size and volume probes. They cover Copy and Replace accounting,
+backup bytes, excluded/Skip omission, separate and shared-volume decisions, both insufficient-space paths,
+unavailable measurements, reparse classification, cancellation, checked arithmetic, bounded margin, and
+workflow invalidation. A Ready preview remains readable when capacity fails, while backup preparation is
+blocked until Ready evidence exists for the exact workspace.
+
+Infrastructure tests use owned temporary fixtures for file, zero-byte, multi-file nested directory, missing
+entry, nested junction rejection, invalid/reparse roots, canonical volume identity, same-volume identity,
+and caller-available free space. They never scan a real Minecraft instance and never follow a reparse target.
+
+App tests cover human-readable summaries, Ready/insufficient/unavailable command state, same-volume notice,
+workspace invalidation, private-message redaction, and OneWay read-only bindings. Hosted FlaUI extends the
+confirmed Copy-only path with an explicit Check Capacity step and observes `Ready` before Execute using
+bounded retry. Disk-full is not manufactured in UI automation; insufficient cases use deterministic ports.

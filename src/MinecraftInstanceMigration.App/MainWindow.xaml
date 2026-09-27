@@ -73,6 +73,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -140,6 +141,9 @@
                       AutomationProperties.AutomationId="ResetRecommendedChoices" />
               <Button Content="Cancel" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
                       AutomationProperties.AutomationId="PreviewCancel" />
+              <Button Content="Check capacity" Padding="20,6" Margin="8,0,0,0"
+                      Command="{Binding CheckCapacityCommand}"
+                      AutomationProperties.AutomationId="CheckCapacity" />
               <Button Content="Execute migration" Padding="20,6" Margin="8,0,0,0"
                       Command="{Binding ExecuteMigrationCommand}"
                       AutomationProperties.AutomationId="ExecuteMigration" />
@@ -179,7 +183,45 @@
                        FontWeight="SemiBold" AutomationProperties.AutomationId="ExecutionState" />
           </StackPanel>
 
-          <DataGrid Grid.Row="6" ItemsSource="{Binding Entries}"
+          <GroupBox Grid.Row="6" Margin="0,0,0,12" Header="Capacity preflight">
+            <Grid Margin="10">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <TextBlock FontWeight="SemiBold" Text="Copy size" />
+              <TextBlock Grid.Column="1" Margin="8,0,20,0" Text="{Binding CopySize, Mode=OneWay}" />
+              <TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Replace write size" />
+              <TextBlock Grid.Column="3" Margin="8,0,0,0" Text="{Binding ReplaceWriteSize, Mode=OneWay}" />
+              <TextBlock Grid.Row="1" FontWeight="SemiBold" Text="Backup size" />
+              <TextBlock Grid.Row="1" Grid.Column="1" Margin="8,0,20,0" Text="{Binding BackupSize, Mode=OneWay}" />
+              <TextBlock Grid.Row="1" Grid.Column="2" FontWeight="SemiBold" Text="Destination free" />
+              <TextBlock Grid.Row="1" Grid.Column="3" Margin="8,0,0,0" Text="{Binding DestinationFreeSpace, Mode=OneWay}" />
+              <TextBlock Grid.Row="2" FontWeight="SemiBold" Text="Safety workspace free" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Margin="8,0,20,0" Text="{Binding SafetyWorkspaceFreeSpace, Mode=OneWay}" />
+              <TextBlock Grid.Row="2" Grid.Column="2" FontWeight="SemiBold" Text="Status" />
+              <TextBlock Grid.Row="2" Grid.Column="3" Margin="8,0,0,0"
+                         Text="{Binding CapacityStatus, Mode=OneWay, TargetNullValue=Not checked}"
+                         AutomationProperties.AutomationId="CapacityStatus" />
+              <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Margin="0,6,0,0" TextWrapping="Wrap"
+                         Text="{Binding CapacitySummary, Mode=OneWay}"
+                         AutomationProperties.AutomationId="CapacitySummary" />
+              <TextBlock Grid.Row="4" Grid.ColumnSpan="4" Margin="0,4,0,0" TextWrapping="Wrap"
+                         Text="{Binding CapacityVolumeSummary, Mode=OneWay}"
+                         AutomationProperties.AutomationId="CapacityVolumeSummary" />
+            </Grid>
+          </GroupBox>
+
+          <DataGrid Grid.Row="7" ItemsSource="{Binding Entries}"
                     SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
                     AutoGenerateColumns="False"
                     EnableRowVirtualization="False" EnableColumnVirtualization="False"
@@ -198,7 +240,7 @@
             </DataGrid.Columns>
           </DataGrid>
 
-          <Border Grid.Row="7" Margin="0,12,0,0" Padding="12" BorderBrush="#B26A00" BorderThickness="1"
+          <Border Grid.Row="8" Margin="0,12,0,0" Padding="12" BorderBrush="#B26A00" BorderThickness="1"
                   Background="#FFF8E8" AutomationProperties.AutomationId="RecoveryPanel">
             <Border.Style>
               <Style TargetType="Border">
@@ -228,8 +270,8 @@
             </StackPanel>
           </Border>
 
-          <TextBlock Grid.Row="8" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Recommended leaves saves and screenshots unselected. Resolve choices and apply them before execution. The safety workspace stores the durable journal and any required replacement backup. Execution revalidates live state before writing." />
+          <TextBlock Grid.Row="9" Margin="0,12,0,0" TextWrapping="Wrap"
+                     Text="Recommended leaves saves and screenshots unselected. Resolve choices, apply them, and pass capacity preflight before execution. The safety workspace stores the durable journal and any required replacement backup. Execution still revalidates live state before writing." />
         </Grid>
       </TabItem>
 

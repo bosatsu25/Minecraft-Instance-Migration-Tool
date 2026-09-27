@@ -1,4 +1,5 @@
 using MinecraftInstanceMigration.Application.Backup;
+using MinecraftInstanceMigration.Application.Capacity;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
@@ -25,6 +26,13 @@ public interface IMigrationWorkflow
         IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null);
 
     MigrationWorkflowSession CreatePreview(MigrationWorkflowSession session);
+
+    Task<MigrationWorkflowSession> EvaluateCapacityAsync(
+        MigrationWorkflowSession session,
+        string safetyWorkspaceRoot,
+        CancellationToken cancellationToken = default);
+
+    MigrationWorkflowSession InvalidateCapacity(MigrationWorkflowSession session);
 
     MigrationWorkflowSession PrepareBackup(
         MigrationWorkflowSession session,
