@@ -5,14 +5,15 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.1 Selection / Conflict Editing UI is implemented on the current development branch.**
+**Status: Phase 4.2 Execute UI is implemented on the current development branch.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
 Windows Copy / Replace, independent post-write verification, and fingerprint-guarded rollback.
 
-The **current WPF UI still exposes only Inspector and Migration Preview**.
-The WPF Migration Preview now supports custom selection plus explicit Skip / Replace conflict editing. Execute / Rollback, Recovery, and Report flows are not wired into the UI yet.
+The WPF UI exposes Inspector, Migration Preview, selection/conflict editing, explicit execution
+confirmation, Backup when required, and verified Copy / Replace execution. Rollback controls,
+Recovery UX, and Report flows are not wired into the UI yet.
 
 ## Current implementation
 
@@ -106,8 +107,8 @@ The audited Phase 4.0 behavior includes:
 - execution still requires a journal parent before it can start
 - exceptions or cancellation escaping from execution are treated conservatively as `RecoveryRequired`
 
-Phase 4.0 itself did not add WPF behavior or new filesystem adapters. Phase 4.1 now
-connects selection and Skip / Replace conflict editing to this workflow while keeping backup and execution UI out of scope.
+Phase 4.0 itself did not add WPF behavior or new filesystem adapters. Phase 4.1 connected
+selection and Skip / Replace conflict editing; Phase 4.2 connects confirmed execution.
 
 ## Phase 4.1 selection / conflict editing
 
@@ -116,6 +117,19 @@ Recommended remains the initial selection, but users can select a preview row an
 For a current destination conflict, the UI exposes only the already-defined `Skip` / `Replace` decisions; there is still no Merge behavior.
 Choice edits are pending until **Apply choices** rebuilds the plan and preview from the existing inspection evidence, so editing does not re-inspect or write files.
 Changing source/destination clears the prior session choices, and **Reset Recommended** restores the default preset.
+
+## Phase 4.2 confirmed execution
+
+A Ready preview can be executed only after all pending choices are applied and a separate safety
+workspace is selected. The safety workspace holds the durable execution journal and, for Replace,
+the verified backup artifact. A dedicated confirmation dialog displays Copy / Replace / Skip counts,
+whether backup is required, and the source and destination before any filesystem write begins.
+
+The ViewModel advances the existing `IMigrationWorkflow` through Prepare Backup, Backup, Prepare
+Execution, and Execute. Copy-only plans use the workflow's `NotRequired` backup result and never call
+backup IO. The UI projects `Completed`, `Blocked`, `Cancelled`, and `RecoveryRequired` from workflow
+evidence; `RecoveryRequired` locks the session against editing or another Execute. Rollback remains a
+separate future UI flow.
 
 ## What the current UI can do
 
@@ -148,7 +162,8 @@ Existing destination conflicts are shown as `NeedsDecision`.
 The Preview UI can set Skip / Replace or clear a decision back to unresolved, then explicitly apply
 those choices without reinspecting either root.
 
-Preview is metadata-only and never authorizes later writes.
+Generating and editing Preview remains metadata-only. Execution starts only after explicit confirmation,
+then revalidates live state through the existing Application workflow before writing.
 
 ## Safety model
 
@@ -281,7 +296,7 @@ Application ports
 - **Domain** — observations, MigrationPlan, selection/conflict policy, backup/execution/rollback policy
 - **Application** — use cases, orchestration, and ports for external effects
 - **Infrastructure** — Windows filesystem, backup, journals, mutation, verification, rollback adapters
-- **App** — WPF/MVVM Inspector and Preview UI plus composition root
+- **App** — WPF/MVVM Inspector, Preview, selection/conflict, and Execute UI plus composition root
 - **Tests** — Domain / Application / Infrastructure / App plus FlaUI UI smoke
 
 Dependencies point inward. Application and Domain do not reference Infrastructure or UI.
@@ -307,7 +322,6 @@ See [architecture](docs/architecture.md) for details.
 
 The following are not complete:
 
-- end-to-end Execute UI
 - Rollback UI
 - Recovery UX
 - Report UI / persistent report
@@ -383,12 +397,13 @@ Implemented:
 14. Phase 3.8 — durable rollback-attempt journal
 15. Phase 4.0 — Application-owned migration workflow/session
 16. Phase 4.1 — selection / conflict editing UI
+17. Phase 4.2 — confirmed end-to-end Execute UI
 
 Next major areas:
 
-17. end-to-end Execute / Rollback UI
-18. explicit Recovery UX and Report
-19. release hardening
+18. Rollback / Recovery UI
+19. migration Report
+20. release hardening
 
 See [migration rules](docs/migration-rules.md) for legacy candidates and unresolved rules,
 [rollback](docs/rollback.md) for rollback guarantees,

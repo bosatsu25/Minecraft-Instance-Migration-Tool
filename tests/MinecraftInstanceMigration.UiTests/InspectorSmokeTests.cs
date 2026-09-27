@@ -117,6 +117,31 @@ public sealed class InspectorSmokeTests
         Assert.Equal(destinationBefore, destination.Snapshot());
     }
 
+    [Fact]
+    public void ExecutesConfirmedCopyOnlyMigration()
+    {
+        using var source = new UiFixture();
+        using var destination = new UiFixture();
+        using var workspace = new UiFixture();
+        using var unrelated = new UiFixture();
+        Directory.CreateDirectory(source.At("config"));
+        File.WriteAllText(source.At(Path.Combine("config", "sample.txt")), "sample-content");
+        File.WriteAllText(unrelated.At("untouched.txt"), "do-not-change");
+        string[] sourceBefore = source.Snapshot();
+        string[] unrelatedBefore = unrelated.Snapshot();
+
+        using var session = UiSession.Open();
+        session.SelectPreviewTab();
+        session.GeneratePreview(source.Root, destination.Root);
+
+        session.ExecuteMigration(workspace.Root);
+
+        Assert.Contains("Completed", session.Find("ExecutionState").Name);
+        Assert.Equal("sample-content", File.ReadAllText(destination.At(Path.Combine("config", "sample.txt"))));
+        Assert.Equal(sourceBefore, source.Snapshot());
+        Assert.Equal(unrelatedBefore, unrelated.Snapshot());
+    }
+
     private sealed class UiSession : IDisposable
     {
         private readonly FlaUI.Core.Application application;
@@ -211,6 +236,45 @@ public sealed class InspectorSmokeTests
                 throwOnTimeout: false,
                 ignoreException: true);
             Assert.True(finished.Success, "Dry-run preview did not render the config row in fifteen seconds.");
+        }
+
+        public void ExecuteMigration(string workspacePath)
+        {
+            Find("SafetyWorkspacePath").AsTextBox().Text = workspacePath;
+            Button execute = Find("ExecuteMigration").AsButton();
+            var ready = Retry.WhileFalse(
+                () => execute.IsEnabled,
+                timeout: TimeSpan.FromSeconds(5),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(ready.Success, "Execute migration did not become enabled.");
+
+            execute.Invoke();
+            Window? confirmation = null;
+            var shown = Retry.WhileFalse(
+                () =>
+                {
+                    confirmation = Window.ModalWindows
+                        .FirstOrDefault(candidate => candidate.Title == "Confirm migration");
+                    return confirmation is not null;
+                },
+                timeout: TimeSpan.FromSeconds(5),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(shown.Success, "Migration confirmation did not appear.");
+            Assert.NotNull(confirmation);
+
+            AutomationElement start = confirmation.FindFirstDescendant(
+                cf => cf.ByAutomationId("ConfirmMigrationStart"))
+                ?? throw new InvalidOperationException("Confirmation start button was not available.");
+            start.AsButton().Invoke();
+
+            var completed = Retry.WhileFalse(
+                () => Find("ExecutionState").Name.Contains("Completed", StringComparison.Ordinal),
+                timeout: TimeSpan.FromSeconds(20),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(completed.Success, "Confirmed migration did not reach Completed in twenty seconds.");
         }
 
         public string[] RenderedEntryCells(string gridId, string name)

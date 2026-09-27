@@ -9,9 +9,11 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
 {
     private readonly IMigrationWorkflow workflow;
     private readonly Func<string, string?> chooseFolder;
+    private readonly IMigrationExecutionConfirmation executionConfirmation;
     private CancellationTokenSource? cancellation;
     private string sourcePath = "";
     private string destinationPath = "";
+    private string safetyWorkspacePath = "";
     private MigrationWorkflowSession? session;
     private MigrationPreview? preview;
     private IReadOnlyList<MigrationSelectionEntryViewModel> choices = [];
@@ -21,32 +23,39 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
 
     public MigrationPreviewViewModel(
         IMigrationWorkflow workflow,
-        Func<string, string?> chooseFolder)
+        Func<string, string?> chooseFolder,
+        IMigrationExecutionConfirmation? executionConfirmation = null)
     {
         this.workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         this.chooseFolder = chooseFolder ?? throw new ArgumentNullException(nameof(chooseFolder));
+        this.executionConfirmation = executionConfirmation ?? RejectingMigrationExecutionConfirmation.Instance;
 
         BrowseSourceCommand = new RelayCommand(
             () => Browse("Choose source instance candidate folder", path => SourcePath = path),
-            () => !IsBusy);
+            () => CanEditPaths);
         BrowseDestinationCommand = new RelayCommand(
             () => Browse("Choose destination instance candidate folder", path => DestinationPath = path),
-            () => !IsBusy);
+            () => CanEditPaths);
+        BrowseSafetyWorkspaceCommand = new RelayCommand(
+            () => Browse("Choose safety workspace for journal and backup", path => SafetyWorkspacePath = path),
+            () => CanEditPaths);
         GeneratePreviewCommand = new RelayCommand(
             async () => await GeneratePreviewAsync(),
-            () => !IsBusy && !string.IsNullOrWhiteSpace(SourcePath) && !string.IsNullOrWhiteSpace(DestinationPath));
+            () => CanEditPaths &&
+                !string.IsNullOrWhiteSpace(SourcePath) &&
+                !string.IsNullOrWhiteSpace(DestinationPath));
         ApplyChoicesCommand = new RelayCommand(
             ApplyChoices,
-            () => !IsBusy && preview is not null && hasPendingChoices);
+            () => CanEditChoices && preview is not null && hasPendingChoices);
         ResetRecommendedCommand = new RelayCommand(
             ResetRecommended,
-            () => !IsBusy && preview is not null);
+            () => CanEditChoices && preview is not null);
         IncludeSelectedCommand = new RelayCommand(
             () => SetSelectedIncluded(true),
-            () => !IsBusy && SelectedChoice is { Selected: false });
+            () => CanEditChoices && SelectedChoice is { Selected: false });
         ExcludeSelectedCommand = new RelayCommand(
             () => SetSelectedIncluded(false),
-            () => !IsBusy && SelectedChoice?.Selected == true);
+            () => CanEditChoices && SelectedChoice?.Selected == true);
         SkipConflictCommand = new RelayCommand(
             () => SetSelectedConflict(DestinationConflictDecision.Skip),
             CanSetSelectedConflict);
@@ -58,6 +67,9 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             () => CanSetSelectedConflict() &&
                 SelectedChoice?.ConflictDecision != DestinationConflictDecision.Unresolved);
         CancelCommand = new RelayCommand(Cancel, () => IsBusy);
+        ExecuteMigrationCommand = new RelayCommand(
+            async () => await ExecuteMigrationAsync(),
+            CanExecuteMigration);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -65,6 +77,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     public RelayCommand BrowseSourceCommand { get; }
 
     public RelayCommand BrowseDestinationCommand { get; }
+
+    public RelayCommand BrowseSafetyWorkspaceCommand { get; }
 
     public RelayCommand GeneratePreviewCommand { get; }
 
@@ -84,11 +98,17 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
 
     public RelayCommand CancelCommand { get; }
 
+    public RelayCommand ExecuteMigrationCommand { get; }
+
     public bool IsBusy => cancellation is not null;
 
-    public bool CanEditPaths => !IsBusy;
+    public bool CanEditPaths =>
+        !IsBusy && session?.State != MigrationWorkflowState.RecoveryRequired;
 
     public bool HasPendingChoices => hasPendingChoices;
+
+    public MigrationWorkflowState WorkflowState =>
+        session?.State ?? MigrationWorkflowState.SelectRoots;
 
     public string SourcePath
     {
@@ -100,6 +120,22 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     {
         get => destinationPath;
         set => SetPath(ref destinationPath, value);
+    }
+
+    public string SafetyWorkspacePath
+    {
+        get => safetyWorkspacePath;
+        set
+        {
+            if (!CanEditPaths || safetyWorkspacePath == value)
+            {
+                return;
+            }
+
+            safetyWorkspacePath = value;
+            Notify();
+            ExecuteMigrationCommand.Refresh();
+        }
     }
 
     public IReadOnlyList<MigrationSelectionEntryViewModel> Entries => choices;
@@ -201,10 +237,92 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             cancellation = null;
             NotifyPreview();
             NotifyBusy();
+            NotifyExecution();
         }
     }
 
     public void Cancel() => cancellation?.Cancel();
+
+    public async Task ExecuteMigrationAsync()
+    {
+        if (!CanExecuteMigration() || session is null || preview is null)
+        {
+            return;
+        }
+
+        using var operation = new CancellationTokenSource();
+        cancellation = operation;
+        NotifyBusy();
+
+        try
+        {
+            var request = new MigrationExecutionConfirmation(
+                session.SourceRoot ?? "",
+                session.DestinationRoot ?? "",
+                SafetyWorkspacePath,
+                preview.CopyCount,
+                preview.ReplaceCount,
+                preview.SkipCount,
+                preview.RequiresBackup);
+            if (!executionConfirmation.Confirm(request))
+            {
+                status = "Migration was not started. No files were changed.";
+                Notify(nameof(Status));
+                return;
+            }
+
+            status = preview.RequiresBackup
+                ? "Preparing and verifying the required backup…"
+                : "Preparing execution. No backup is required for this plan…";
+            Notify(nameof(Status));
+
+            MigrationWorkflowSession current = workflow.PrepareBackup(
+                session,
+                preview.RequiresBackup ? SafetyWorkspacePath : null,
+                SafetyWorkspacePath);
+            if (current.FailureKind is not null)
+            {
+                session = current;
+                status = WorkflowFailureStatus(current, "Migration is blocked before backup.");
+                NotifyExecution();
+                return;
+            }
+
+            current = await workflow.ExecuteBackupAsync(current, operation.Token);
+            if (current.State != MigrationWorkflowState.BackupReady)
+            {
+                session = current;
+                PublishExecutionResult(current);
+                return;
+            }
+
+            current = workflow.PrepareExecution(current);
+            if (current.State != MigrationWorkflowState.ReadyForExecution ||
+                current.FailureKind is not null)
+            {
+                session = current;
+                PublishExecutionResult(current);
+                return;
+            }
+
+            status = "Executing migration and independently verifying written content…";
+            Notify(nameof(Status));
+            current = await workflow.ExecuteAsync(current, operation.Token);
+            session = current;
+            PublishExecutionResult(current);
+        }
+        catch (Exception error)
+        {
+            status = $"Migration failed ({error.GetType().Name}). Review recovery evidence before retrying.";
+            Notify(nameof(Status));
+        }
+        finally
+        {
+            cancellation = null;
+            NotifyBusy();
+            NotifyExecution();
+        }
+    }
 
     private void ApplyChoices()
     {
@@ -289,7 +407,45 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     }
 
     private bool CanSetSelectedConflict() =>
-        !IsBusy && SelectedChoice?.CanChooseConflict == true;
+        CanEditChoices && SelectedChoice?.CanChooseConflict == true;
+
+    private bool CanEditChoices =>
+        !IsBusy &&
+        session?.State is MigrationWorkflowState.Preview or
+            MigrationWorkflowState.ReadyForBackup;
+
+    private bool CanExecuteMigration() =>
+        !IsBusy &&
+        !hasPendingChoices &&
+        !string.IsNullOrWhiteSpace(SafetyWorkspacePath) &&
+        preview?.Status == MigrationPlanStatus.Ready &&
+        session?.CanPrepareBackup == true;
+
+    private void PublishExecutionResult(MigrationWorkflowSession current)
+    {
+        status = current.State switch
+        {
+            MigrationWorkflowState.Completed =>
+                $"Migration completed. Copied: {preview?.CopyCount ?? 0}; " +
+                $"Replaced: {preview?.ReplaceCount ?? 0}; Skipped: {preview?.SkipCount ?? 0}. " +
+                "Verification succeeded.",
+            MigrationWorkflowState.Cancelled =>
+                "Migration cancelled before execution completed. No further work was started.",
+            MigrationWorkflowState.RecoveryRequired =>
+                "RecoveryRequired. Do not execute again; review recovery evidence before changing files.",
+            MigrationWorkflowState.Blocked =>
+                ExecutionFailureStatus(current, "Migration is blocked."),
+            _ => ExecutionFailureStatus(current, "Migration could not continue."),
+        };
+        NotifyExecution();
+    }
+
+    private void NotifyExecution()
+    {
+        Notify(nameof(WorkflowState));
+        Notify(nameof(Status));
+        ExecuteMigrationCommand.Refresh();
+    }
 
     private void SetSelectedConflict(DestinationConflictDecision decision)
     {
@@ -356,6 +512,13 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             ? prefix
             : $"{prefix} ({current.FailureKind}). No files were changed.";
 
+    private static string ExecutionFailureStatus(
+        MigrationWorkflowSession current,
+        string prefix) =>
+        current.FailureKind is null
+            ? prefix
+            : $"{prefix} ({current.FailureKind}). Review the safety workspace before retrying.";
+
     private void MarkChoicesChanged()
     {
         if (preview is null)
@@ -382,7 +545,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
 
     private void SetPath(ref string field, string value)
     {
-        if (IsBusy || field == value)
+        if (!CanEditPaths || field == value)
         {
             return;
         }
@@ -394,6 +557,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         Notify(nameof(SourcePath));
         Notify(nameof(DestinationPath));
         NotifyPreview();
+        NotifyExecution();
         GeneratePreviewCommand.Refresh();
     }
 
@@ -428,6 +592,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         BrowseDestinationCommand.Refresh();
         GeneratePreviewCommand.Refresh();
         CancelCommand.Refresh();
+        BrowseSafetyWorkspaceCommand.Refresh();
+        ExecuteMigrationCommand.Refresh();
         RefreshChoiceCommands();
     }
 
@@ -440,6 +606,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         SkipConflictCommand.Refresh();
         ReplaceConflictCommand.Refresh();
         ClearConflictCommand.Refresh();
+        ExecuteMigrationCommand.Refresh();
     }
 
     private void Notify([CallerMemberName] string? propertyName = null) =>

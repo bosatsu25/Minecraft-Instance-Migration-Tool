@@ -72,13 +72,14 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
           <StackPanel>
-            <TextBlock Text="Preview / Dry Run" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock Text="Migration Preview and Execution" FontSize="24" FontWeight="SemiBold" />
             <TextBlock Margin="0,8,0,16" TextWrapping="Wrap"
-                       Text="Inspects source and destination, applies the Recommended selection preset, and shows the resulting plan. No files are copied, replaced, deleted, backed up, or modified." />
+                       Text="Preview inspects source and destination without writing. After choices are applied, execution requires a safety workspace and a separate confirmation before Backup or migration writes can begin." />
           </StackPanel>
 
           <Grid Grid.Row="1">
@@ -111,7 +112,22 @@
                     Command="{Binding BrowseDestinationCommand}" />
           </Grid>
 
-          <StackPanel Grid.Row="3" Margin="0,12">
+          <Grid Grid.Row="3" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="Safety workspace" />
+            <TextBox Grid.Column="1" Padding="6"
+                     AutomationProperties.AutomationId="SafetyWorkspacePath"
+                     Text="{Binding SafetyWorkspacePath, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding CanEditPaths}" />
+            <Button Grid.Column="2" Margin="8,0,0,0" Padding="16,6" Content="Browse…"
+                    Command="{Binding BrowseSafetyWorkspaceCommand}" />
+          </Grid>
+
+          <StackPanel Grid.Row="4" Margin="0,12">
             <StackPanel Orientation="Horizontal">
               <Button Content="Generate Preview" Padding="20,6" Command="{Binding GeneratePreviewCommand}"
                       AutomationProperties.AutomationId="GeneratePreview" />
@@ -123,6 +139,9 @@
                       AutomationProperties.AutomationId="ResetRecommendedChoices" />
               <Button Content="Cancel" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
                       AutomationProperties.AutomationId="PreviewCancel" />
+              <Button Content="Execute migration" Padding="20,6" Margin="8,0,0,0"
+                      Command="{Binding ExecuteMigrationCommand}"
+                      AutomationProperties.AutomationId="ExecuteMigration" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
               <TextBlock VerticalAlignment="Center" Margin="0,0,8,0"
@@ -148,16 +167,18 @@
             </StackPanel>
           </StackPanel>
 
-          <StackPanel Grid.Row="4" Margin="0,0,0,12">
+          <StackPanel Grid.Row="5" Margin="0,0,0,12">
             <TextBlock Text="{Binding Status}" TextWrapping="Wrap"
                        AutomationProperties.AutomationId="PreviewStatus" />
             <TextBlock Margin="0,8,0,0" Text="{Binding PlanStatus, StringFormat=Plan status: {0}}"
                        FontWeight="SemiBold" AutomationProperties.AutomationId="PreviewPlanStatus" />
             <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"
                        AutomationProperties.AutomationId="PreviewSummary" />
+            <TextBlock Text="{Binding WorkflowState, Mode=OneWay, StringFormat=Workflow state: {0}}"
+                       FontWeight="SemiBold" AutomationProperties.AutomationId="ExecutionState" />
           </StackPanel>
 
-          <DataGrid Grid.Row="5" ItemsSource="{Binding Entries}"
+          <DataGrid Grid.Row="6" ItemsSource="{Binding Entries}"
                     SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
                     AutoGenerateColumns="False"
                     EnableRowVirtualization="False" EnableColumnVirtualization="False"
@@ -176,8 +197,8 @@
             </DataGrid.Columns>
           </DataGrid>
 
-          <TextBlock Grid.Row="6" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Recommended leaves saves and screenshots unselected. Select a preview row and use Include / Exclude; for a destination conflict use Skip / Replace, then Apply choices. Preview remains metadata-only and never authorizes writes; observations can become stale." />
+          <TextBlock Grid.Row="7" Margin="0,12,0,0" TextWrapping="Wrap"
+                     Text="Recommended leaves saves and screenshots unselected. Resolve choices and apply them before execution. The safety workspace stores the durable journal and any required replacement backup. Execution revalidates live state before writing." />
         </Grid>
       </TabItem>
     </TabControl>

@@ -13,6 +13,294 @@ namespace MinecraftInstanceMigration.App.Tests;
 public sealed class MigrationPreviewViewModelTests
 {
     [Fact]
+    public async Task ReadyPreviewCanExecuteAfterExplicitConfirmation()
+    {
+        var calls = new List<string>();
+        var confirmation = new StubConfirmation(confirmed: true);
+        var model = CreateExecutableModel(calls, confirmation);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+
+        await model.GeneratePreviewAsync();
+
+        Assert.True(model.ExecuteMigrationCommand.CanExecute(null));
+        await model.ExecuteMigrationAsync();
+
+        Assert.Equal(MigrationWorkflowState.Completed, model.WorkflowState);
+        Assert.Equal(["execute"], calls);
+        MigrationExecutionConfirmation request = Assert.Single(confirmation.Requests);
+        Assert.Equal("source", request.SourceRoot);
+        Assert.Equal("destination", request.DestinationRoot);
+        Assert.Equal("workspace", request.SafetyWorkspace);
+        Assert.Equal(1, request.CopyCount);
+        Assert.Equal(0, request.ReplaceCount);
+        Assert.Equal(0, request.SkipCount);
+        Assert.False(request.BackupRequired);
+    }
+
+    [Fact]
+    public async Task ConfirmationRejectionDoesNotCallBackupOrExecution()
+    {
+        var calls = new List<string>();
+        var model = CreateExecutableModel(calls, new StubConfirmation(confirmed: false));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+
+        await model.ExecuteMigrationAsync();
+
+        Assert.Empty(calls);
+        Assert.Equal(MigrationWorkflowState.ReadyForBackup, model.WorkflowState);
+    }
+
+    [Fact]
+    public async Task PendingChoicesDisableExecution()
+    {
+        var model = CreateExecutableModel([], new StubConfirmation(confirmed: true));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        model.SelectedEntry = Entry(model, "config");
+
+        model.ExcludeSelectedCommand.Execute(null);
+
+        Assert.False(model.ExecuteMigrationCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task NeedsDecisionAndBlockedPreviewsCannotExecute()
+    {
+        var needsDecision = CreateExecutableModel(
+            [],
+            new StubConfirmation(confirmed: true),
+            destinationConflict: true);
+        needsDecision.SourcePath = "source";
+        needsDecision.DestinationPath = "destination";
+        needsDecision.SafetyWorkspacePath = "workspace";
+        await needsDecision.GeneratePreviewAsync();
+
+        var blocked = CreateExecutableModel(
+            [],
+            new StubConfirmation(confirmed: true),
+            inspector: new StubInspector((path, _) => Task.FromResult(
+                path == "source"
+                    ? Inspection(("config", EntryState.ReparsePoint))
+                    : Inspection())));
+        blocked.SourcePath = "source";
+        blocked.DestinationPath = "destination";
+        blocked.SafetyWorkspacePath = "workspace";
+        await blocked.GeneratePreviewAsync();
+
+        Assert.Equal("NeedsDecision", needsDecision.PlanStatus);
+        Assert.False(needsDecision.ExecuteMigrationCommand.CanExecute(null));
+        Assert.Equal("Blocked", blocked.PlanStatus);
+        Assert.False(blocked.ExecuteMigrationCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ReplaceRunsBackupBeforeExecution()
+    {
+        var calls = new List<string>();
+        var model = CreateExecutableModel(
+            calls,
+            new StubConfirmation(confirmed: true),
+            destinationConflict: true,
+            backupResult: new BackupExecutionResult(
+                BackupExecutionStatus.Completed,
+                "backup-root"));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        model.SelectedEntry = Entry(model, "config");
+        model.ReplaceConflictCommand.Execute(null);
+        model.ApplyChoicesCommand.Execute(null);
+
+        await model.ExecuteMigrationAsync();
+
+        Assert.Equal(["backup", "execute"], calls);
+        Assert.Equal(MigrationWorkflowState.Completed, model.WorkflowState);
+    }
+
+    [Theory]
+    [InlineData(BackupExecutionStatus.Failed, MigrationWorkflowState.ReadyForBackup, "BackupFailed")]
+    [InlineData(BackupExecutionStatus.Cancelled, MigrationWorkflowState.Cancelled, "Cancelled")]
+    public async Task BackupFailureOrCancellationNeverStartsExecution(
+        BackupExecutionStatus backupStatus,
+        MigrationWorkflowState expectedState,
+        string expectedStatus)
+    {
+        var calls = new List<string>();
+        var model = CreateExecutableModel(
+            calls,
+            new StubConfirmation(confirmed: true),
+            destinationConflict: true,
+            backupResult: new BackupExecutionResult(backupStatus));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        model.SelectedEntry = Entry(model, "config");
+        model.ReplaceConflictCommand.Execute(null);
+        model.ApplyChoicesCommand.Execute(null);
+
+        await model.ExecuteMigrationAsync();
+
+        Assert.Equal(["backup"], calls);
+        Assert.Equal(expectedState, model.WorkflowState);
+        Assert.Contains(expectedStatus, model.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("No files were changed", model.Status, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ExecutionOrchestrationStatus.Failed, MigrationWorkflowState.Blocked, "blocked")]
+    [InlineData(ExecutionOrchestrationStatus.RecoveryRequired, MigrationWorkflowState.RecoveryRequired, "RecoveryRequired")]
+    public async Task ExecutionFailureUsesTypedWorkflowState(
+        ExecutionOrchestrationStatus executionStatus,
+        MigrationWorkflowState expectedState,
+        string expectedMessage)
+    {
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(confirmed: true),
+            execution: new RecordingExecutionOrchestrator([], executionStatus));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+
+        await model.ExecuteMigrationAsync();
+
+        Assert.Equal(expectedState, model.WorkflowState);
+        Assert.Contains(expectedMessage, model.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.False(model.ExecuteMigrationCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ExecutionCannotStartTwiceOrChangePathsWhileRunning()
+    {
+        var pending = new TaskCompletionSource<ExecutionOrchestrationResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var execution = new PendingExecutionOrchestrator(pending.Task);
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(confirmed: true),
+            execution: execution);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+
+        Task first = model.ExecuteMigrationAsync();
+        Assert.True(model.IsBusy);
+        Assert.False(model.ExecuteMigrationCommand.CanExecute(null));
+        Assert.Contains("Executing", model.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("verifying", model.Status, StringComparison.OrdinalIgnoreCase);
+        string originalDestination = model.DestinationPath;
+        model.DestinationPath = "changed";
+        Task second = model.ExecuteMigrationAsync();
+
+        Assert.Equal(originalDestination, model.DestinationPath);
+        Assert.Equal(1, execution.Calls);
+        Assert.True(second.IsCompletedSuccessfully);
+
+        pending.SetResult(new ExecutionOrchestrationResult(
+            ExecutionOrchestrationStatus.Completed,
+            AppliedSteps: 1));
+        await first;
+    }
+
+    [Fact]
+    public async Task PathChangeInvalidatesExecutionSession()
+    {
+        var model = CreateExecutableModel([], new StubConfirmation(confirmed: true));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        Assert.True(model.ExecuteMigrationCommand.CanExecute(null));
+
+        model.SourcePath = "new-source";
+
+        Assert.False(model.ExecuteMigrationCommand.CanExecute(null));
+        Assert.Equal(MigrationWorkflowState.SelectRoots, model.WorkflowState);
+    }
+
+    [Fact]
+    public async Task ExecutionExceptionDoesNotExposePrivateMessage()
+    {
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(confirmed: true),
+            execution: new ThrowingPrivateExecutionOrchestrator());
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+
+        await model.ExecuteMigrationAsync();
+
+        Assert.Equal(MigrationWorkflowState.RecoveryRequired, model.WorkflowState);
+        Assert.DoesNotContain("private", model.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("RecoveryRequired", model.Status);
+    }
+
+    [Fact]
+    public async Task RecoveryRequiredLocksInputsAndChoices()
+    {
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(confirmed: true),
+            execution: new RecordingExecutionOrchestrator(
+                [],
+                ExecutionOrchestrationStatus.RecoveryRequired));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        model.SelectedEntry = Entry(model, "config");
+
+        await model.ExecuteMigrationAsync();
+        model.SourcePath = "new-source";
+        model.SafetyWorkspacePath = "new-workspace";
+
+        Assert.Equal(MigrationWorkflowState.RecoveryRequired, model.WorkflowState);
+        Assert.Equal("source", model.SourcePath);
+        Assert.Equal("workspace", model.SafetyWorkspacePath);
+        Assert.False(model.CanEditPaths);
+        Assert.False(model.BrowseSourceCommand.CanExecute(null));
+        Assert.False(model.BrowseDestinationCommand.CanExecute(null));
+        Assert.False(model.BrowseSafetyWorkspaceCommand.CanExecute(null));
+        Assert.False(model.GeneratePreviewCommand.CanExecute(null));
+        Assert.False(model.ExcludeSelectedCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task CancelDuringExecutionUsesWorkflowCancellationState()
+    {
+        var execution = new CancellableExecutionOrchestrator();
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(confirmed: true),
+            execution: execution);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+
+        Task running = model.ExecuteMigrationAsync();
+        await execution.Started.Task;
+        model.CancelCommand.Execute(null);
+        await running;
+
+        Assert.Equal(MigrationWorkflowState.Cancelled, model.WorkflowState);
+        Assert.Contains("cancelled", model.Status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task GeneratesRecommendedDryRunFromTwoInspections()
     {
         var calls = new List<string>();
@@ -345,6 +633,32 @@ public sealed class MigrationPreviewViewModelTests
     private static MigrationPreviewViewModel CreateModel(IInstanceInspector inspector) =>
         new(CreateWorkflow(inspector), _ => null);
 
+    private static MigrationPreviewViewModel CreateExecutableModel(
+        List<string> calls,
+        IMigrationExecutionConfirmation confirmation,
+        bool destinationConflict = false,
+        BackupExecutionResult? backupResult = null,
+        IExecutionOrchestrator? execution = null,
+        IInstanceInspector? inspector = null)
+    {
+        var backupPlanner = new BackupPlanner();
+        return new MigrationPreviewViewModel(
+            new MigrationWorkflow(
+                inspector ?? new StubInspector((path, _) => Task.FromResult(
+                    path == "source"
+                        ? Inspection(("config", EntryState.Directory))
+                        : destinationConflict
+                            ? Inspection(("config", EntryState.Directory))
+                            : Inspection())),
+                new MigrationPlanner(),
+                new MigrationPreviewer(),
+                backupPlanner,
+                new RecordingBackupExecutor(calls, backupResult),
+                execution ?? new RecordingExecutionOrchestrator(calls)),
+            _ => null,
+            confirmation);
+    }
+
     private static MigrationPreviewViewModel CreateModel(
         IInstanceInspector inspector,
         IMigrationPlanner planner,
@@ -411,6 +725,93 @@ public sealed class MigrationPreviewViewModelTests
             ExecutionOrchestrationRequest request,
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Preview UI must not execute migration IO.");
+    }
+
+    private sealed class RecordingBackupExecutor(
+        List<string> calls,
+        BackupExecutionResult? result = null) : IBackupExecutor
+    {
+        public Task<BackupExecutionResult> ExecuteAsync(
+            string destinationRoot,
+            string backupParent,
+            BackupPlan plan,
+            CancellationToken cancellationToken = default)
+        {
+            calls.Add("backup");
+            return Task.FromResult(result ?? new BackupExecutionResult(
+                BackupExecutionStatus.Completed,
+                "backup-root"));
+        }
+    }
+
+    private sealed class RecordingExecutionOrchestrator(
+        List<string> calls,
+        ExecutionOrchestrationStatus status = ExecutionOrchestrationStatus.Completed) : IExecutionOrchestrator
+    {
+        public Task<ExecutionOrchestrationResult> ExecuteAsync(
+            ExecutionOrchestrationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            calls.Add("execute");
+            return Task.FromResult(new ExecutionOrchestrationResult(
+                status,
+                AppliedSteps: 1));
+        }
+    }
+
+    private sealed class PendingExecutionOrchestrator(Task<ExecutionOrchestrationResult> result)
+        : IExecutionOrchestrator
+    {
+        public int Calls { get; private set; }
+
+        public Task<ExecutionOrchestrationResult> ExecuteAsync(
+            ExecutionOrchestrationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return result;
+        }
+    }
+
+    private sealed class ThrowingPrivateExecutionOrchestrator : IExecutionOrchestrator
+    {
+        public Task<ExecutionOrchestrationResult> ExecuteAsync(
+            ExecutionOrchestrationRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("private destination path");
+    }
+
+    private sealed class CancellableExecutionOrchestrator : IExecutionOrchestrator
+    {
+        public TaskCompletionSource Started { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<ExecutionOrchestrationResult> ExecuteAsync(
+            ExecutionOrchestrationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Started.SetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("Unreachable.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return new ExecutionOrchestrationResult(ExecutionOrchestrationStatus.Cancelled);
+            }
+        }
+    }
+
+    private sealed class StubConfirmation(bool confirmed) : IMigrationExecutionConfirmation
+    {
+        public List<MigrationExecutionConfirmation> Requests { get; } = [];
+
+        public bool Confirm(MigrationExecutionConfirmation request)
+        {
+            Requests.Add(request);
+            return confirmed;
+        }
     }
 
     private sealed class ThrowOnSecondPlanCallPlanner : IMigrationPlanner

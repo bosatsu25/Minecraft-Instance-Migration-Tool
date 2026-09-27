@@ -552,6 +552,28 @@ Recommended is still the initial selection. The UI presents all current preview 
 
 Changing either root discards the prior workflow session, preview, and pending choices. **Reset Recommended** restores the preset and clears explicit conflict decisions. This phase does not add Backup / Execute / Rollback UI, Merge semantics, or filesystem writes.
 
+## Phase 4.2 confirmed execution UI
+
+Phase 4.2 keeps `IMigrationWorkflow` as the product orchestration boundary. The WPF ViewModel does not
+create a parallel execution state machine: it retains the current `MigrationWorkflowSession`, projects
+its state, and invokes `PrepareBackup`, `ExecuteBackupAsync`, `PrepareExecution`, and `ExecuteAsync` in
+that order. Domain/Application policies remain the authority for readiness, backup requirements, live
+revalidation, workspace safety, journaling, mutation, and post-write verification.
+
+Execution requires a Ready preview, no pending selection/conflict edits, an explicit safety workspace,
+and a positive response from `IMigrationExecutionConfirmation`. The confirmation request contains the
+reviewed roots, Copy / Replace / Skip counts, backup requirement, and safety workspace. The WPF adapter
+shows a dedicated owned dialog; ViewModel tests inject the interface without depending on a native dialog.
+No backup or execution port is crossed before confirmation.
+
+The safety workspace is the journal parent and, only when Replace requires it, the backup parent.
+Copy-only plans pass no backup parent and rely on `BackupPlanStatus.NotRequired`, so backup IO and fake
+backup evidence are avoided. Once confirmed, the workflow's existing backend order remains unchanged.
+During the operation, roots, workspace, choices, Preview regeneration, and duplicate Execute are disabled.
+Cancellation is passed to the workflow and the UI reports its typed result without assuming whether files
+changed. `RecoveryRequired` is distinct, prohibits another Execute and input editing, and exposes no
+Rollback action in this phase.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -579,7 +601,7 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
   read-only against ownership, manifest, plan, exact top-level membership, no-follow traversal, and a
   recomputed tree fingerprint. A failed/cancelled/invalid artifact is never accepted as recovery evidence.
 - **Execute:** Phase 3.5 provides orchestration; Phase 3.6 implements Windows single-entry mutation and
-  independent verification. Future UI/execution entrypoints must still compose these ports only after
+  independent verification. Phase 4.2 exposes that path through explicit WPF confirmation only after
   Preview, backup, and journal setup succeed.
 - **Verify:** Compare actual outcomes against the plan using defined evidence (such as content
   fingerprints), independently of an executor's success flag.

@@ -44,7 +44,8 @@ public partial class MainWindow : Window
 
         var previewModel = new MigrationPreviewViewModel(
             workflow,
-            ChooseFolder);
+            ChooseFolder,
+            new WpfMigrationExecutionConfirmation(this));
 
         var model = new MainViewModel(inspectorModel, previewModel);
         DataContext = model;
