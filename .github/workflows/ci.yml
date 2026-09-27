@@ -2,7 +2,13 @@ name: CI
 
 on:
   push:
+    paths-ignore:
+      - 'README.md'
+      - 'README.ja.md'
   pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'README.ja.md'
   workflow_dispatch:
 
 permissions:
