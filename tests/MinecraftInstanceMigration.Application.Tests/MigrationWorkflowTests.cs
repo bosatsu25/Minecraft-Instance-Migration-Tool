@@ -1,4 +1,5 @@
 using MinecraftInstanceMigration.Application.Backup;
+using MinecraftInstanceMigration.Application.Capacity;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
@@ -131,7 +132,7 @@ public sealed class MigrationWorkflowTests
             backupExecutor: new StubBackupExecutor(calls));
 
         MigrationWorkflowSession session = await ReadyForBackup(workflow);
-        session = workflow.PrepareBackup(session, backupParent: null, journalParent: null);
+        session = workflow.PrepareBackup(session, backupParent: null, journalParent: "journals");
         session = await workflow.ExecuteBackupAsync(session, TestContext.Current.CancellationToken);
 
         Assert.Equal(MigrationWorkflowState.BackupReady, session.State);
@@ -288,11 +289,74 @@ public sealed class MigrationWorkflowTests
             property => Assert.False(property.SetMethod?.IsPublic ?? false));
     }
 
+    [Fact]
+    public async Task BackupIsBlockedUntilCapacityIsReadyForTheSameWorkspace()
+    {
+        MigrationWorkflow workflow = CreateWorkflow();
+        MigrationWorkflowSession session = await InspectedSession(workflow);
+        session = workflow.ConfigurePlan(session, ["options.txt"]);
+        session = workflow.CreatePreview(session);
+
+        Assert.False(session.CanPrepareBackup);
+        Assert.Equal(MigrationWorkflowFailureKind.InvalidState,
+            workflow.PrepareBackup(session, null, "journals").FailureKind);
+
+        session = await workflow.EvaluateCapacityAsync(
+            session, "journals", TestContext.Current.CancellationToken);
+        Assert.True(session.CanPrepareBackup);
+        Assert.Null(workflow.PrepareBackup(session, null, "journals").FailureKind);
+        Assert.Equal(MigrationWorkflowFailureKind.InvalidState,
+            workflow.PrepareBackup(session, null, "other-journals").FailureKind);
+    }
+
+    [Fact]
+    public async Task WorkspaceAndPlanChangesInvalidateCapacityEvidence()
+    {
+        MigrationWorkflow workflow = CreateWorkflow();
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
+
+        session = workflow.InvalidateCapacity(session);
+        Assert.Null(session.CapacityEstimate);
+        Assert.Null(session.CapacityWorkspaceRoot);
+        Assert.False(session.CanPrepareBackup);
+
+        session = await workflow.EvaluateCapacityAsync(
+            session, "journals", TestContext.Current.CancellationToken);
+        session = workflow.ConfigurePlan(session, ["options.txt"]);
+        Assert.Null(session.CapacityEstimate);
+        Assert.Null(session.CapacityWorkspaceRoot);
+    }
+
+    [Fact]
+    public async Task UnavailableCapacityDoesNotDestroyReadOnlyPreview()
+    {
+        MigrationWorkflow workflow = CreateWorkflow(
+            capacity: new StubCapacityPreflight(new MigrationCapacityEstimate(
+                MigrationCapacityStatus.Unavailable,
+                MigrationCapacityFailureKind.VolumeUnavailable)));
+        MigrationWorkflowSession session = await InspectedSession(workflow);
+        session = workflow.ConfigurePlan(session, ["options.txt"]);
+        session = workflow.CreatePreview(session);
+        MigrationPreview? preview = session.MigrationPreview;
+
+        session = await workflow.EvaluateCapacityAsync(
+            session, "journals", TestContext.Current.CancellationToken);
+
+        Assert.Same(preview, session.MigrationPreview);
+        Assert.Equal(MigrationWorkflowState.ReadyForBackup, session.State);
+        Assert.Equal(MigrationWorkflowFailureKind.CapacityUnavailable, session.FailureKind);
+        Assert.False(session.CanPrepareBackup);
+    }
+
     private static async Task<MigrationWorkflowSession> ReadyForBackup(MigrationWorkflow workflow)
     {
         MigrationWorkflowSession session = await InspectedSession(workflow);
         session = workflow.ConfigurePlan(session, ["options.txt"], null);
-        return workflow.CreatePreview(session);
+        session = workflow.CreatePreview(session);
+        return await workflow.EvaluateCapacityAsync(
+            session,
+            "journals",
+            TestContext.Current.CancellationToken);
     }
 
     private static async Task<MigrationWorkflowSession> InspectedSession(MigrationWorkflow workflow)
@@ -306,6 +370,7 @@ public sealed class MigrationWorkflowTests
         IInstanceInspector? inspector = null,
         IMigrationPlanner? planner = null,
         IMigrationPreviewer? previewer = null,
+        IMigrationCapacityPreflight? capacity = null,
         IBackupPlanner? backupPlanner = null,
         IBackupExecutor? backupExecutor = null,
         IExecutionOrchestrator? execution = null) =>
@@ -314,9 +379,28 @@ public sealed class MigrationWorkflowTests
             planner ?? new StubPlanner(ReadyPlan()),
             previewer ?? new StubPreviewer(new MigrationPreview(
                 MigrationPlanStatus.Ready, [], [], [])),
+            capacity ?? new StubCapacityPreflight(),
             backupPlanner ?? new StubBackupPlanner(),
             backupExecutor ?? new StubBackupExecutor([]),
             execution ?? new StubExecutionOrchestrator([]));
+
+    private sealed class StubCapacityPreflight(
+        MigrationCapacityEstimate? estimate = null) : IMigrationCapacityPreflight
+    {
+        public Task<MigrationCapacityEstimate> EvaluateAsync(
+            MigrationCapacityRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(estimate ?? new MigrationCapacityEstimate(
+                MigrationCapacityStatus.Ready,
+                MigrationCapacityFailureKind.None,
+                DestinationRequiredBytes: 1,
+                SafetyWorkspaceRequiredBytes: 1,
+                DestinationAvailableBytes: 2,
+                SafetyWorkspaceAvailableBytes: 2));
+        }
+    }
 
     private static InstanceInspectionResult Inspection() =>
         new(

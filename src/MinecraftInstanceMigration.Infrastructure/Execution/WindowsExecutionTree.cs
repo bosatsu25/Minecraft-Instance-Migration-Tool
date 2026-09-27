@@ -558,6 +558,28 @@ internal static class WindowsExecutionTree
             Convert.ToHexString(hash.GetHashAndReset()));
     }
 
+    internal static long MeasureLogicalBytes(
+        OpenedNode node,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!node.IsDirectory)
+        {
+            return RandomAccess.GetLength(node.Handle);
+        }
+
+        long totalBytes = 0;
+        foreach (string childName in BackupNativeMethods.EnumerateNames(node.Handle))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateSingleName(childName);
+            using OpenedNode child = OpenExistingNode(node.Handle, childName);
+            totalBytes = checked(totalBytes + MeasureLogicalBytes(child, cancellationToken));
+        }
+
+        return totalBytes;
+    }
+
     private static void AppendFingerprint(
         OpenedNode node,
         string relativePath,

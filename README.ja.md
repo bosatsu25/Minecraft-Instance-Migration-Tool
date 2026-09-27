@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 4.4 の Migration Report を実装済みです。**
+**Phase 4.5 の Capacity / Free-space Preflight を実装済みです。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -14,6 +14,7 @@ Windows Copy / Replace、独立 post-write verification、fingerprint guard 付�
 WPF UI から Inspector、Migration Preview、selection / conflict 編集、明示的な実行確認、
 必要時の Backup、検証付き Copy / Replace 実行、Recovery 診断、確認付き guarded rollback、
 読み取り専用 Migration Report まで操作できます。
+選択中の safety workspace に対する最新の容量確認も、実行前の必須条件です。
 
 ## 現在の実装範囲
 
@@ -25,6 +26,8 @@ Inspect
 Plan
   ↓
 Preview / Dry Run
+  ↓
+Capacity Preflight
   ↓
 Backup Preflight
   ↓
@@ -153,6 +156,21 @@ Report tab には action 件数、backup outcome、verification outcome を表�
 message を保持しません。Phase 4.4 は memory 内表示までとし、自動保存とユーザー export は、
 owned destination、collision policy、partial-write 対策を定義する将来フェーズへ残します。
 詳細は [report](docs/report.md) を参照してください。
+
+## Phase 4.5 Capacity / Free-space Preflight
+
+Backup や移行書込みを始める前に、Application が Copy / Replace の source logical bytes と、
+Replace で backup する現在の destination bytes を評価します。Infrastructure は既存の
+handle-relative / no-follow Windows traversal で計測し、canonical volume identity と空き容量も
+取得します。Destination と safety workspace が同じ物理 volume なら、SUBST 等の alias も含めて
+書込みと backup の必要量を合算します。
+
+見積りには logical bytes の 5%、最小 64 MiB、最大 1 GiB の bounded reserve を加えます。
+計測不能、unsafe tree、不正値、overflow、cancel は Ready になりません。root、choice、Preview、
+safety workspace を変更すると古い結果を破棄し、現在の Preview と workspace に対する Ready 結果が
+なければ Execute は無効です。これは明白な容量不足を事前検出するもので、実行時の live validation や
+disk-full を含む IO failure 処理は引き続き必要です。詳細は
+[capacity preflight](docs/capacity-preflight.md) を参照してください。
 
 ## UI で現在できること
 
@@ -348,7 +366,6 @@ BCL と明示的な port / adapter を中心に構成しています。
 - automatic rollback resume
 - legacy `hanemod-client.json` exclusion
 - Merge conflict semantics
-- size / free-space estimate
 - Minecraft / mod / loader compatibility 判定
 - exact NTFS clone semantics
 - release packaging / signing / installer
@@ -420,10 +437,13 @@ warnings は build failure として扱います。
 17. Phase 4.2 — 確認付き end-to-end Execute UI
 18. Phase 4.3 — Recovery Diagnosis / Guarded Rollback UI
 19. Phase 4.4 — 読み取り専用 Migration Report
+20. Phase 4.5 — Capacity / Free-space Preflight
 
 次の大きな領域:
 
-20. **Phase 5.0 — Release hardening**
+21. **Phase 4.6 — ModPackTransfer compatibility closure**
+22. Phase 5.0 — Release hardening
+23. Phase 5.1 — v1.0 release validation
 
 旧版由来の移行候補と未解決 rule は [migration rules](docs/migration-rules.md)、
 rollback の保証範囲は [rollback](docs/rollback.md)、

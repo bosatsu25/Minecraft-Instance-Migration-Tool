@@ -254,6 +254,22 @@ public sealed class InspectorSmokeTests
         public void ExecuteMigration(string workspacePath)
         {
             Find("SafetyWorkspacePath").AsTextBox().Text = workspacePath;
+            Button checkCapacity = Find("CheckCapacity").AsButton();
+            var canCheck = Retry.WhileFalse(
+                () => checkCapacity.IsEnabled,
+                timeout: TimeSpan.FromSeconds(5),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(canCheck.Success, "Capacity check did not become enabled.");
+
+            checkCapacity.Invoke();
+            var capacityReady = Retry.WhileFalse(
+                () => Find("CapacityStatus").Name.Contains("Ready", StringComparison.Ordinal),
+                timeout: TimeSpan.FromSeconds(20),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(capacityReady.Success, "Capacity preflight did not reach Ready in twenty seconds.");
+
             Button execute = Find("ExecuteMigration").AsButton();
             var ready = Retry.WhileFalse(
                 () => execute.IsEnabled,
