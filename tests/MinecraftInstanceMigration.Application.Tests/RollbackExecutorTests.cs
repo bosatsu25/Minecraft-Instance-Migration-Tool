@@ -212,6 +212,30 @@ public sealed class RollbackExecutorTests
     }
 
     [Fact]
+    public async Task LaterGuardRejectionAfterOneAppliedActionRequiresRecovery()
+    {
+        var events = new List<string>();
+        var storage = new StubStorage(events)
+        {
+            ResultForCall = call => call == 1
+                ? new RollbackStorageResult(RollbackStorageStatus.Applied)
+                : new RollbackStorageResult(RollbackStorageStatus.GuardRejected,
+                    RollbackStorageFailureKind.DestinationChanged),
+        };
+        var result = await new RollbackExecutor(new StubBackupValidator(),
+            new StubAttemptPersistence(events), storage).ExecuteAsync(
+                Request(ReadyPlan(DeleteAction("config", 0, ExpectedEntryKind.Directory),
+                    DeleteAction("options.txt", 1))), TestContext.Current.CancellationToken);
+
+        Assert.Equal(RollbackExecutionStatus.RecoveryRequired, result.Status);
+        Assert.Equal(RollbackExecutionFailureKind.GuardRejected, result.FailureKind);
+        Assert.Equal(1, result.CompletedActions);
+        Assert.Equal(new[] { "attempt:create", "attempt:started:0", "storage:config",
+            "attempt:applied:0", "attempt:started:1", "storage:options.txt",
+            "attempt:rejected:1:DestinationChanged" }, events);
+    }
+
+    [Fact]
     public async Task StorageRecoveryRequiredPersistsFailed()
     {
         var events = new List<string>();
@@ -339,6 +363,49 @@ public sealed class RollbackExecutorTests
         Assert.Equal(RollbackExecutionFailureKind.JournalRequired, result.FailureKind);
     }
 
+    [Fact]
+    public async Task CancellationAfterDurableStartedStillFinishesAndPersistsTheAction()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var events = new List<string>();
+        var attempt = new StubAttemptPersistence(events) { OnStarted = cancellation.Cancel };
+        var storage = new StubStorage(events);
+        var result = await new RollbackExecutor(new StubBackupValidator(), attempt, storage)
+            .ExecuteAsync(Request(ReadyPlan(DeleteAction("options.txt"))), cancellation.Token);
+        Assert.Equal(RollbackExecutionStatus.Completed, result.Status);
+        Assert.Equal(1, result.CompletedActions);
+        Assert.Contains("attempt:applied:0", events);
+        Assert.False(storage.TokenCanBeCancelled);
+    }
+
+    [Fact]
+    public async Task CancellationDuringValidationNeverStartsAnAction()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var events = new List<string>();
+        var backup = new StubBackupValidator(events) { OnValidation = cancellation.Cancel };
+        var result = await new RollbackExecutor(backup, new StubAttemptPersistence(events),
+            new StubStorage(events)).ExecuteAsync(Request(ReadyPlan(RestoreAction("config")),
+                "backup", ReadyBackupPlan()), cancellation.Token);
+        Assert.Equal(RollbackExecutionStatus.Cancelled, result.Status);
+        Assert.Equal(new[] { "attempt:create", "backup" }, events);
+    }
+
+    [Fact]
+    public async Task StorageExceptionAttemptsFailedTerminalAndRequiresRecovery()
+    {
+        var events = new List<string>();
+        var storage = new StubStorage(events)
+        {
+            ResultForCall = _ => throw new IOException("Synthetic failure"),
+        };
+        var result = await new RollbackExecutor(new StubBackupValidator(),
+            new StubAttemptPersistence(events), storage)
+            .ExecuteAsync(Request(ReadyPlan(DeleteAction("options.txt"))), TestContext.Current.CancellationToken);
+        Assert.Equal(RollbackExecutionStatus.RecoveryRequired, result.Status);
+        Assert.Contains("attempt:failed:0:IoFailure", events);
+    }
+
     private static RollbackExecutionRequest Request(
         RollbackPlan plan,
         string? backupRoot = null,
@@ -398,6 +465,7 @@ public sealed class RollbackExecutorTests
 
     private sealed class StubBackupValidator : IBackupArtifactValidator
     {
+        public Action? OnValidation { get; set; }
         private readonly List<string>? events;
 
         public StubBackupValidator(List<string>? events = null)
@@ -423,6 +491,7 @@ public sealed class RollbackExecutorTests
         {
             Calls++;
             events?.Add("backup");
+            OnValidation?.Invoke();
             return Task.FromResult(Result);
         }
     }
@@ -450,6 +519,8 @@ public sealed class RollbackExecutorTests
 
         public Action<int>? OnApplied { get; set; }
 
+        public Action? OnStarted { get; set; }
+
         public Task<RollbackAttemptWriteResult> CreateAsync(
             string journalParent,
             string destinationRoot,
@@ -472,6 +543,7 @@ public sealed class RollbackExecutorTests
         {
             Calls++;
             events?.Add($"attempt:started:{order}");
+            OnStarted?.Invoke();
             return Task.FromResult(StartedResult);
         }
 
@@ -524,6 +596,7 @@ public sealed class RollbackExecutorTests
 
     private sealed class StubStorage : IRollbackStorage
     {
+        public bool TokenCanBeCancelled { get; private set; }
         private readonly List<string>? events;
 
         public StubStorage(List<string>? events = null)
@@ -544,6 +617,7 @@ public sealed class RollbackExecutorTests
         {
             Calls++;
             events?.Add($"storage:{action.Name}");
+            TokenCanBeCancelled = cancellationToken.CanBeCanceled;
 
             return Task.FromResult(
                 ResultForCall?.Invoke(Calls) ??

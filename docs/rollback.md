@@ -136,8 +136,43 @@ guarded rollback IO
 The journal is append-only at the logical level, checksum-chained, and flushed to disk before an
 acknowledged transition returns. A later action cannot start unless every earlier action is durably Applied.
 
-If the process disappears after Started but before a terminal record is durable, reload maps that action
-to `Uncertain`. This is the critical crash fact that Phase 3.7 could not persist.
+If the process disappears and reload finds Started without a complete valid terminal record, that action
+is `Uncertain`. This is the critical crash fact that Phase 3.7 could not persist.
+
+### Crash windows and recovered evidence
+
+Load uses only complete, validated newline-terminated records. A complete malformed record fails closed;
+only an unterminated final tail may be ignored and removed before a subsequent append.
+
+| Process-stop point | Evidence observed after reopen |
+| --- | --- |
+| Before creation | No attempt artifact |
+| During header creation | Missing/incomplete header is invalid; a complete valid header yields NotStarted |
+| After header, before Started | NotStarted |
+| During Started append | Torn tail yields NotStarted; a complete valid Started yields Uncertain |
+| After durable Started, before mutation | Uncertain |
+| During mutation | Uncertain |
+| After mutation, before terminal | Uncertain |
+| During terminal append | Torn terminal leaves Uncertain; a complete valid terminal supplies its recorded outcome |
+| After terminal durability | Applied, GuardRejected, or Failed, as recorded |
+| Between actions | Prior terminals plus NotStarted for remaining actions; partial Applied requires recovery |
+
+A complete record can survive even if its caller never received an acknowledgement. Load reports the
+validated bytes present; it cannot establish whether an acknowledgement reached the caller. Started
+is acknowledged only after `Flush(flushToDisk: true)`, before storage is invoked. Terminal persistence
+failure always returns RecoveryRequired. Cancellation after durable Started does not interrupt the
+current action or its terminal bookkeeping.
+
+Schema v1 rejects unknown or duplicate JSON properties and missing required constructor fields.
+Header entries must match every ordered plan safety field. Entry names are validated as single Windows
+names before serialization, so caller-supplied absolute paths or path fragments cannot enter the journal.
+Checksums detect corruption and inconsistent history; they do not authenticate a journal against an actor
+who can rewrite the complete artifact and recompute its chain.
+
+Tests cut each header/Started/terminal record at every byte boundary in an ASCII fixture and reopen it,
+exercise corrupt complete records without truncating them, and reload real guarded rollback outcomes.
+These are deterministic process-interruption models, not a hardware power-loss test. Actual durability
+still depends on Windows and the storage device honoring flushes.
 
 ### Deliberate limitation: diagnosis is durable, automatic resume is not
 

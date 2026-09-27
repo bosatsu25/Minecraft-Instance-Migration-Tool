@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Execution;
@@ -15,6 +16,9 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        AllowDuplicateProperties = false,
+        RespectRequiredConstructorParameters = true,
     };
 
     public Task<RollbackAttemptWriteResult> CreateAsync(
@@ -802,7 +806,8 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
             RollbackPlanEntry expected =
                 plan.Entries[index];
 
-            if (actual.Order != index ||
+            if (actual is null ||
+                actual.Order != index ||
                 expected.Order != index ||
                 !string.Equals(
                     actual.Name,
@@ -834,7 +839,9 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
         RollbackPlan? plan)
     {
         if (plan is null ||
-            !plan.CanAttemptAutomaticRollback)
+            plan.Status != RollbackPlanStatus.Ready ||
+            plan.Entries.Count == 0 ||
+            plan.Blockers.Count != 0)
         {
             return false;
         }
@@ -846,7 +853,10 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
             RollbackPlanEntry entry =
                 plan.Entries[index];
 
-            if (entry.Order != index ||
+            if (entry is null ||
+                !WindowsExecutionTree.IsSingleName(entry.Name) ||
+                !Enum.IsDefined(entry.ExpectedKind) ||
+                entry.Order != index ||
                 entry.ExpectedCurrentFingerprint is null ||
                 entry.RecoveryReason is not null)
             {

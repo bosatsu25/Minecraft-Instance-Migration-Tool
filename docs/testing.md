@@ -485,8 +485,24 @@ Windows journal coverage includes:
 - a journal parent inside destination is rejected before artifact creation;
 - a different rollback plan cannot reuse an existing attempt journal.
 
-Real rollback integration reloads the durable attempt after a verified Replace restore and requires the
-action to be `Applied`.
+Independent audit regression coverage also includes:
+
+- path-shaped plan entry names are rejected before creating any artifact;
+- null header entries, unknown/duplicate JSON properties, invalid checksum links, index gaps,
+  duplicated/reordered records and complete malformed JSON fail closed without changing journal bytes;
+- each safety field in the ordered plan is bound to the header;
+- duplicate starts/terminals and terminals without Started cannot change journal bytes;
+- every truncated header/Started/terminal prefix preserves only the prior complete evidence;
+- Applied plus NotStarted or GuardRejected remains recovery-required after reload;
+- journal placement inside backup and inside either protected root through SUBST aliases is rejected;
+- reparse parents and parent replacement with a junction fail closed;
+- cancellation after durable Started still completes non-cancellable storage and terminal persistence;
+- cancellation during backup validation never starts an action;
+- storage exceptions attempt a durable Failed terminal and require recovery.
+
+Real rollback integration reloads the durable attempt after guarded Copy deletion, verified Replace
+restore, and a modified-destination rejection, requiring Applied or GuardRejected respectively.
+The crash-window table and limits of simulated interruption are documented in [rollback](rollback.md).
 
 Phase 3.8 improves crash diagnosis but does not implement automatic rollback resume. An Uncertain or Failed
 action remains recovery-required.
