@@ -89,6 +89,38 @@ public sealed class InspectorSmokeTests
         Assert.Equal(destinationBefore, destination.Snapshot());
     }
 
+    [Fact]
+    public void EditsDestinationConflictWithoutWritingFiles()
+    {
+        using var source = new UiFixture();
+        using var destination = new UiFixture();
+        Directory.CreateDirectory(source.At("config"));
+        Directory.CreateDirectory(destination.At("config"));
+        string[] sourceBefore = source.Snapshot();
+        string[] destinationBefore = destination.Snapshot();
+
+        using var session = UiSession.Open();
+        session.SelectPreviewTab();
+        session.GeneratePreview(source.Root, destination.Root);
+
+        Assert.Contains("NeedsDecision", session.Find("PreviewPlanStatus").Name);
+        ComboBox conflict = session.FindByName("config conflict decision").AsComboBox();
+        conflict.Select("Replace");
+        session.Find("ApplyPreviewChoices").AsButton().Invoke();
+
+        var finished = Retry.WhileFalse(
+            () => session.Find("PreviewPlanStatus").Name.Contains("Ready", StringComparison.Ordinal),
+            timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false);
+        Assert.True(finished.Success, "Conflict decision did not refresh the preview.");
+
+        string[] config = session.RenderedEntryCells("PreviewEntries", "config");
+        Assert.Contains("Replace", config);
+        Assert.Contains("ReadyToReplace", config);
+
+        Assert.Equal(sourceBefore, source.Snapshot());
+        Assert.Equal(destinationBefore, destination.Snapshot());
+    }
+
     private sealed class UiSession : IDisposable
     {
         private readonly FlaUI.Core.Application application;
@@ -132,6 +164,10 @@ public sealed class InspectorSmokeTests
         public AutomationElement Find(string id) =>
             Window.FindFirstDescendant(cf => cf.ByAutomationId(id))
             ?? throw new InvalidOperationException($"Missing UI control: {id}");
+
+        public AutomationElement FindByName(string name) =>
+            Window.FindFirstDescendant(cf => cf.ByName(name))
+            ?? throw new InvalidOperationException($"Missing UI control: {name}");
 
         public void Inspect(string path)
         {

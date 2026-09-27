@@ -114,6 +114,12 @@
           <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,12">
             <Button Content="Generate Preview" Padding="20,6" Command="{Binding GeneratePreviewCommand}"
                     AutomationProperties.AutomationId="GeneratePreview" />
+            <Button Content="Apply choices" Padding="20,6" Margin="8,0,0,0"
+                    Command="{Binding ApplyChoicesCommand}"
+                    AutomationProperties.AutomationId="ApplyPreviewChoices" />
+            <Button Content="Reset Recommended" Padding="20,6" Margin="8,0,0,0"
+                    Command="{Binding ResetRecommendedCommand}"
+                    AutomationProperties.AutomationId="ResetRecommendedChoices" />
             <Button Content="Cancel" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
                     AutomationProperties.AutomationId="PreviewCancel" />
           </StackPanel>
@@ -128,22 +134,34 @@
           </StackPanel>
 
           <DataGrid Grid.Row="5" ItemsSource="{Binding Entries}" AutoGenerateColumns="False"
-                    IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                    IsReadOnly="False" CanUserAddRows="False" CanUserDeleteRows="False"
                     HeadersVisibility="Column" AutomationProperties.Name="Migration preview entries"
                     AutomationProperties.AutomationId="PreviewEntries">
             <DataGrid.Columns>
-              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
-              <DataGridCheckBoxColumn Header="Selected" Binding="{Binding Selected}" Width="80" />
-              <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="110" />
-              <DataGridTextColumn Header="Plan detail" Binding="{Binding PlanDisposition}" Width="190" />
-              <DataGridTextColumn Header="Source" Binding="{Binding SourceState, TargetNullValue=Unknown}" Width="115" />
-              <DataGridTextColumn Header="Destination" Binding="{Binding DestinationState, TargetNullValue=Unknown}" Width="115" />
-              <DataGridCheckBoxColumn Header="Backup" Binding="{Binding RequiresBackup}" Width="75" />
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" IsReadOnly="True" />
+              <DataGridCheckBoxColumn Header="Selected"
+                                      Binding="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      Width="80" />
+              <DataGridTemplateColumn Header="Conflict" Width="125">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate>
+                    <ComboBox ItemsSource="{Binding ConflictOptions}"
+                              SelectedItem="{Binding ConflictDecision, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              IsEnabled="{Binding CanChooseConflict}"
+                              AutomationProperties.Name="{Binding Name, StringFormat={}{0} conflict decision}" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
+              <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="110" IsReadOnly="True" />
+              <DataGridTextColumn Header="Plan detail" Binding="{Binding PlanDisposition}" Width="190" IsReadOnly="True" />
+              <DataGridTextColumn Header="Source" Binding="{Binding SourceState, TargetNullValue=Unknown}" Width="115" IsReadOnly="True" />
+              <DataGridTextColumn Header="Destination" Binding="{Binding DestinationState, TargetNullValue=Unknown}" Width="115" IsReadOnly="True" />
+              <DataGridCheckBoxColumn Header="Backup" Binding="{Binding RequiresBackup}" Width="75" IsReadOnly="True" />
             </DataGrid.Columns>
           </DataGrid>
 
           <TextBlock Grid.Row="6" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Recommended leaves saves and screenshots unselected. Existing destination conflicts remain NeedsDecision in this UI. Preview is metadata-only and does not authorize future writes; observations can become stale." />
+                     Text="Recommended leaves saves and screenshots unselected. Edit selection, choose Skip or Replace for visible destination conflicts, then Apply choices. Preview remains metadata-only and never authorizes writes; observations can become stale." />
         </Grid>
       </TabItem>
     </TabControl>

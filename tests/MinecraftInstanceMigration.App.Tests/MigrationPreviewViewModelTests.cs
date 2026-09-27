@@ -1,6 +1,10 @@
 using MinecraftInstanceMigration.App.Presentation;
+using MinecraftInstanceMigration.Application.Backup;
+using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
+using MinecraftInstanceMigration.Application.Workflow;
+using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Inspection;
 using MinecraftInstanceMigration.Domain.Planning;
 
@@ -30,10 +34,40 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal(MigrationPreviewAction.Copy, Entry(model, "config").Action);
         Assert.Equal(MigrationPreviewAction.Excluded, Entry(model, "saves").Action);
         Assert.Contains("No files were changed", model.Status);
+        Assert.False(model.HasPendingChoices);
     }
 
     [Fact]
-    public async Task ExistingDestinationIsVisibleAsNeedsDecision()
+    public async Task CustomSelectionCanOptInWithoutReinspection()
+    {
+        var calls = new List<string>();
+        var inspector = new StubInspector((path, _) =>
+        {
+            calls.Add(path);
+            return Task.FromResult(path == "source"
+                ? Inspection(("config", EntryState.Directory), ("saves", EntryState.Directory))
+                : Inspection());
+        });
+        var model = CreateModel(inspector);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        await model.GeneratePreviewAsync();
+
+        MigrationSelectionEntryViewModel saves = Entry(model, "saves");
+        saves.Selected = true;
+        Assert.True(model.HasPendingChoices);
+        Assert.True(model.ApplyChoicesCommand.CanExecute(null));
+
+        model.ApplyChoicesCommand.Execute(null);
+
+        Assert.Equal("Ready", model.PlanStatus);
+        Assert.Equal(MigrationPreviewAction.Copy, Entry(model, "saves").Action);
+        Assert.Equal(new[] { "source", "destination" }, calls);
+        Assert.False(model.HasPendingChoices);
+    }
+
+    [Fact]
+    public async Task ExistingDestinationCanBeReplacedExplicitly()
     {
         var inspector = new StubInspector((path, _) => Task.FromResult(
             path == "source"
@@ -46,12 +80,67 @@ public sealed class MigrationPreviewViewModelTests
         await model.GeneratePreviewAsync();
 
         Assert.Equal("NeedsDecision", model.PlanStatus);
-        Assert.Equal(MigrationPreviewAction.NeedsDecision, Entry(model, "config").Action);
-        Assert.Contains("needs conflict decisions", model.Status);
+        MigrationSelectionEntryViewModel config = Entry(model, "config");
+        Assert.True(config.CanChooseConflict);
+        config.ConflictDecision = DestinationConflictDecision.Replace;
+        model.ApplyChoicesCommand.Execute(null);
+
+        Assert.Equal("Ready", model.PlanStatus);
+        config = Entry(model, "config");
+        Assert.Equal(MigrationPreviewAction.Replace, config.Action);
+        Assert.Equal(MigrationPlanDisposition.ReadyToReplace, config.PlanDisposition);
+        Assert.True(config.RequiresBackup);
+        Assert.Equal(DestinationConflictDecision.Replace, config.ConflictDecision);
     }
 
     [Fact]
-    public async Task ChangingInputClearsPreviousPreview()
+    public async Task ExistingDestinationCanBeSkippedExplicitly()
+    {
+        var inspector = new StubInspector((path, _) => Task.FromResult(
+            path == "source"
+                ? Inspection(("config", EntryState.Directory))
+                : Inspection(("config", EntryState.Directory))));
+        var model = CreateModel(inspector);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+
+        await model.GeneratePreviewAsync();
+
+        MigrationSelectionEntryViewModel config = Entry(model, "config");
+        config.ConflictDecision = DestinationConflictDecision.Skip;
+        model.ApplyChoicesCommand.Execute(null);
+
+        Assert.Equal("Ready", model.PlanStatus);
+        config = Entry(model, "config");
+        Assert.Equal(MigrationPreviewAction.Skip, config.Action);
+        Assert.False(config.RequiresBackup);
+        Assert.Equal(DestinationConflictDecision.Skip, config.ConflictDecision);
+    }
+
+    [Fact]
+    public async Task ResetRecommendedRestoresDefaultSelection()
+    {
+        var inspector = new StubInspector((path, _) => Task.FromResult(
+            path == "source"
+                ? Inspection(("config", EntryState.Directory), ("saves", EntryState.Directory))
+                : Inspection()));
+        var model = CreateModel(inspector);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        await model.GeneratePreviewAsync();
+
+        Entry(model, "config").Selected = false;
+        Entry(model, "saves").Selected = true;
+        model.ResetRecommendedCommand.Execute(null);
+
+        Assert.True(Entry(model, "config").Selected);
+        Assert.False(Entry(model, "saves").Selected);
+        Assert.Equal(MigrationPreviewAction.Excluded, Entry(model, "saves").Action);
+        Assert.False(model.HasPendingChoices);
+    }
+
+    [Fact]
+    public async Task ChangingInputClearsPreviousPreviewAndChoices()
     {
         var model = CreateModel(new StubInspector((_, _) =>
             Task.FromResult(Inspection(("config", EntryState.Directory)))));
@@ -59,12 +148,14 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
 
         await model.GeneratePreviewAsync();
-        Assert.NotEmpty(model.Entries);
+        Entry(model, "config").Selected = false;
+        Assert.True(model.HasPendingChoices);
 
         model.DestinationPath = "new-destination";
 
         Assert.Empty(model.Entries);
         Assert.Equal("Not generated", model.PlanStatus);
+        Assert.False(model.HasPendingChoices);
     }
 
     [Fact]
@@ -97,7 +188,7 @@ public sealed class MigrationPreviewViewModelTests
     }
 
     [Fact]
-    public async Task ErrorCategoryIsShownWithoutLeakingPrivateMessage()
+    public async Task WorkflowFailureCategoryIsShownWithoutLeakingPrivateMessage()
     {
         var model = CreateModel(new StubInspector((_, _) =>
             throw new InvalidOperationException("private source path")));
@@ -106,7 +197,7 @@ public sealed class MigrationPreviewViewModelTests
 
         await model.GeneratePreviewAsync();
 
-        Assert.Contains("InvalidOperationException", model.Status);
+        Assert.Contains("InspectionFailed", model.Status);
         Assert.DoesNotContain("private", model.Status);
         Assert.Empty(model.Entries);
     }
@@ -116,9 +207,7 @@ public sealed class MigrationPreviewViewModelTests
     {
         var titles = new List<string>();
         var model = new MigrationPreviewViewModel(
-            new StubInspector((_, _) => throw new InvalidOperationException()),
-            new MigrationPlanner(),
-            new MigrationPreviewer(),
+            CreateWorkflow(new StubInspector((_, _) => throw new InvalidOperationException())),
             title =>
             {
                 titles.Add(title);
@@ -135,9 +224,21 @@ public sealed class MigrationPreviewViewModelTests
     }
 
     private static MigrationPreviewViewModel CreateModel(IInstanceInspector inspector) =>
-        new(inspector, new MigrationPlanner(), new MigrationPreviewer(), _ => null);
+        new(CreateWorkflow(inspector), _ => null);
 
-    private static MigrationPreviewEntry Entry(MigrationPreviewViewModel model, string name) =>
+    private static IMigrationWorkflow CreateWorkflow(IInstanceInspector inspector)
+    {
+        var backupPlanner = new BackupPlanner();
+        return new MigrationWorkflow(
+            inspector,
+            new MigrationPlanner(),
+            new MigrationPreviewer(),
+            backupPlanner,
+            new NeverCalledBackupExecutor(),
+            new NeverCalledExecutionOrchestrator());
+    }
+
+    private static MigrationSelectionEntryViewModel Entry(MigrationPreviewViewModel model, string name) =>
         Assert.Single(model.Entries, entry => entry.Name == name);
 
     private static InstanceInspectionResult Inspection(params (string Name, EntryState State)[] overrides)
@@ -152,11 +253,30 @@ public sealed class MigrationPreviewViewModelTests
                     states.GetValueOrDefault(candidate.Name, EntryState.Missing))));
     }
 
-    private sealed class StubInspector(Func<string, CancellationToken, Task<InstanceInspectionResult>> run) : IInstanceInspector
+    private sealed class StubInspector(
+        Func<string, CancellationToken, Task<InstanceInspectionResult>> run) : IInstanceInspector
     {
         public Task<InstanceInspectionResult> InspectAsync(
             string candidatePath,
             CancellationToken cancellationToken = default) =>
             run(candidatePath, cancellationToken);
+    }
+
+    private sealed class NeverCalledBackupExecutor : IBackupExecutor
+    {
+        public Task<BackupExecutionResult> ExecuteAsync(
+            string destinationRoot,
+            string backupParent,
+            BackupPlan plan,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Preview UI must not execute backup IO.");
+    }
+
+    private sealed class NeverCalledExecutionOrchestrator : IExecutionOrchestrator
+    {
+        public Task<ExecutionOrchestrationResult> ExecuteAsync(
+            ExecutionOrchestrationRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Preview UI must not execute migration IO.");
     }
 }
