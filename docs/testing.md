@@ -558,3 +558,22 @@ It generates a Copy-only Preview, supplies the workspace, opens the dedicated co
 waits for the user-visible `Completed` workflow state with bounded retry, and verifies copied bytes. It also
 proves the source and unrelated fixture remain unchanged. The real Windows composition root performs journal
 creation, live revalidation, mutation, and independent post-write verification; no fixed sleep is used.
+
+## Phase 4.3: recovery diagnosis / guarded rollback UI
+
+Application tests cover durable execution-journal loading, Applied Copy to DeleteCreatedEntry planning,
+Replace backup revalidation, invalid-journal fail-closed behavior, manual recovery for Failed / Uncertain
+execution evidence, exact diagnosed-plan delegation, and durable Applied / GuardRejected / Failed /
+Uncertain rollback-attempt classification. The authorization regression rejects a different request,
+a substituted rollback plan, and replay of an already consumed diagnosis before calling the executor.
+
+App tests cover RecoveryRequired visibility, rollback eligibility and blocking, explicit confirmation,
+confirmation rejection before the rollback port, result-specific safe wording, duplicate rollback
+prevention, input locking, and redaction of exception/path details. These use controlled Application ports;
+the existing Infrastructure regression suite continues to exercise real owned fixtures for fingerprint
+guards, backup integrity, reparse rejection, checksum chains, torn records, and attempt durability.
+
+The hosted FlaUI suite continues to cover real confirmed Copy execution. Phase 4.3 does not add a
+production failure-injection switch solely for UI automation, so recovery exposure is verified at the
+ViewModel/Application boundaries rather than weakening production behavior or manufacturing an unstable
+destructive smoke path.

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Workflow;
 using MinecraftInstanceMigration.Domain.Planning;
 
@@ -10,6 +11,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     private readonly IMigrationWorkflow workflow;
     private readonly Func<string, string?> chooseFolder;
     private readonly IMigrationExecutionConfirmation executionConfirmation;
+    private readonly IMigrationRecoveryCoordinator? recoveryCoordinator;
+    private readonly IMigrationRollbackConfirmation rollbackConfirmation;
     private CancellationTokenSource? cancellation;
     private string sourcePath = "";
     private string destinationPath = "";
@@ -19,16 +22,23 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     private IReadOnlyList<MigrationSelectionEntryViewModel> choices = [];
     private MigrationSelectionEntryViewModel? selectedEntry;
     private bool hasPendingChoices;
+    private MigrationRecoveryDiagnosis? recoveryDiagnosis;
+    private MigrationRecoveryResult? recoveryResult;
+    private string recoveryStatus = "No recovery diagnosis is active.";
     private string status = "Choose source and destination folders, then generate a dry-run preview.";
 
     public MigrationPreviewViewModel(
         IMigrationWorkflow workflow,
         Func<string, string?> chooseFolder,
-        IMigrationExecutionConfirmation? executionConfirmation = null)
+        IMigrationExecutionConfirmation? executionConfirmation = null,
+        IMigrationRecoveryCoordinator? recoveryCoordinator = null,
+        IMigrationRollbackConfirmation? rollbackConfirmation = null)
     {
         this.workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         this.chooseFolder = chooseFolder ?? throw new ArgumentNullException(nameof(chooseFolder));
         this.executionConfirmation = executionConfirmation ?? RejectingMigrationExecutionConfirmation.Instance;
+        this.recoveryCoordinator = recoveryCoordinator;
+        this.rollbackConfirmation = rollbackConfirmation ?? RejectingMigrationRollbackConfirmation.Instance;
 
         BrowseSourceCommand = new RelayCommand(
             () => Browse("Choose source instance candidate folder", path => SourcePath = path),
@@ -70,6 +80,9 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ExecuteMigrationCommand = new RelayCommand(
             async () => await ExecuteMigrationAsync(),
             CanExecuteMigration);
+        RollbackMigrationCommand = new RelayCommand(
+            async () => await RollbackMigrationAsync(),
+            CanRollbackMigration);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -99,6 +112,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     public RelayCommand CancelCommand { get; }
 
     public RelayCommand ExecuteMigrationCommand { get; }
+
+    public RelayCommand RollbackMigrationCommand { get; }
 
     public bool IsBusy => cancellation is not null;
 
@@ -178,6 +193,23 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     public string PlanStatus => preview?.Status.ToString() ?? "Not generated";
 
     public string Status => status;
+
+    public bool IsRecoveryVisible => session?.State == MigrationWorkflowState.RecoveryRequired;
+
+    public string RecoveryDiagnosisStatus => recoveryDiagnosis?.Status.ToString() ?? "Not diagnosed";
+
+    public string RollbackOutcome => recoveryResult?.Outcome.ToString() ?? "Not started";
+
+    public string RecoveryStatus => recoveryStatus;
+
+    public string RecoverySummary => recoveryDiagnosis is null
+        ? ""
+        : $"Execution evidence — Applied: {recoveryDiagnosis.AppliedExecutionSteps}; " +
+          $"Failed: {recoveryDiagnosis.FailedExecutionSteps}; Uncertain: {recoveryDiagnosis.UncertainExecutionSteps}; " +
+          $"rollback candidates: {recoveryDiagnosis.RollbackCandidateCount}; " +
+          $"delete created: {recoveryDiagnosis.DeleteCreatedEntryCount}; " +
+          $"restore backup: {recoveryDiagnosis.RestoreFromBackupCount}; " +
+          $"backup required: {recoveryDiagnosis.BackupRequired}.";
 
     public string Summary => preview is null
         ? ""
@@ -310,6 +342,10 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             current = await workflow.ExecuteAsync(current, operation.Token);
             session = current;
             PublishExecutionResult(current);
+            if (current.State == MigrationWorkflowState.RecoveryRequired)
+            {
+                await DiagnoseRecoveryAsync(operation.Token);
+            }
         }
         catch (Exception error)
         {
@@ -322,6 +358,129 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             NotifyBusy();
             NotifyExecution();
         }
+    }
+
+    public async Task RollbackMigrationAsync()
+    {
+        if (!CanRollbackMigration() || recoveryDiagnosis is null)
+        {
+            return;
+        }
+
+        MigrationRecoveryRequest? request = CreateRecoveryRequest();
+        if (request is null)
+        {
+            recoveryStatus = "Rollback is blocked because recovery evidence is incomplete.";
+            NotifyRecovery();
+            return;
+        }
+
+        var confirmation = new MigrationRollbackConfirmation(
+            recoveryDiagnosis.RollbackCandidateCount,
+            recoveryDiagnosis.DeleteCreatedEntryCount,
+            recoveryDiagnosis.RestoreFromBackupCount,
+            recoveryDiagnosis.BackupRequired);
+        bool confirmed;
+        try
+        {
+            confirmed = rollbackConfirmation.Confirm(confirmation);
+        }
+        catch (Exception)
+        {
+            recoveryStatus = "Rollback confirmation could not be displayed. No rollback changes were made.";
+            NotifyRecovery();
+            return;
+        }
+
+        if (!confirmed)
+        {
+            recoveryStatus = "Rollback was not started. No rollback changes were made.";
+            NotifyRecovery();
+            return;
+        }
+
+        using var operation = new CancellationTokenSource();
+        cancellation = operation;
+        recoveryStatus = "Guarded rollback is running. Current evidence is revalidated before each change.";
+        NotifyBusy();
+        NotifyRecovery();
+
+        try
+        {
+            recoveryResult = await recoveryCoordinator!.ExecuteAsync(
+                request,
+                recoveryDiagnosis,
+                operation.Token);
+            recoveryStatus = RecoveryResultStatus(recoveryResult);
+        }
+        catch (OperationCanceledException) when (operation.IsCancellationRequested)
+        {
+            recoveryResult = new MigrationRecoveryResult(MigrationRecoveryOutcome.Uncertain);
+            recoveryStatus = "The rollback outcome cannot be proven. Automatic retry is not performed; manual recovery is required.";
+        }
+        catch (Exception)
+        {
+            recoveryResult = new MigrationRecoveryResult(MigrationRecoveryOutcome.Uncertain);
+            recoveryStatus = "The rollback outcome cannot be proven. Automatic retry is not performed; manual recovery is required.";
+        }
+        finally
+        {
+            cancellation = null;
+            NotifyBusy();
+            NotifyRecovery();
+        }
+    }
+
+    private async Task DiagnoseRecoveryAsync(CancellationToken cancellationToken)
+    {
+        recoveryDiagnosis = null;
+        recoveryResult = null;
+        MigrationRecoveryRequest? request = CreateRecoveryRequest();
+        if (request is null || recoveryCoordinator is null)
+        {
+            recoveryStatus = "Recovery evidence is incomplete. Automatic rollback is blocked; manual recovery is required.";
+            NotifyRecovery();
+            return;
+        }
+
+        try
+        {
+            recoveryStatus = "Analyzing durable execution evidence. Rollback will not start automatically.";
+            NotifyRecovery();
+            recoveryDiagnosis = await recoveryCoordinator.DiagnoseAsync(request, cancellationToken);
+            recoveryStatus = RecoveryDiagnosisStatusText(recoveryDiagnosis);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            recoveryStatus = "Recovery diagnosis was cancelled. Rollback remains blocked.";
+        }
+        catch (Exception)
+        {
+            recoveryStatus = "Recovery diagnosis failed. Rollback remains blocked; technical details are not displayed.";
+        }
+
+        NotifyRecovery();
+    }
+
+    private MigrationRecoveryRequest? CreateRecoveryRequest()
+    {
+        if (session?.State != MigrationWorkflowState.RecoveryRequired ||
+            session.DestinationRoot is null ||
+            session.JournalParent is null ||
+            session.MigrationPlan is null ||
+            session.BackupPlan is null ||
+            session.ExecutionResult?.Journal is null)
+        {
+            return null;
+        }
+
+        return new MigrationRecoveryRequest(
+            session.DestinationRoot,
+            session.BackupResult?.BackupRootPath,
+            session.BackupPlan,
+            session.JournalParent,
+            session.MigrationPlan,
+            session.ExecutionResult.Journal);
     }
 
     private void ApplyChoices()
@@ -421,6 +580,13 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         preview?.Status == MigrationPlanStatus.Ready &&
         session?.CanPrepareBackup == true;
 
+    private bool CanRollbackMigration() =>
+        !IsBusy &&
+        recoveryResult is null &&
+        recoveryCoordinator is not null &&
+        session?.State == MigrationWorkflowState.RecoveryRequired &&
+        recoveryDiagnosis?.CanRollback == true;
+
     private void PublishExecutionResult(MigrationWorkflowSession current)
     {
         status = current.State switch
@@ -445,6 +611,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         Notify(nameof(WorkflowState));
         Notify(nameof(Status));
         ExecuteMigrationCommand.Refresh();
+        RollbackMigrationCommand.Refresh();
     }
 
     private void SetSelectedConflict(DestinationConflictDecision decision)
@@ -552,12 +719,16 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
 
         field = value;
         session = null;
+        recoveryDiagnosis = null;
+        recoveryResult = null;
+        recoveryStatus = "No recovery diagnosis is active.";
         ClearPreview();
         status = "Ready to generate a new dry-run preview. Previous preview and choices cleared.";
         Notify(nameof(SourcePath));
         Notify(nameof(DestinationPath));
         NotifyPreview();
         NotifyExecution();
+        NotifyRecovery();
         GeneratePreviewCommand.Refresh();
     }
 
@@ -594,6 +765,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         CancelCommand.Refresh();
         BrowseSafetyWorkspaceCommand.Refresh();
         ExecuteMigrationCommand.Refresh();
+        RollbackMigrationCommand.Refresh();
         RefreshChoiceCommands();
     }
 
@@ -607,7 +779,52 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ReplaceConflictCommand.Refresh();
         ClearConflictCommand.Refresh();
         ExecuteMigrationCommand.Refresh();
+        RollbackMigrationCommand.Refresh();
     }
+
+    private void NotifyRecovery()
+    {
+        Notify(nameof(IsRecoveryVisible));
+        Notify(nameof(RecoveryDiagnosisStatus));
+        Notify(nameof(RecoverySummary));
+        Notify(nameof(RollbackOutcome));
+        Notify(nameof(RecoveryStatus));
+        RollbackMigrationCommand.Refresh();
+    }
+
+    private static string RecoveryDiagnosisStatusText(MigrationRecoveryDiagnosis diagnosis) =>
+        diagnosis.Status switch
+        {
+            MigrationRecoveryDiagnosisStatus.RollbackAvailable =>
+                "Recovery is required. Guarded rollback is available after explicit confirmation; it will not start automatically.",
+            MigrationRecoveryDiagnosisStatus.NotRequired =>
+                "No rollback action is required. Automatic execution retry is not performed.",
+            MigrationRecoveryDiagnosisStatus.ManualRecoveryRequired =>
+                "Automatic rollback cannot be proven safe. Manual recovery is required; no automatic retry is performed.",
+            MigrationRecoveryDiagnosisStatus.Cancelled =>
+                "Recovery diagnosis was cancelled. Rollback remains blocked.",
+            _ =>
+                "Rollback is blocked because the required safety evidence could not be validated.",
+        };
+
+    private static string RecoveryResultStatus(MigrationRecoveryResult result) =>
+        result.Outcome switch
+        {
+            MigrationRecoveryOutcome.Applied =>
+                "Recovered. Every planned rollback action has durable Applied evidence.",
+            MigrationRecoveryOutcome.GuardRejected =>
+                result.AppliedActions == 0
+                    ? "GuardRejected. The current destination no longer matches the expected migration state and was not modified by rollback."
+                    : $"GuardRejected after {result.AppliedActions} rollback action(s) were applied. The rejected destination was not modified; manual recovery is required.",
+            MigrationRecoveryOutcome.Failed =>
+                "Rollback failed. Durable failure evidence was recorded; manual recovery is required.",
+            MigrationRecoveryOutcome.Uncertain =>
+                "The previous rollback outcome cannot be proven. Automatic retry is not performed; manual recovery is required.",
+            MigrationRecoveryOutcome.Cancelled =>
+                "Rollback was cancelled before a safe completion could be established.",
+            _ =>
+                "Rollback was blocked before a safe recovery could be completed.",
+        };
 
     private void Notify([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

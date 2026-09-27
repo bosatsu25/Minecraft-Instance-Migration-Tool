@@ -5,15 +5,15 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.2 Execute UI is implemented on the current development branch.**
+**Status: Phase 4.3 Recovery Diagnosis / Guarded Rollback UI is implemented.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
 Windows Copy / Replace, independent post-write verification, and fingerprint-guarded rollback.
 
 The WPF UI exposes Inspector, Migration Preview, selection/conflict editing, explicit execution
-confirmation, Backup when required, and verified Copy / Replace execution. Rollback controls,
-Recovery UX, and Report flows are not wired into the UI yet.
+confirmation, Backup when required, verified Copy / Replace execution, Recovery diagnosis, and
+explicitly confirmed guarded rollback. Report flows are not wired into the UI yet.
 
 ## Current implementation
 
@@ -128,8 +128,21 @@ whether backup is required, and the source and destination before any filesystem
 The ViewModel advances the existing `IMigrationWorkflow` through Prepare Backup, Backup, Prepare
 Execution, and Execute. Copy-only plans use the workflow's `NotRequired` backup result and never call
 backup IO. The UI projects `Completed`, `Blocked`, `Cancelled`, and `RecoveryRequired` from workflow
-evidence; `RecoveryRequired` locks the session against editing or another Execute. Rollback remains a
-separate future UI flow.
+evidence; `RecoveryRequired` locks the session against editing or another Execute.
+
+## Phase 4.3 recovery diagnosis and guarded rollback
+
+When execution returns `RecoveryRequired`, Application reloads the durable execution journal,
+revalidates any required replacement backup, and creates the existing Domain `RollbackPlan`.
+The UI shows typed Applied / Failed / Uncertain evidence and distinguishes rollback available,
+blocked, and manual recovery required without interpreting journal records itself.
+
+Rollback never starts automatically. It is enabled only for a backend-authorized Ready plan and
+requires a dedicated confirmation showing Delete-created / Restore-backup counts. The existing
+rollback executor persists durable Started evidence before guarded filesystem mutation. The UI
+projects durable attempt evidence as Recovered, GuardRejected, Failed, or Uncertain. GuardRejected
+means the destination was left unchanged because current content no longer matched the migration
+fingerprint. Uncertain is never treated as retryable; automatic resume remains out of scope.
 
 ## What the current UI can do
 
@@ -322,8 +335,6 @@ See [architecture](docs/architecture.md) for details.
 
 The following are not complete:
 
-- Rollback UI
-- Recovery UX
 - Report UI / persistent report
 - automatic rollback resume
 - legacy `hanemod-client.json` exclusion
@@ -398,10 +409,10 @@ Implemented:
 15. Phase 4.0 — Application-owned migration workflow/session
 16. Phase 4.1 — selection / conflict editing UI
 17. Phase 4.2 — confirmed end-to-end Execute UI
+18. Phase 4.3 — Recovery Diagnosis / Guarded Rollback UI
 
 Next major areas:
 
-18. Rollback / Recovery UI
 19. migration Report
 20. release hardening
 

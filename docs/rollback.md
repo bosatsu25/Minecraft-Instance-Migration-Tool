@@ -174,6 +174,18 @@ exercise corrupt complete records without truncating them, and reload real guard
 These are deterministic process-interruption models, not a hardware power-loss test. Actual durability
 still depends on Windows and the storage device honoring flushes.
 
+### Phase 4.3 recovery diagnosis and UI authorization
+
+Application now reloads the execution journal, revalidates a backup for Applied Replace evidence, and
+creates the existing Domain rollback plan before the UI enables rollback. Diagnosis reports typed
+execution counts, candidate counts, backup need, and one of RollbackAvailable, NotRequired,
+ManualRecoveryRequired, Blocked, or Cancelled. WPF does not parse journal records or reproduce guards.
+
+Rollback requires explicit user confirmation and then uses the existing `RollbackExecutor`. After the
+attempt, Application reloads the attempt journal and reports Applied, GuardRejected, Failed, or Uncertain
+from durable evidence. A missing/unreadable terminal record is conservatively Uncertain. GuardRejected is
+presented as a safe refusal that did not modify the current destination.
+
 ### Deliberate limitation: diagnosis is durable, automatic resume is not
 
 Phase 3.8 records which rollback actions are NotStarted, Applied, GuardRejected, Failed, or Uncertain.

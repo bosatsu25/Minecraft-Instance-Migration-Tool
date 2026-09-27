@@ -5,15 +5,15 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 4.2 の Execute UI を現在の開発ブランチへ実装済みです。**
+**Phase 4.3 の Recovery Diagnosis / Guarded Rollback UI を実装済みです。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
 Windows Copy / Replace、独立 post-write verification、fingerprint guard 付き rollback まで含まれます。
 
 WPF UI から Inspector、Migration Preview、selection / conflict 編集、明示的な実行確認、
-必要時の Backup、検証付き Copy / Replace 実行まで操作できます。Rollback操作、Recovery UX、
-Report はまだ接続していません。
+必要時の Backup、検証付き Copy / Replace 実行、Recovery 診断、確認付き guarded rollback
+まで操作できます。Report はまだ接続していません。
 
 ## 現在の実装範囲
 
@@ -124,7 +124,21 @@ filesystem writeの前に専用確認画面でCopy / Replace / Skip件数、Back
 ViewModelは既存`IMigrationWorkflow`をPrepare Backup、Backup、Prepare Execution、Executeの順に進めます。
 Copy-only planではworkflowの`NotRequired` backup resultを使い、backup IOを呼びません。
 UIはworkflow evidenceから`Completed`、`Blocked`、`Cancelled`、`RecoveryRequired`を表示します。
-`RecoveryRequired`では入力編集と再Executeを禁止します。Rollback操作は後続Phaseです。
+`RecoveryRequired`では入力編集と再Executeを禁止します。
+
+## Phase 4.3 Recovery 診断と guarded rollback
+
+Execute が `RecoveryRequired` を返すと、Application が durable execution journal を再読込し、
+必要な Replace backup を再検証して、既存 Domain の `RollbackPlan` を生成します。UI は journal
+を独自解釈せず、Applied / Failed / Uncertain の typed evidence と、rollback可能・blocked・
+manual recovery required の区別を表示します。
+
+Rollback は自動開始しません。backend が Ready と判定した plan だけを有効にし、
+Delete-created / Restore-backup 件数を示す専用確認画面を必須にします。既存 executor は
+destructive mutation より先に durable Started を保存します。UI は attempt evidence を
+Recovered、GuardRejected、Failed、Uncertain として表示します。GuardRejected は現在内容が
+migration直後のfingerprintと一致しないため変更しなかった状態です。Uncertainは再実行可能と
+解釈せず、automatic resumeは引き続き未実装です。
 
 ## UI で現在できること
 
@@ -316,8 +330,6 @@ BCL と明示的な port / adapter を中心に構成しています。
 
 以下はまだ完成扱いではありません。
 
-- Rollback UI
-- Recovery UX
 - Report UI / persistent report
 - automatic rollback resume
 - legacy `hanemod-client.json` exclusion
@@ -392,10 +404,10 @@ warnings は build failure として扱います。
 15. Phase 4.0 — Application 所有の migration workflow / session
 16. Phase 4.1 — selection / conflict 編集 UI
 17. Phase 4.2 — 確認付き end-to-end Execute UI
+18. Phase 4.3 — Recovery Diagnosis / Guarded Rollback UI
 
 次の大きな領域:
 
-18. Rollback / Recovery UI
 19. migration Report
 20. release hardening
 
