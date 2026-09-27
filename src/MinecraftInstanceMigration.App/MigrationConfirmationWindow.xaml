@@ -1,0 +1,62 @@
+<Window x:Class="MinecraftInstanceMigration.App.MigrationConfirmationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Confirm migration" SizeToContent="WidthAndHeight"
+        MinWidth="520" MaxWidth="720" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Grid Margin="24">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <StackPanel>
+      <TextBlock Text="Start migration?" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
+                 Text="This operation will write to the destination. Review the source, destination, and planned changes before continuing." />
+    </StackPanel>
+
+    <Grid Grid.Row="1" Margin="0,18,0,0">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <TextBlock Text="Source" FontWeight="SemiBold" Margin="0,0,12,6" />
+      <TextBlock Grid.Column="1" Text="{Binding SourceRoot, Mode=OneWay}" TextWrapping="Wrap"
+                 AutomationProperties.AutomationId="ConfirmationSource" />
+      <TextBlock Grid.Row="1" Text="Destination" FontWeight="SemiBold" Margin="0,0,12,6" />
+      <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DestinationRoot, Mode=OneWay}" TextWrapping="Wrap"
+                 AutomationProperties.AutomationId="ConfirmationDestination" />
+      <TextBlock Grid.Row="2" Text="Safety workspace" FontWeight="SemiBold" Margin="0,0,12,0" />
+      <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SafetyWorkspace, Mode=OneWay}" TextWrapping="Wrap"
+                 AutomationProperties.AutomationId="ConfirmationWorkspace" />
+    </Grid>
+
+    <TextBlock Grid.Row="2" Margin="0,18,0,0" TextWrapping="Wrap"
+               AutomationProperties.AutomationId="ConfirmationCounts">
+      <Run Text="Copy: " /><Run Text="{Binding CopyCount, Mode=OneWay}" />
+      <Run Text="   Replace: " /><Run Text="{Binding ReplaceCount, Mode=OneWay}" />
+      <Run Text="   Skip: " /><Run Text="{Binding SkipCount, Mode=OneWay}" />
+    </TextBlock>
+
+    <TextBlock Grid.Row="3" Margin="0,8,0,0" FontWeight="SemiBold" TextWrapping="Wrap"
+               Text="{Binding BackupRequired, Mode=OneWay, StringFormat=Backup required: {0}}"
+               AutomationProperties.AutomationId="ConfirmationBackupRequired" />
+
+    <StackPanel Grid.Row="4" Margin="0,22,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Content="Cancel" Padding="18,7" IsCancel="True"
+              AutomationProperties.AutomationId="CancelMigrationStart" />
+      <Button Content="Start Migration" Padding="18,7" Margin="10,0,0,0"
+              IsDefault="True" Click="Confirm_Click"
+              AutomationProperties.AutomationId="ConfirmMigrationStart" />
+    </StackPanel>
+  </Grid>
+</Window>

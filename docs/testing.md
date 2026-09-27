@@ -543,3 +543,18 @@ for a real destination conflict while source and destination fixtures remain unc
 contains exactly the eleven known candidates, so row/column virtualization is disabled to expose that bounded
 result consistently to keyboard users and UI Automation. Backup / Execute are deliberately not invoked by
 Phase 4.1 UI tests.
+
+
+## Phase 4.2: confirmed execution UI
+
+App tests cover Ready/NeedsDecision/Blocked availability, pending-choice rejection, explicit confirmation,
+Copy-only backup bypass, Replace backup ordering, backup failure/cancellation, typed execution failure and
+RecoveryRequired results, duplicate execution prevention, input locking, stale-session invalidation,
+cancellation propagation, and redaction of private exception messages. Controlled Application ports verify
+call order without weakening workflow policy.
+
+The hosted FlaUI smoke uses owned temporary source, destination, safety-workspace, and unrelated fixtures.
+It generates a Copy-only Preview, supplies the workspace, opens the dedicated confirmation window, confirms,
+waits for the user-visible `Completed` workflow state with bounded retry, and verifies copied bytes. It also
+proves the source and unrelated fixture remain unchanged. The real Windows composition root performs journal
+creation, live revalidation, mutation, and independent post-write verification; no fixed sleep is used.
