@@ -543,6 +543,15 @@ The workflow is an orchestration boundary, not a replacement for Domain policies
 backup, live validation, mutation, verification, and rollback safety remain owned by their existing
 contracts.
 
+## Phase 4.1 selection / conflict editing UI
+
+Phase 4.1 connects the WPF Migration Preview to `IMigrationWorkflow` instead of composing Inspector / Planner / Previewer directly in the ViewModel.
+The composition root constructs the existing production workflow, while the UI remains read-only with respect to backup and migration IO.
+
+Recommended is still the initial selection. The UI presents all current preview rows and permits explicit Include / Exclude editing. For entries whose current plan disposition is a destination conflict, only the Domain-defined `Skip` and `Replace` decisions are exposed. Edits remain presentation state until **Apply choices** calls `MigrationWorkflow.ConfigurePlan` and `CreatePreview` against the same inspection evidence; no reinspection occurs merely because a choice changed.
+
+Changing either root discards the prior workflow session, preview, and pending choices. **Reset Recommended** restores the preset and clears explicit conflict decisions. This phase does not add Backup / Execute / Rollback UI, Merge semantics, or filesystem writes.
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
