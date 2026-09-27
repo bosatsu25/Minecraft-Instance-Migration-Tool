@@ -163,7 +163,6 @@ public sealed class RollbackIntegrationTests
         string backups = fixture.At("backups");
         Directory.CreateDirectory(destination);
         Directory.CreateDirectory(backups);
-        Directory.CreateDirectory(journals);
         File.WriteAllText(Path.Combine(destination, "options.txt"), "original");
         var backupPlan = new BackupPlan(
             BackupPlanStatus.Ready,
@@ -439,6 +438,7 @@ public sealed class RollbackIntegrationTests
         string source = fixture.At("source");
         string destination = fixture.At("destination");
         string backups = fixture.At("backups");
+        string journals = fixture.At("journals");
         Directory.CreateDirectory(Path.Combine(source, "config"));
         Directory.CreateDirectory(Path.Combine(destination, "config"));
         Directory.CreateDirectory(backups);
@@ -526,7 +526,6 @@ public sealed class RollbackIntegrationTests
         Directory.CreateDirectory(Path.Combine(source, "config"));
         Directory.CreateDirectory(Path.Combine(destination, "config"));
         Directory.CreateDirectory(backups);
-        Directory.CreateDirectory(journals);
         Directory.CreateDirectory(fixture.At("outside"));
         File.WriteAllText(Path.Combine(source, "config", "new.json"), "new-value");
         File.WriteAllText(Path.Combine(destination, "config", "old.json"), "old-value");
