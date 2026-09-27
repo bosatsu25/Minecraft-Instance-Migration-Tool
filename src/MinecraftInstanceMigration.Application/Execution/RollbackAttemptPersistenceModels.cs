@@ -80,11 +80,22 @@ public sealed class RollbackAttemptSnapshot
     public bool HasUncertainAction =>
         Steps.Any(step => step.Outcome == RollbackAttemptStepOutcome.Uncertain);
 
-    public bool RequiresRecovery =>
-        Steps.Any(step =>
-            step.Outcome is
-                RollbackAttemptStepOutcome.Failed or
-                RollbackAttemptStepOutcome.Uncertain);
+    public bool RequiresRecovery
+    {
+        get
+        {
+            bool hasApplied = Steps.Any(
+                step => step.Outcome == RollbackAttemptStepOutcome.Applied);
+
+            return Steps.Any(step =>
+                    step.Outcome is
+                        RollbackAttemptStepOutcome.Failed or
+                        RollbackAttemptStepOutcome.Uncertain) ||
+                hasApplied &&
+                Steps.Any(step =>
+                    step.Outcome != RollbackAttemptStepOutcome.Applied);
+        }
+    }
 }
 
 public sealed record RollbackAttemptReadResult(
