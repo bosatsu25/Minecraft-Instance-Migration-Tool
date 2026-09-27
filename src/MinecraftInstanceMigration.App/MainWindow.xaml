@@ -142,6 +142,9 @@
               <Button Content="Clear" Padding="16,5" Margin="8,0,0,0"
                       Command="{Binding ClearConflictCommand}"
                       AutomationProperties.AutomationId="ClearSelectedConflict" />
+              <TextBlock VerticalAlignment="Center" Margin="16,0,0,0"
+                         Text="{Binding SelectedChoiceSummary}"
+                         AutomationProperties.AutomationId="SelectedChoiceSummary" />
             </StackPanel>
           </StackPanel>
 
@@ -162,20 +165,18 @@
                     HeadersVisibility="Column" AutomationProperties.Name="Migration preview entries"
                     AutomationProperties.AutomationId="PreviewEntries">
             <DataGrid.Columns>
-              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" IsReadOnly="True" />
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
               <DataGridCheckBoxColumn Header="Selected" Binding="{Binding Selected}" Width="80" />
-              <DataGridTextColumn Header="Conflict" Binding="{Binding ConflictDecision}"
-                                  Width="110" IsReadOnly="True" />
-              <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="110" IsReadOnly="True" />
-              <DataGridTextColumn Header="Plan detail" Binding="{Binding PlanDisposition}" Width="190" IsReadOnly="True" />
-              <DataGridTextColumn Header="Source" Binding="{Binding SourceState, TargetNullValue=Unknown}" Width="115" IsReadOnly="True" />
-              <DataGridTextColumn Header="Destination" Binding="{Binding DestinationState, TargetNullValue=Unknown}" Width="115" IsReadOnly="True" />
-              <DataGridCheckBoxColumn Header="Backup" Binding="{Binding RequiresBackup}" Width="75" IsReadOnly="True" />
+              <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="110" />
+              <DataGridTextColumn Header="Plan detail" Binding="{Binding PlanDisposition}" Width="190" />
+              <DataGridTextColumn Header="Source" Binding="{Binding SourceState, TargetNullValue=Unknown}" Width="115" />
+              <DataGridTextColumn Header="Destination" Binding="{Binding DestinationState, TargetNullValue=Unknown}" Width="115" />
+              <DataGridCheckBoxColumn Header="Backup" Binding="{Binding RequiresBackup}" Width="75" />
             </DataGrid.Columns>
           </DataGrid>
 
           <TextBlock Grid.Row="6" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Recommended leaves saves and screenshots unselected. Select a row and use Include / Exclude; for a destination conflict use Skip / Replace, then Apply choices. Preview remains metadata-only and never authorizes writes; observations can become stale." />
+                     Text="Recommended leaves saves and screenshots unselected. Select a preview row and use Include / Exclude; for a destination conflict use Skip / Replace, then Apply choices. Preview remains metadata-only and never authorizes writes; observations can become stale." />
         </Grid>
       </TabItem>
     </TabControl>
