@@ -232,6 +232,60 @@
                      Text="Recommended leaves saves and screenshots unselected. Resolve choices and apply them before execution. The safety workspace stores the durable journal and any required replacement backup. Execution revalidates live state before writing." />
         </Grid>
       </TabItem>
+
+      <TabItem Header="Migration Report" AutomationProperties.AutomationId="ReportTab">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="12" DataContext="{Binding Report}">
+            <TextBlock Text="Migration Report" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock Margin="0,8,0,16" TextWrapping="Wrap"
+                       Text="Read-only projection of existing migration, backup, execution, verification, and recovery evidence. This report does not authorize or change workflow operations." />
+
+            <Border Padding="14" BorderBrush="#777" BorderThickness="1">
+              <StackPanel>
+                <TextBlock Text="Overall result" FontWeight="SemiBold" />
+                <TextBlock Margin="0,4,0,0" FontSize="22" FontWeight="SemiBold"
+                           Text="{Binding OverallOutcome, Mode=OneWay}"
+                           AutomationProperties.AutomationId="ReportOverallOutcome" />
+                <TextBlock Margin="0,6,0,0" Text="{Binding Status, Mode=OneWay}" TextWrapping="Wrap"
+                           AutomationProperties.AutomationId="ReportStatus" />
+              </StackPanel>
+            </Border>
+
+            <GroupBox Margin="0,14,0,0" Header="Migration actions">
+              <TextBlock Margin="10" Text="{Binding MigrationSummary, Mode=OneWay}" TextWrapping="Wrap"
+                         AutomationProperties.AutomationId="ReportMigrationSummary" />
+            </GroupBox>
+
+            <GroupBox Margin="0,12,0,0" Header="Execution and verification">
+              <TextBlock Margin="10" Text="{Binding ExecutionSummary, Mode=OneWay}" TextWrapping="Wrap"
+                         AutomationProperties.AutomationId="ReportExecutionSummary" />
+            </GroupBox>
+
+            <GroupBox Margin="0,12,0,0" Header="Backup">
+              <TextBlock Margin="10" Text="{Binding BackupSummary, Mode=OneWay}" TextWrapping="Wrap"
+                         AutomationProperties.AutomationId="ReportBackupSummary" />
+            </GroupBox>
+
+            <GroupBox Margin="0,12,0,0" Header="Recovery">
+              <GroupBox.Style>
+                <Style TargetType="GroupBox">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding HasRecovery}" Value="True">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </GroupBox.Style>
+              <TextBlock Margin="10" Text="{Binding RecoverySummary, Mode=OneWay}" TextWrapping="Wrap"
+                         AutomationProperties.AutomationId="ReportRecoverySummary" />
+            </GroupBox>
+
+            <TextBlock Margin="0,16,0,0" TextWrapping="Wrap"
+                       Text="Phase 4.4 keeps reports in memory only. No report file is written automatically, and reports contain no filesystem paths or raw exception messages." />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
     </TabControl>
   </Grid>
 </Window>

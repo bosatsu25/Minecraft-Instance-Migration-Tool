@@ -594,6 +594,31 @@ terminal evidence. All Applied actions become the presentation state Recovered. 
 safe refusal, Failed remains failure evidence, and any Started action lacking a valid terminal is Uncertain.
 Missing or unreadable attempt evidence is also treated as Uncertain. No automatic retry or resume exists.
 
+## Phase 4.4 Migration Report
+
+`MigrationReportProjector` is an Application-owned, read-only projection over typed workflow evidence.
+Its transient input references existing in-memory Backup and Execution results, which can contain private
+locations needed by the workflow, but the projector copies only typed outcomes and counts into the report.
+It uses the current Preview for action counts and combines it with typed Backup, Execution, Recovery
+diagnosis, and Rollback results. It never reads a journal or filesystem directly and never changes a
+`MigrationWorkflowSession`.
+
+Projection is fail closed. Completed requires complete execution evidence, applied counts equal to
+planned writes, and backup evidence consistent with the Replace count. RecoveryRequired requires a
+matching execution result and diagnosis. Recovered requires every rollback candidate to have a durable
+Applied result; partial Applied plus GuardRejected is not Recovered. Missing or contradictory evidence
+produces a typed report-creation failure and leaves the migration outcome untouched.
+
+The WPF report ViewModel receives the projection and exposes only text summaries. It has no workflow
+commands, journal parser, or filesystem dependency. Recovery details are absent when no recovery occurred.
+Changing roots or generating a new Preview clears the in-memory report so evidence cannot leak into a
+new session.
+
+Phase 4.4 does not persist or export reports. Deferring persistence avoids choosing an unsafe default
+directory, overwrite behavior, or partial-write protocol inside a presentation feature. A future export
+must be explicitly user initiated through an Application port, use a versioned path-free schema, and
+define create-new or atomic-replace semantics. See [report](report.md).
+
 ## Migration Engine direction
 
 Develop one node at a time. Inspect and the read-only Planner core are implemented; later nodes remain separate changes.
@@ -630,8 +655,9 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
   fingerprint, and Replace additionally requires a freshly validated backup. Failed/uncertain execution
   outcomes and any partial rollback failure remain recovery-required. Phase 4.3 exposes typed diagnosis
   and explicit-confirmation rollback without moving safety policy into WPF.
-- **Report:** Distinguish succeeded, failed, cancelled, partially changed, rolled back, and
-  recovery-required outcomes. Define bounded, redacted diagnostics before persisting any report.
+- **Report:** Phase 4.4 projects bounded, redacted, typed evidence into an in-memory report that
+  distinguishes completed, failed, cancelled, blocked, recovery-required, recovered, guard-rejected,
+  and uncertain outcomes. Persistence remains a separate, explicitly authorized future capability.
 
 Application will own workflow transitions, cancellation, failure handling, and orchestration.
 Domain will own deterministic rules and plan invariants. Infrastructure will own actual IO.

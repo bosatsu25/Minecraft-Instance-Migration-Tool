@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using MinecraftInstanceMigration.Application.Execution;
+using MinecraftInstanceMigration.Application.Reporting;
 using MinecraftInstanceMigration.Application.Workflow;
 using MinecraftInstanceMigration.Domain.Planning;
 
@@ -13,6 +14,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     private readonly IMigrationExecutionConfirmation executionConfirmation;
     private readonly IMigrationRecoveryCoordinator? recoveryCoordinator;
     private readonly IMigrationRollbackConfirmation rollbackConfirmation;
+    private readonly MigrationReportViewModel? reportViewModel;
     private CancellationTokenSource? cancellation;
     private string sourcePath = "";
     private string destinationPath = "";
@@ -32,13 +34,15 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         Func<string, string?> chooseFolder,
         IMigrationExecutionConfirmation? executionConfirmation = null,
         IMigrationRecoveryCoordinator? recoveryCoordinator = null,
-        IMigrationRollbackConfirmation? rollbackConfirmation = null)
+        IMigrationRollbackConfirmation? rollbackConfirmation = null,
+        MigrationReportViewModel? reportViewModel = null)
     {
         this.workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         this.chooseFolder = chooseFolder ?? throw new ArgumentNullException(nameof(chooseFolder));
         this.executionConfirmation = executionConfirmation ?? RejectingMigrationExecutionConfirmation.Instance;
         this.recoveryCoordinator = recoveryCoordinator;
         this.rollbackConfirmation = rollbackConfirmation ?? RejectingMigrationRollbackConfirmation.Instance;
+        this.reportViewModel = reportViewModel;
 
         BrowseSourceCommand = new RelayCommand(
             () => Browse("Choose source instance candidate folder", path => SourcePath = path),
@@ -228,6 +232,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
 
         using var operation = new CancellationTokenSource();
         cancellation = operation;
+        reportViewModel?.Clear();
         ClearPreview();
         status = "Inspecting source and destination metadata for dry run…";
         NotifyPreview();
@@ -317,6 +322,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
                 session = current;
                 status = WorkflowFailureStatus(current, "Migration is blocked before backup.");
                 NotifyExecution();
+                PublishReport();
                 return;
             }
 
@@ -325,6 +331,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             {
                 session = current;
                 PublishExecutionResult(current);
+                PublishReport();
                 return;
             }
 
@@ -334,6 +341,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             {
                 session = current;
                 PublishExecutionResult(current);
+                PublishReport();
                 return;
             }
 
@@ -345,6 +353,10 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             if (current.State == MigrationWorkflowState.RecoveryRequired)
             {
                 await DiagnoseRecoveryAsync(operation.Token);
+            }
+            else
+            {
+                PublishReport();
             }
         }
         catch (Exception error)
@@ -428,6 +440,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             cancellation = null;
             NotifyBusy();
             NotifyRecovery();
+            PublishReport();
         }
     }
 
@@ -460,6 +473,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         }
 
         NotifyRecovery();
+        PublishReport();
     }
 
     private MigrationRecoveryRequest? CreateRecoveryRequest()
@@ -722,6 +736,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         recoveryDiagnosis = null;
         recoveryResult = null;
         recoveryStatus = "No recovery diagnosis is active.";
+        reportViewModel?.Clear();
         ClearPreview();
         status = "Ready to generate a new dry-run preview. Previous preview and choices cleared.";
         Notify(nameof(SourcePath));
@@ -790,6 +805,19 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         Notify(nameof(RollbackOutcome));
         Notify(nameof(RecoveryStatus));
         RollbackMigrationCommand.Refresh();
+    }
+
+    private void PublishReport()
+    {
+        if (session is null || reportViewModel is null)
+        {
+            return;
+        }
+
+        reportViewModel.Publish(MigrationReportEvidence.FromSession(
+            session,
+            recoveryDiagnosis,
+            recoveryResult));
     }
 
     private static string RecoveryDiagnosisStatusText(MigrationRecoveryDiagnosis diagnosis) =>

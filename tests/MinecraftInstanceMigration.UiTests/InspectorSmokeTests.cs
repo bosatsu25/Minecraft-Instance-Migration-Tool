@@ -18,7 +18,7 @@ public sealed class InspectorSmokeTests
     {
         using var session = UiSession.Open();
         Assert.Equal("Minecraft Instance Migration", session.Window.Title);
-        foreach (string id in new[] { "CandidatePath", "Inspect", "Cancel", "RootState", "Entries", "PreviewTab" })
+        foreach (string id in new[] { "CandidatePath", "Inspect", "Cancel", "RootState", "Entries", "PreviewTab", "ReportTab" })
         {
             Assert.NotNull(session.Find(id));
         }
@@ -137,6 +137,10 @@ public sealed class InspectorSmokeTests
         session.ExecuteMigration(workspace.Root);
 
         Assert.Contains("Completed", session.Find("ExecutionState").Name);
+        session.SelectReportTab();
+        Assert.Contains("Completed", session.Find("ReportOverallOutcome").Name);
+        Assert.Contains("Copy: 1", session.Find("ReportMigrationSummary").Name);
+        Assert.Contains("verification: Succeeded", session.Find("ReportExecutionSummary").Name);
         Assert.Equal("sample-content", File.ReadAllText(destination.At(Path.Combine("config", "sample.txt"))));
         Assert.Equal(sourceBefore, source.Snapshot());
         Assert.Equal(unrelatedBefore, unrelated.Snapshot());
@@ -203,6 +207,15 @@ public sealed class InspectorSmokeTests
                 () => Window.FindFirstDescendant(cf => cf.ByAutomationId("PreviewSourcePath")) is null,
                 timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false, ignoreException: true);
             Assert.True(visible.Success, "Preview tab did not become available.");
+        }
+
+        public void SelectReportTab()
+        {
+            Find("ReportTab").AsTabItem().Select();
+            var visible = Retry.WhileTrue(
+                () => Window.FindFirstDescendant(cf => cf.ByAutomationId("ReportOverallOutcome")) is null,
+                timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false, ignoreException: true);
+            Assert.True(visible.Success, "Report tab did not become available.");
         }
 
         public void GeneratePreview(string sourcePath, string destinationPath)

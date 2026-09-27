@@ -5,15 +5,15 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 4.3 の Recovery Diagnosis / Guarded Rollback UI を実装済みです。**
+**Phase 4.4 の Migration Report を実装済みです。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
 Windows Copy / Replace、独立 post-write verification、fingerprint guard 付き rollback まで含まれます。
 
 WPF UI から Inspector、Migration Preview、selection / conflict 編集、明示的な実行確認、
-必要時の Backup、検証付き Copy / Replace 実行、Recovery 診断、確認付き guarded rollback
-まで操作できます。Report はまだ接続していません。
+必要時の Backup、検証付き Copy / Replace 実行、Recovery 診断、確認付き guarded rollback、
+読み取り専用 Migration Report まで操作できます。
 
 ## 現在の実装範囲
 
@@ -139,6 +139,20 @@ destructive mutation より先に durable Started を保存します。UI は at
 Recovered、GuardRejected、Failed、Uncertain として表示します。GuardRejected は現在内容が
 migration直後のfingerprintと一致しないため変更しなかった状態です。Uncertainは再実行可能と
 解釈せず、automatic resumeは引き続き未実装です。
+
+## Phase 4.4 読み取り専用 Migration Report
+
+Application は既存の Preview、Backup、Execution、Verification、Recovery、Rollback evidence を
+typed report へ投影します。Completed、Cancelled、Blocked、RecoveryRequired、Recovered、
+GuardRejected、Failed、Uncertain を区別し、workflow state の変更や Execute / Rollback の
+許可には使用しません。不足・矛盾した evidence は成功結果を捏造せず、report unavailable
+として fail closed に扱います。
+
+Report tab には action 件数、backup outcome、verification outcome を表示し、recovery evidence
+がある場合だけ recovery 詳細を表示します。Report model は filesystem path と raw exception
+message を保持しません。Phase 4.4 は memory 内表示までとし、自動保存とユーザー export は、
+owned destination、collision policy、partial-write 対策を定義する将来フェーズへ残します。
+詳細は [report](docs/report.md) を参照してください。
 
 ## UI で現在できること
 
@@ -330,7 +344,7 @@ BCL と明示的な port / adapter を中心に構成しています。
 
 以下はまだ完成扱いではありません。
 
-- Report UI / persistent report
+- report persistence / ユーザー操作による export
 - automatic rollback resume
 - legacy `hanemod-client.json` exclusion
 - Merge conflict semantics
@@ -405,15 +419,16 @@ warnings は build failure として扱います。
 16. Phase 4.1 — selection / conflict 編集 UI
 17. Phase 4.2 — 確認付き end-to-end Execute UI
 18. Phase 4.3 — Recovery Diagnosis / Guarded Rollback UI
+19. Phase 4.4 — 読み取り専用 Migration Report
 
 次の大きな領域:
 
-19. migration Report
 20. release hardening
 
 旧版由来の移行候補と未解決 rule は [migration rules](docs/migration-rules.md)、
 rollback の保証範囲は [rollback](docs/rollback.md)、
 execution evidence は [execution journal](docs/execution-journal.md) を参照してください。
+Report projection と persistence 境界は [report](docs/report.md) を参照してください。
 
 開発ルールは [AGENTS.md](AGENTS.md)、
 検証方針は [testing](docs/testing.md)、
