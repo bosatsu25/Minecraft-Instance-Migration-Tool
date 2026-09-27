@@ -218,8 +218,9 @@ Coverage includes:
 - hosted FlaUI smoke switches to the Preview tab, generates a preview from owned fixtures, verifies
   visible Copy / Excluded outcomes, and compares source/destination fixture snapshots before and after.
 
-The UI does not yet edit Skip / Replace decisions. It also does not report size estimates because
-the bounded Phase 1 Inspector intentionally reads metadata only and does not recursively inventory content.
+At Phase 2.2 the UI did not edit Skip / Replace decisions; Phase 4.1 adds that editing flow. The UI
+still does not report size estimates because the bounded Phase 1 Inspector intentionally reads metadata
+only and does not recursively inventory content.
 A passing preview is not execution authorization; Backup / Execute must revalidate state.
 
 
@@ -528,5 +529,17 @@ Application workflow tests use ports and controlled stubs; they never access the
 - an operation-canceled exception escaping execution is classified as `RecoveryRequired`.
 
 The workflow does not choose conflict policy, perform IO, expose private exception messages, or implement
-automatic resume. Phase 4.1 can add selection/conflict editing by re-entering `ConfigurePlan` with the
-same inspected evidence.
+automatic resume. Phase 4.1 re-enters `ConfigurePlan` with the same inspected evidence for selection and
+conflict editing.
+
+
+## Phase 4.1: selection / conflict editing UI
+
+App tests verify that Recommended is the initial selection, opt-in/opt-out changes affect only the selected row, Skip / Replace / Clear edit current destination conflicts, Apply choices rebuilds the preview without reinspection, Reset Recommended restores defaults, path changes clear pending choices, and workflow failures do not leak private exception messages or rebuild stale previews.
+
+Hosted WPF smoke coverage waits for user-visible preview rows rather than inferring asynchronous completion
+from command enablement or a cached UIA text element. It verifies Copy / Excluded rows and editing controls
+for a real destination conflict while source and destination fixtures remain unchanged. The preview grid
+contains exactly the eleven known candidates, so row/column virtualization is disabled to expose that bounded
+result consistently to keyboard users and UI Automation. Backup / Execute are deliberately not invoked by
+Phase 4.1 UI tests.

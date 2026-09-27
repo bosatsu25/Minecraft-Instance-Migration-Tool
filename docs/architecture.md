@@ -140,9 +140,9 @@ meaning after Planner evolves. Preview copies plan status, unknown selections, a
 issues into its own immutable snapshot.
 
 The WPF Preview tab inspects source and destination with the existing read-only Inspector, creates a
-Recommended plan, and projects that exact plan into Preview. It does not offer conflict editing yet:
-an existing destination is visibly `NeedsDecision`. Changing either input clears the prior preview;
-cancellation and error handling do not retain a late or partial result.
+Recommended plan, and projects that exact plan into Preview. At Phase 2.2 an existing destination was
+displayed as `NeedsDecision`; Phase 4.1 adds the explicit editing flow described below. Changing either
+input clears the prior preview; cancellation and error handling do not retain a late or partial result.
 
 Phase 2.2 intentionally has no recursive size estimate, hash, nested file inventory, compatibility
 analysis, or exclusion enforcement because Phase 1 metadata observation does not provide those facts.
@@ -542,6 +542,15 @@ orchestrator remains a clean cancellation only when it carries no applied steps.
 The workflow is an orchestration boundary, not a replacement for Domain policies. Selection, conflict,
 backup, live validation, mutation, verification, and rollback safety remain owned by their existing
 contracts.
+
+## Phase 4.1 selection / conflict editing UI
+
+Phase 4.1 connects the WPF Migration Preview to `IMigrationWorkflow` instead of composing Inspector / Planner / Previewer directly in the ViewModel.
+The composition root constructs the existing production workflow, while the UI remains read-only with respect to backup and migration IO.
+
+Recommended is still the initial selection. The UI presents all current preview rows and permits explicit Include / Exclude editing. For entries whose current plan disposition is a destination conflict, only the Domain-defined `Skip` and `Replace` decisions are exposed. Edits remain presentation state until **Apply choices** calls `MigrationWorkflow.ConfigurePlan` and `CreatePreview` against the same inspection evidence; no reinspection occurs merely because a choice changed.
+
+Changing either root discards the prior workflow session, preview, and pending choices. **Reset Recommended** restores the preset and clears explicit conflict decisions. This phase does not add Backup / Execute / Rollback UI, Merge semantics, or filesystem writes.
 
 ## Migration Engine direction
 

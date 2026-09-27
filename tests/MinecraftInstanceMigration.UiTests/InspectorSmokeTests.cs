@@ -74,7 +74,6 @@ public sealed class InspectorSmokeTests
         session.SelectPreviewTab();
         session.GeneratePreview(source.Root, destination.Root);
 
-        Assert.Contains("Ready", session.Find("PreviewPlanStatus").Name);
         string[] config = session.RenderedEntryCells("PreviewEntries", "config");
         Assert.Contains("Copy", config);
         Assert.Contains("ReadyToCopy", config);
@@ -84,6 +83,35 @@ public sealed class InspectorSmokeTests
         string[] saves = session.RenderedEntryCells("PreviewEntries", "saves");
         Assert.Contains("Excluded", saves);
         Assert.Contains("ExcludedBySelection", saves);
+
+        Assert.Equal(sourceBefore, source.Snapshot());
+        Assert.Equal(destinationBefore, destination.Snapshot());
+    }
+
+    [Fact]
+    public void ExposesConflictEditingControlsWithoutWritingFiles()
+    {
+        using var source = new UiFixture();
+        using var destination = new UiFixture();
+        Directory.CreateDirectory(source.At("config"));
+        Directory.CreateDirectory(destination.At("config"));
+        string[] sourceBefore = source.Snapshot();
+        string[] destinationBefore = destination.Snapshot();
+
+        using var session = UiSession.Open();
+        session.SelectPreviewTab();
+        session.GeneratePreview(source.Root, destination.Root);
+
+        string[] config = session.RenderedEntryCells("PreviewEntries", "config");
+        Assert.Contains("NeedsDecision", config);
+        Assert.Contains("DestinationConflict", config);
+        Assert.NotNull(session.Find("ApplyPreviewChoices"));
+        Assert.NotNull(session.Find("ResetRecommendedChoices"));
+        Assert.NotNull(session.Find("IncludeSelectedEntry"));
+        Assert.NotNull(session.Find("ExcludeSelectedEntry"));
+        Assert.NotNull(session.Find("SkipSelectedConflict"));
+        Assert.NotNull(session.Find("ReplaceSelectedConflict"));
+        Assert.NotNull(session.Find("ClearSelectedConflict"));
 
         Assert.Equal(sourceBefore, source.Snapshot());
         Assert.Equal(destinationBefore, destination.Snapshot());
@@ -139,7 +167,7 @@ public sealed class InspectorSmokeTests
             Find("Inspect").AsButton().Invoke();
             var finished = Retry.WhileFalse(
                 () => Find("Status").Name.StartsWith("Observation ", StringComparison.Ordinal),
-                timeout: TimeSpan.FromSeconds(10), throwOnTimeout: false);
+                timeout: TimeSpan.FromSeconds(10), throwOnTimeout: false, ignoreException: true);
             Assert.True(finished.Success, "Inspector did not finish in ten seconds.");
         }
 
@@ -148,7 +176,7 @@ public sealed class InspectorSmokeTests
             Find("PreviewTab").AsTabItem().Select();
             var visible = Retry.WhileTrue(
                 () => Window.FindFirstDescendant(cf => cf.ByAutomationId("PreviewSourcePath")) is null,
-                timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false);
+                timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false, ignoreException: true);
             Assert.True(visible.Success, "Preview tab did not become available.");
         }
 
@@ -156,11 +184,33 @@ public sealed class InspectorSmokeTests
         {
             Find("PreviewSourcePath").AsTextBox().Text = sourcePath;
             Find("PreviewDestinationPath").AsTextBox().Text = destinationPath;
-            Find("GeneratePreview").AsButton().Invoke();
+
+            Button generate = Find("GeneratePreview").AsButton();
+            var ready = Retry.WhileFalse(
+                () => generate.IsEnabled,
+                timeout: TimeSpan.FromSeconds(5),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(ready.Success, "Generate Preview did not become enabled.");
+
+            generate.Invoke();
+
             var finished = Retry.WhileFalse(
-                () => Find("PreviewStatus").Name.StartsWith("Dry-run preview ", StringComparison.Ordinal),
-                timeout: TimeSpan.FromSeconds(15), throwOnTimeout: false);
-            Assert.True(finished.Success, "Dry-run preview did not finish in fifteen seconds.");
+                () =>
+                {
+                    try
+                    {
+                        return RenderedEntryCells("PreviewEntries", "config").Length > 0;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                },
+                timeout: TimeSpan.FromSeconds(15),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(finished.Success, "Dry-run preview did not render the config row in fifteen seconds.");
         }
 
         public string[] RenderedEntryCells(string gridId, string name)

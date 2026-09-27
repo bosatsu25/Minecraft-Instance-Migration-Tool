@@ -111,11 +111,41 @@
                     Command="{Binding BrowseDestinationCommand}" />
           </Grid>
 
-          <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,12">
-            <Button Content="Generate Preview" Padding="20,6" Command="{Binding GeneratePreviewCommand}"
-                    AutomationProperties.AutomationId="GeneratePreview" />
-            <Button Content="Cancel" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
-                    AutomationProperties.AutomationId="PreviewCancel" />
+          <StackPanel Grid.Row="3" Margin="0,12">
+            <StackPanel Orientation="Horizontal">
+              <Button Content="Generate Preview" Padding="20,6" Command="{Binding GeneratePreviewCommand}"
+                      AutomationProperties.AutomationId="GeneratePreview" />
+              <Button Content="Apply choices" Padding="20,6" Margin="8,0,0,0"
+                      Command="{Binding ApplyChoicesCommand}"
+                      AutomationProperties.AutomationId="ApplyPreviewChoices" />
+              <Button Content="Reset Recommended" Padding="20,6" Margin="8,0,0,0"
+                      Command="{Binding ResetRecommendedCommand}"
+                      AutomationProperties.AutomationId="ResetRecommendedChoices" />
+              <Button Content="Cancel" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
+                      AutomationProperties.AutomationId="PreviewCancel" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+              <TextBlock VerticalAlignment="Center" Margin="0,0,8,0"
+                         Text="Selected row:" FontWeight="SemiBold" />
+              <Button Content="Include" Padding="16,5" Command="{Binding IncludeSelectedCommand}"
+                      AutomationProperties.AutomationId="IncludeSelectedEntry" />
+              <Button Content="Exclude" Padding="16,5" Margin="8,0,0,0"
+                      Command="{Binding ExcludeSelectedCommand}"
+                      AutomationProperties.AutomationId="ExcludeSelectedEntry" />
+              <TextBlock VerticalAlignment="Center" Margin="16,0,8,0"
+                         Text="Conflict:" FontWeight="SemiBold" />
+              <Button Content="Skip" Padding="16,5" Command="{Binding SkipConflictCommand}"
+                      AutomationProperties.AutomationId="SkipSelectedConflict" />
+              <Button Content="Replace" Padding="16,5" Margin="8,0,0,0"
+                      Command="{Binding ReplaceConflictCommand}"
+                      AutomationProperties.AutomationId="ReplaceSelectedConflict" />
+              <Button Content="Clear" Padding="16,5" Margin="8,0,0,0"
+                      Command="{Binding ClearConflictCommand}"
+                      AutomationProperties.AutomationId="ClearSelectedConflict" />
+              <TextBlock VerticalAlignment="Center" Margin="16,0,0,0"
+                         Text="{Binding SelectedChoiceSummary}"
+                         AutomationProperties.AutomationId="SelectedChoiceSummary" />
+            </StackPanel>
           </StackPanel>
 
           <StackPanel Grid.Row="4" Margin="0,0,0,12">
@@ -127,8 +157,12 @@
                        AutomationProperties.AutomationId="PreviewSummary" />
           </StackPanel>
 
-          <DataGrid Grid.Row="5" ItemsSource="{Binding Entries}" AutoGenerateColumns="False"
+          <DataGrid Grid.Row="5" ItemsSource="{Binding Entries}"
+                    SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
+                    AutoGenerateColumns="False"
+                    EnableRowVirtualization="False" EnableColumnVirtualization="False"
                     IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                    SelectionMode="Single" SelectionUnit="FullRow"
                     HeadersVisibility="Column" AutomationProperties.Name="Migration preview entries"
                     AutomationProperties.AutomationId="PreviewEntries">
             <DataGrid.Columns>
@@ -138,12 +172,12 @@
               <DataGridTextColumn Header="Plan detail" Binding="{Binding PlanDisposition}" Width="190" />
               <DataGridTextColumn Header="Source" Binding="{Binding SourceState, TargetNullValue=Unknown}" Width="115" />
               <DataGridTextColumn Header="Destination" Binding="{Binding DestinationState, TargetNullValue=Unknown}" Width="115" />
-              <DataGridCheckBoxColumn Header="Backup" Binding="{Binding RequiresBackup}" Width="75" />
+              <DataGridCheckBoxColumn Header="Backup" Binding="{Binding RequiresBackup, Mode=OneWay}" Width="75" />
             </DataGrid.Columns>
           </DataGrid>
 
           <TextBlock Grid.Row="6" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Recommended leaves saves and screenshots unselected. Existing destination conflicts remain NeedsDecision in this UI. Preview is metadata-only and does not authorize future writes; observations can become stale." />
+                     Text="Recommended leaves saves and screenshots unselected. Select a preview row and use Include / Exclude; for a destination conflict use Skip / Replace, then Apply choices. Preview remains metadata-only and never authorizes writes; observations can become stale." />
         </Grid>
       </TabItem>
     </TabControl>
