@@ -106,8 +106,8 @@ The audited Phase 4.0 behavior includes:
 - execution still requires a journal parent before it can start
 - exceptions or cancellation escaping from execution are treated conservatively as `RecoveryRequired`
 
-Phase 4.0 does not add WPF behavior or new filesystem adapters. Phase 4.1 is expected to
-connect selection and Skip / Replace conflict editing to this workflow.
+Phase 4.0 itself did not add WPF behavior or new filesystem adapters. Phase 4.1 now
+connects selection and Skip / Replace conflict editing to this workflow while keeping backup and execution UI out of scope.
 
 ## Phase 4.1 selection / conflict editing
 
@@ -381,10 +381,10 @@ Implemented:
 13. Phase 3.7 — guarded rollback IO
 14. Phase 3.8 — durable rollback-attempt journal
 15. Phase 4.0 — Application-owned migration workflow/session
+16. Phase 4.1 — selection / conflict editing UI
 
 Next major areas:
 
-16. Phase 4.1 — selection / conflict editing UI
 17. end-to-end Execute / Rollback UI
 18. explicit Recovery UX and Report
 19. release hardening
