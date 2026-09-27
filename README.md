@@ -5,16 +5,14 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.0 Migration Workflow / Session.**
-The Application workflow now connects inspection, planning, preview, backup preparation,
-backup execution, and execution through explicit session states. The WPF UI still exposes
-only Inspector and Migration Preview.
-The backend now includes read-only Inspect / Plan / Preview, verified Backup,
-a durable execution journal, Windows Copy / Replace, independent post-write verification,
-fingerprint-guarded rollback, and a durable rollback-attempt journal.
+**Status: Phase 4.0 Migration Workflow / Session is implemented and merged.**
+Application now owns the product-level workflow that connects inspection, planning, preview,
+backup preparation/execution, and migration execution through explicit session states.
+The backend also includes verified Backup, durable execution and rollback-attempt journals,
+Windows Copy / Replace, independent post-write verification, and fingerprint-guarded rollback.
 
 The **current WPF UI still exposes only Inspector and Migration Preview**.
-User-facing Execute / Rollback / Recovery / Report flows are not wired into the UI yet.
+Selection/conflict editing, Execute / Rollback, Recovery, and Report flows are not wired into the UI yet.
 
 ## Current implementation
 
@@ -69,6 +67,47 @@ it recovers as `Uncertain`. The implementation does not guess whether the action
 failed, should be replayed, or should be skipped.
 
 Phase 3.8 makes recovery diagnosis durable; it does **not** implement automatic resume.
+
+### Phase 4.0 Application workflow / session
+
+Phase 4.0 adds an Application-owned workflow boundary over the existing use cases.
+The workflow is now the authority for product-level session transitions; callers can read
+`MigrationWorkflowSession` evidence but cannot publicly construct arbitrary session states
+or mutate its state/evidence setters.
+
+```text
+SelectRoots
+  ↓
+Inspect
+  ↓
+ConfigurePlan
+  ↓
+Preview
+  ↓
+ReadyForBackup
+  ↓
+BackupReady
+  ↓
+ReadyForExecution
+  ↓
+Executing
+  ↓
+Completed / Cancelled / Blocked / RecoveryRequired
+```
+
+The audited Phase 4.0 behavior includes:
+
+- root reselection starts from fresh workflow evidence instead of retaining prior plan/backup/execution state
+- selection and conflict inputs are defensively copied
+- reconfiguring the plan invalidates downstream Preview / Backup / Execution evidence
+- a `NeedsDecision` or otherwise non-ready preview cannot advance to backup
+- `BackupPlanStatus.NotRequired` advances without inventing a backup path or invoking backup IO
+- a real replacement backup requires a backup parent
+- execution still requires a journal parent before it can start
+- exceptions or cancellation escaping from execution are treated conservatively as `RecoveryRequired`
+
+Phase 4.0 does not add WPF behavior or new filesystem adapters. Phase 4.1 is expected to
+connect selection and Skip / Replace conflict editing to this workflow.
 
 ## What the current UI can do
 
