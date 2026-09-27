@@ -122,22 +122,32 @@ public sealed class InspectorSmokeTests
         private readonly FlaUI.Core.Application application;
         private readonly UIA3Automation automation;
         private readonly int processId;
+        private readonly string crashLogPath;
         public Window Window { get; }
 
-        private UiSession(FlaUI.Core.Application application, UIA3Automation automation, Window window)
+        private UiSession(
+            FlaUI.Core.Application application,
+            UIA3Automation automation,
+            Window window,
+            string crashLogPath)
         {
             this.application = application;
             this.automation = automation;
             processId = application.ProcessId;
+            this.crashLogPath = crashLogPath;
             Window = window;
         }
 
         public static UiSession Open()
         {
+            string crashLogPath = Path.Combine(
+                Path.GetTempPath(),
+                $"mim-ui-crash-{Guid.NewGuid():N}.log");
             var start = new ProcessStartInfo(Path.ChangeExtension(typeof(MainWindow).Assembly.Location, ".exe"))
             {
                 UseShellExecute = false,
             };
+            start.Environment["MIM_CRASH_LOG"] = crashLogPath;
             var application = FlaUI.Core.Application.Launch(start);
             int processId = application.ProcessId;
             UIA3Automation? automation = null;
@@ -146,7 +156,7 @@ public sealed class InspectorSmokeTests
                 automation = new UIA3Automation();
                 var window = application.GetMainWindow(automation, TimeSpan.FromSeconds(10));
                 Assert.NotNull(window);
-                return new UiSession(application, automation, window);
+                return new UiSession(application, automation, window, crashLogPath);
             }
             catch
             {
@@ -215,7 +225,21 @@ public sealed class InspectorSmokeTests
                 finished.Success,
                 $"Dry-run preview did not render the config row in fifteen seconds. " +
                 $"Status='{TryReadName("PreviewStatus")}', PlanStatus='{TryReadName("PreviewPlanStatus")}', " +
-                $"PreviewIds='{PreviewAutomationIds()}', Process='{ProcessState()}'.");
+                $"PreviewIds='{PreviewAutomationIds()}', Process='{ProcessState()}', Crash='{CrashLog()}'.");
+        }
+
+        public string CrashLog()
+        {
+            try
+            {
+                return File.Exists(crashLogPath)
+                    ? File.ReadAllText(crashLogPath).Replace(Environment.NewLine, " | ")
+                    : "<none>";
+            }
+            catch (Exception error)
+            {
+                return $"<{error.GetType().Name}>";
+            }
         }
 
         public string ProcessState()
@@ -276,6 +300,14 @@ public sealed class InspectorSmokeTests
             StopProcess(processId);
             automation.Dispose();
             application.Dispose();
+            try
+            {
+                File.Delete(crashLogPath);
+            }
+            catch
+            {
+                // Best-effort test diagnostics cleanup.
+            }
         }
 
         private static void StopProcess(int processId)
