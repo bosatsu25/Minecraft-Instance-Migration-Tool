@@ -3,6 +3,7 @@ using MinecraftInstanceMigration.Application.Backup;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
+using MinecraftInstanceMigration.Application.Reporting;
 using MinecraftInstanceMigration.Application.Workflow;
 using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Execution;
@@ -18,7 +19,8 @@ public sealed class MigrationPreviewViewModelTests
     {
         var calls = new List<string>();
         var confirmation = new StubConfirmation(confirmed: true);
-        var model = CreateExecutableModel(calls, confirmation);
+        var report = new MigrationReportViewModel(new MigrationReportProjector());
+        var model = CreateExecutableModel(calls, confirmation, reportViewModel: report);
         model.SourcePath = "source";
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
@@ -38,6 +40,34 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal(0, request.ReplaceCount);
         Assert.Equal(0, request.SkipCount);
         Assert.False(request.BackupRequired);
+        Assert.Equal("Completed", report.OverallOutcome);
+        Assert.Contains("Copy: 1", report.MigrationSummary, StringComparison.Ordinal);
+        Assert.Contains("verification: Succeeded", report.ExecutionSummary, StringComparison.Ordinal);
+
+        await model.GeneratePreviewAsync();
+
+        Assert.False(report.HasReport);
+        Assert.Equal("Not available", report.OverallOutcome);
+    }
+
+    [Fact]
+    public async Task ReportProjectionFailureDoesNotChangeCompletedWorkflow()
+    {
+        var report = new MigrationReportViewModel(new ThrowingReportProjector());
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(confirmed: true),
+            reportViewModel: report);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+
+        await model.ExecuteMigrationAsync();
+
+        Assert.Equal(MigrationWorkflowState.Completed, model.WorkflowState);
+        Assert.False(report.HasReport);
+        Assert.Contains("generation failed", report.Status, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -127,19 +157,22 @@ public sealed class MigrationPreviewViewModelTests
     }
 
     [Theory]
-    [InlineData(BackupExecutionStatus.Failed, MigrationWorkflowState.ReadyForBackup, "BackupFailed")]
-    [InlineData(BackupExecutionStatus.Cancelled, MigrationWorkflowState.Cancelled, "Cancelled")]
+    [InlineData(BackupExecutionStatus.Failed, MigrationWorkflowState.ReadyForBackup, "BackupFailed", "Failed")]
+    [InlineData(BackupExecutionStatus.Cancelled, MigrationWorkflowState.Cancelled, "Cancelled", "Cancelled")]
     public async Task BackupFailureOrCancellationNeverStartsExecution(
         BackupExecutionStatus backupStatus,
         MigrationWorkflowState expectedState,
-        string expectedStatus)
+        string expectedStatus,
+        string expectedReportOutcome)
     {
         var calls = new List<string>();
+        var report = new MigrationReportViewModel(new MigrationReportProjector());
         var model = CreateExecutableModel(
             calls,
             new StubConfirmation(confirmed: true),
             destinationConflict: true,
-            backupResult: new BackupExecutionResult(backupStatus));
+            backupResult: new BackupExecutionResult(backupStatus),
+            reportViewModel: report);
         model.SourcePath = "source";
         model.DestinationPath = "destination";
         model.SafetyWorkspacePath = "workspace";
@@ -154,6 +187,30 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal(expectedState, model.WorkflowState);
         Assert.Contains(expectedStatus, model.Status, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("No files were changed", model.Status, StringComparison.Ordinal);
+        Assert.Equal(expectedReportOutcome, report.OverallOutcome);
+    }
+
+    [Fact]
+    public async Task BackupPreparationFailurePublishesBlockedReportWithoutStartingIo()
+    {
+        var calls = new List<string>();
+        var report = new MigrationReportViewModel(new MigrationReportProjector());
+        var model = CreateExecutableModel(
+            calls,
+            new StubConfirmation(confirmed: true),
+            backupPlanner: new ThrowingBackupPlanner(),
+            reportViewModel: report);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+
+        await model.ExecuteMigrationAsync();
+
+        Assert.Empty(calls);
+        Assert.Equal(MigrationWorkflowState.ReadyForBackup, model.WorkflowState);
+        Assert.Equal("Blocked", report.OverallOutcome);
+        Assert.Contains("BackupNotReady", model.Status, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -801,9 +858,10 @@ public sealed class MigrationPreviewViewModelTests
         IExecutionOrchestrator? execution = null,
         IInstanceInspector? inspector = null,
         IMigrationRecoveryCoordinator? recovery = null,
-        IMigrationRollbackConfirmation? rollbackConfirmation = null)
+        IMigrationRollbackConfirmation? rollbackConfirmation = null,
+        MigrationReportViewModel? reportViewModel = null,
+        IBackupPlanner? backupPlanner = null)
     {
-        var backupPlanner = new BackupPlanner();
         return new MigrationPreviewViewModel(
             new MigrationWorkflow(
                 inspector ?? new StubInspector((path, _) => Task.FromResult(
@@ -814,13 +872,14 @@ public sealed class MigrationPreviewViewModelTests
                             : Inspection())),
                 new MigrationPlanner(),
                 new MigrationPreviewer(),
-                backupPlanner,
+                backupPlanner ?? new BackupPlanner(),
                 new RecordingBackupExecutor(calls, backupResult),
                 execution ?? new RecordingExecutionOrchestrator(calls)),
             _ => null,
             confirmation,
             recovery,
-            rollbackConfirmation);
+            rollbackConfirmation,
+            reportViewModel);
     }
 
     private static MigrationPreviewViewModel CreateModel(
@@ -881,6 +940,21 @@ public sealed class MigrationPreviewViewModelTests
             BackupPlan plan,
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Preview UI must not execute backup IO.");
+    }
+
+    private sealed class ThrowingBackupPlanner : IBackupPlanner
+    {
+        public BackupPlan CreateBackupPlan(MigrationPlan migrationPlan) =>
+            throw new InvalidOperationException("private backup path");
+
+        public BackupManifestDraft CreateManifestDraft(BackupPlan backupPlan) =>
+            throw new InvalidOperationException("private backup path");
+    }
+
+    private sealed class ThrowingReportProjector : IMigrationReportProjector
+    {
+        public MigrationReportCreationResult Create(MigrationReportEvidence evidence) =>
+            throw new InvalidOperationException("private report path");
     }
 
     private sealed class NeverCalledExecutionOrchestrator : IExecutionOrchestrator

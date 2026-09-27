@@ -577,3 +577,20 @@ The hosted FlaUI suite continues to cover real confirmed Copy execution. Phase 4
 production failure-injection switch solely for UI automation, so recovery exposure is verified at the
 ViewModel/Application boundaries rather than weakening production behavior or manufacturing an unstable
 destructive smoke path.
+
+## Phase 4.4: Migration Report
+
+Application tests verify every report outcome, exact Preview/action counts, verification and backup
+summaries, absence of fake recovery data, full-rollback requirements for Recovered, and fail-closed
+handling of missing or inconsistent execution/recovery evidence. Serialization of the report model is
+checked for path leakage even when source evidence contains private backup and journal locations.
+
+App tests verify readable Completed and recovery presentations, distinct Recovered / GuardRejected /
+Failed / Uncertain wording, safe report-generation failure, absence of workflow commands, publication
+after backup/preparation/execution outcomes, and clearing when roots change. Report projection failures
+do not modify the workflow session or replace its typed result.
+
+The hosted FlaUI normal path extends the real confirmed Copy-only migration through the Report tab. It
+observes Completed, Copy count 1, and successful verification from stable AutomationIds. Recovery report
+paths remain at Application/App level because Phase 4.4 adds no production failure injection solely for
+UI automation. No report persistence tests exist because Phase 4.4 performs no report filesystem writes.

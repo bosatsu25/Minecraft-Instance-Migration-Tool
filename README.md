@@ -5,15 +5,15 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.3 Recovery Diagnosis / Guarded Rollback UI is implemented and merged into `main`.**
+**Status: Phase 4.4 Migration Report is implemented.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
 Windows Copy / Replace, independent post-write verification, and fingerprint-guarded rollback.
 
 The WPF UI exposes Inspector, Migration Preview, selection/conflict editing, explicit execution
-confirmation, Backup when required, verified Copy / Replace execution, Recovery diagnosis, and
-explicitly confirmed guarded rollback. Report flows are not wired into the UI yet.
+confirmation, Backup when required, verified Copy / Replace execution, Recovery diagnosis,
+explicitly confirmed guarded rollback, and a read-only Migration Report.
 
 ## Current implementation
 
@@ -143,6 +143,19 @@ rollback executor persists durable Started evidence before guarded filesystem mu
 projects durable attempt evidence as Recovered, GuardRejected, Failed, or Uncertain. GuardRejected
 means the destination was left unchanged because current content no longer matched the migration
 fingerprint. Uncertain is never treated as retryable; automatic resume remains out of scope.
+
+## Phase 4.4 read-only Migration Report
+
+Application projects existing Preview, Backup, Execution, Verification, Recovery, and Rollback
+evidence into a typed report. It distinguishes Completed, Cancelled, Blocked, RecoveryRequired,
+Recovered, GuardRejected, Failed, and Uncertain without changing workflow state or granting
+execution/rollback authority. Inconsistent or incomplete evidence fails closed as an unavailable
+report instead of inventing a successful result.
+
+The report tab shows action counts, backup outcome, verification outcome, and recovery details only
+when recovery evidence exists. The report model contains no filesystem paths or raw exception text.
+Phase 4.4 keeps reports in memory: automatic persistence and user export remain deferred until an
+owned destination, collision policy, and partial-write strategy are defined. See [report](docs/report.md).
 
 ## What the current UI can do
 
@@ -309,7 +322,7 @@ Application ports
 - **Domain** — observations, MigrationPlan, selection/conflict policy, backup/execution/rollback policy
 - **Application** — use cases, orchestration, and ports for external effects
 - **Infrastructure** — Windows filesystem, backup, journals, mutation, verification, rollback adapters
-- **App** — WPF/MVVM Inspector, Preview, selection/conflict, Execute, Recovery Diagnosis, and Guarded Rollback UI plus composition root
+- **App** — WPF/MVVM Inspector, Preview, selection/conflict, Execute, Recovery Diagnosis, Guarded Rollback, and Migration Report UI plus composition root
 - **Tests** — Domain / Application / Infrastructure / App plus FlaUI UI smoke
 
 Dependencies point inward. Application and Domain do not reference Infrastructure or UI.
@@ -335,7 +348,7 @@ See [architecture](docs/architecture.md) for details.
 
 The following are not complete:
 
-- Report UI / persistent report
+- report persistence / user-initiated export
 - automatic rollback resume
 - legacy `hanemod-client.json` exclusion
 - Merge conflict semantics
@@ -410,15 +423,16 @@ Implemented:
 16. Phase 4.1 — selection / conflict editing UI
 17. Phase 4.2 — confirmed end-to-end Execute UI
 18. Phase 4.3 — Recovery Diagnosis / Guarded Rollback UI
+19. Phase 4.4 — read-only Migration Report
 
 Next major areas:
 
-19. **Phase 4.4 — Migration Report**
 20. **Phase 5.0 — Release hardening**
 
 See [migration rules](docs/migration-rules.md) for legacy candidates and unresolved rules,
 [rollback](docs/rollback.md) for rollback guarantees,
 and [execution journal](docs/execution-journal.md) for execution evidence.
+Report projection and its persistence boundary are documented in [report](docs/report.md).
 
 See [AGENTS.md](AGENTS.md) for working agreements,
 [testing](docs/testing.md) for verification scope,

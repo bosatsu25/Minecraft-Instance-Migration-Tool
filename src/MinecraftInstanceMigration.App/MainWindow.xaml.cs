@@ -5,6 +5,7 @@ using MinecraftInstanceMigration.Application.Backup;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
+using MinecraftInstanceMigration.Application.Reporting;
 using MinecraftInstanceMigration.Application.Workflow;
 using MinecraftInstanceMigration.Infrastructure.Backup;
 using MinecraftInstanceMigration.Infrastructure.Execution;
@@ -56,14 +57,16 @@ public partial class MainWindow : Window
             inspector,
             () => ChooseFolder("Choose an instance candidate folder"));
 
+        var reportModel = new MigrationReportViewModel(new MigrationReportProjector());
         var previewModel = new MigrationPreviewViewModel(
             workflow,
             ChooseFolder,
             new WpfMigrationExecutionConfirmation(this),
             recoveryCoordinator,
-            new WpfMigrationRollbackConfirmation(this));
+            new WpfMigrationRollbackConfirmation(this),
+            reportModel);
 
-        var model = new MainViewModel(inspectorModel, previewModel);
+        var model = new MainViewModel(inspectorModel, previewModel, reportModel);
         DataContext = model;
         Closed += (_, _) => model.Cancel();
     }
