@@ -21,6 +21,20 @@ public partial class MainWindow : Window
         var inspector = new InstanceInspector(new WindowsInspectionFileSystem());
         var backupPlanner = new BackupPlanner();
         var backupStorage = new WindowsBackupStorage();
+        var backupValidator = new BackupArtifactValidator(backupStorage);
+        var safetyPlanner = new ExecutionSafetyPlanner();
+        var journalPersistence = new ExecutionJournalPersistence(new WindowsExecutionJournalStorage());
+        var rollbackAttemptPersistence = new RollbackAttemptPersistence(new WindowsRollbackAttemptStorage());
+        var rollbackExecutor = new RollbackExecutor(
+            backupValidator,
+            rollbackAttemptPersistence,
+            new WindowsRollbackStorage());
+        var recoveryCoordinator = new MigrationRecoveryCoordinator(
+            safetyPlanner,
+            journalPersistence,
+            backupValidator,
+            rollbackExecutor,
+            rollbackAttemptPersistence);
 
         var workflow = new MigrationWorkflow(
             inspector,
@@ -29,12 +43,12 @@ public partial class MainWindow : Window
             backupPlanner,
             new BackupExecutor(backupStorage, backupPlanner),
             new ExecutionOrchestrator(
-                new ExecutionSafetyPlanner(),
+                safetyPlanner,
                 new ExecutionLiveValidator(inspector),
                 backupPlanner,
-                new BackupArtifactValidator(backupStorage),
+                backupValidator,
                 new WindowsExecutionWorkspaceSafetyValidator(),
-                new ExecutionJournalPersistence(new WindowsExecutionJournalStorage()),
+                journalPersistence,
                 new WindowsExecutionMutationPort(),
                 new WindowsExecutionPostWriteVerifier()));
 
@@ -45,7 +59,9 @@ public partial class MainWindow : Window
         var previewModel = new MigrationPreviewViewModel(
             workflow,
             ChooseFolder,
-            new WpfMigrationExecutionConfirmation(this));
+            new WpfMigrationExecutionConfirmation(this),
+            recoveryCoordinator,
+            new WpfMigrationRollbackConfirmation(this));
 
         var model = new MainViewModel(inspectorModel, previewModel);
         DataContext = model;

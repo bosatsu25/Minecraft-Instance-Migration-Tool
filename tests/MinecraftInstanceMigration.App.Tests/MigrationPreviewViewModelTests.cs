@@ -5,6 +5,7 @@ using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
 using MinecraftInstanceMigration.Application.Workflow;
 using MinecraftInstanceMigration.Domain.Backup;
+using MinecraftInstanceMigration.Domain.Execution;
 using MinecraftInstanceMigration.Domain.Inspection;
 using MinecraftInstanceMigration.Domain.Planning;
 
@@ -276,6 +277,165 @@ public sealed class MigrationPreviewViewModelTests
         Assert.False(model.BrowseSafetyWorkspaceCommand.CanExecute(null));
         Assert.False(model.GeneratePreviewCommand.CanExecute(null));
         Assert.False(model.ExcludeSelectedCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task RecoveryRequiredPublishesTypedDiagnosisAndEnablesRollback()
+    {
+        var recovery = new StubRecoveryCoordinator(RollbackableDiagnosis());
+        var model = CreateExecutableModel(
+            [],
+            new StubConfirmation(confirmed: true),
+            execution: new RecordingExecutionOrchestrator([], ExecutionOrchestrationStatus.RecoveryRequired),
+            recovery: recovery,
+            rollbackConfirmation: new StubRollbackConfirmation(confirmed: true));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+
+        await model.ExecuteMigrationAsync();
+
+        Assert.True(model.IsRecoveryVisible);
+        Assert.Equal("RollbackAvailable", model.RecoveryDiagnosisStatus);
+        Assert.Contains("Applied: 1", model.RecoverySummary, StringComparison.Ordinal);
+        Assert.Contains("candidates: 1", model.RecoverySummary, StringComparison.OrdinalIgnoreCase);
+        Assert.True(model.RollbackMigrationCommand.CanExecute(null));
+        Assert.Equal(1, recovery.DiagnoseCalls);
+    }
+
+    [Fact]
+    public async Task NonRecoveryOrBlockedDiagnosisCannotRollback()
+    {
+        var completed = CreateExecutableModel([], new StubConfirmation(confirmed: true));
+        completed.SourcePath = "source";
+        completed.DestinationPath = "destination";
+        completed.SafetyWorkspacePath = "workspace";
+        await completed.GeneratePreviewAsync();
+        await completed.ExecuteMigrationAsync();
+        Assert.False(completed.IsRecoveryVisible);
+        Assert.False(completed.RollbackMigrationCommand.CanExecute(null));
+
+        var recovery = new StubRecoveryCoordinator(new MigrationRecoveryDiagnosis(
+            MigrationRecoveryDiagnosisStatus.Blocked));
+        var blocked = CreateExecutableModel(
+            [], new StubConfirmation(true),
+            execution: new RecordingExecutionOrchestrator([], ExecutionOrchestrationStatus.RecoveryRequired),
+            recovery: recovery);
+        blocked.SourcePath = "source";
+        blocked.DestinationPath = "destination";
+        blocked.SafetyWorkspacePath = "workspace";
+        await blocked.GeneratePreviewAsync();
+        await blocked.ExecuteMigrationAsync();
+        Assert.Equal("Blocked", blocked.RecoveryDiagnosisStatus);
+        Assert.False(blocked.RollbackMigrationCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task RejectedRollbackConfirmationDoesNotCallRecoveryExecutor()
+    {
+        var recovery = new StubRecoveryCoordinator(RollbackableDiagnosis());
+        var confirmation = new StubRollbackConfirmation(confirmed: false);
+        var model = CreateExecutableModel(
+            [], new StubConfirmation(true),
+            execution: new RecordingExecutionOrchestrator([], ExecutionOrchestrationStatus.RecoveryRequired),
+            recovery: recovery,
+            rollbackConfirmation: confirmation);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        await model.ExecuteMigrationAsync();
+
+        await model.RollbackMigrationAsync();
+
+        Assert.Equal(0, recovery.ExecuteCalls);
+        MigrationRollbackConfirmation request = Assert.Single(confirmation.Requests);
+        Assert.Equal(1, request.RollbackCandidateCount);
+        Assert.Equal(1, request.DeleteCreatedEntryCount);
+        Assert.False(request.BackupRequired);
+    }
+
+    [Theory]
+    [InlineData(MigrationRecoveryOutcome.Applied, "Recovered")]
+    [InlineData(MigrationRecoveryOutcome.GuardRejected, "not modified")]
+    [InlineData(MigrationRecoveryOutcome.Failed, "failed")]
+    [InlineData(MigrationRecoveryOutcome.Uncertain, "cannot be proven")]
+    public async Task RollbackOutcomeUsesDistinctSafePresentation(
+        MigrationRecoveryOutcome outcome,
+        string expected)
+    {
+        var recovery = new StubRecoveryCoordinator(
+            RollbackableDiagnosis(),
+            new MigrationRecoveryResult(outcome));
+        var model = CreateExecutableModel(
+            [], new StubConfirmation(true),
+            execution: new RecordingExecutionOrchestrator([], ExecutionOrchestrationStatus.RecoveryRequired),
+            recovery: recovery,
+            rollbackConfirmation: new StubRollbackConfirmation(true));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        await model.ExecuteMigrationAsync();
+
+        await model.RollbackMigrationAsync();
+
+        Assert.Equal(outcome.ToString(), model.RollbackOutcome);
+        Assert.Contains(expected, model.RecoveryStatus, StringComparison.OrdinalIgnoreCase);
+        Assert.False(model.RollbackMigrationCommand.CanExecute(null));
+        Assert.Equal(1, recovery.ExecuteCalls);
+    }
+
+    [Fact]
+    public async Task RollbackLocksInputsAndPreventsDuplicateInvocation()
+    {
+        var pending = new TaskCompletionSource<MigrationRecoveryResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recovery = new PendingRecoveryCoordinator(RollbackableDiagnosis(), pending.Task);
+        var model = CreateExecutableModel(
+            [], new StubConfirmation(true),
+            execution: new RecordingExecutionOrchestrator([], ExecutionOrchestrationStatus.RecoveryRequired),
+            recovery: recovery,
+            rollbackConfirmation: new StubRollbackConfirmation(true));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        await model.ExecuteMigrationAsync();
+
+        Task first = model.RollbackMigrationAsync();
+        Assert.True(model.IsBusy);
+        Assert.False(model.RollbackMigrationCommand.CanExecute(null));
+        string source = model.SourcePath;
+        model.SourcePath = "changed";
+        Task second = model.RollbackMigrationAsync();
+        Assert.Equal(source, model.SourcePath);
+        Assert.True(second.IsCompletedSuccessfully);
+        Assert.Equal(1, recovery.ExecuteCalls);
+
+        pending.SetResult(new MigrationRecoveryResult(MigrationRecoveryOutcome.Applied));
+        await first;
+        await model.RollbackMigrationAsync();
+        Assert.Equal(1, recovery.ExecuteCalls);
+    }
+
+    [Fact]
+    public async Task RecoveryFailuresDoNotExposePrivateDetails()
+    {
+        var recovery = new ThrowingRecoveryCoordinator();
+        var model = CreateExecutableModel(
+            [], new StubConfirmation(true),
+            execution: new RecordingExecutionOrchestrator([], ExecutionOrchestrationStatus.RecoveryRequired),
+            recovery: recovery);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+
+        await model.ExecuteMigrationAsync();
+
+        Assert.DoesNotContain("private", model.RecoveryStatus, StringComparison.OrdinalIgnoreCase);
+        Assert.False(model.RollbackMigrationCommand.CanExecute(null));
     }
 
     [Fact]
@@ -639,7 +799,9 @@ public sealed class MigrationPreviewViewModelTests
         bool destinationConflict = false,
         BackupExecutionResult? backupResult = null,
         IExecutionOrchestrator? execution = null,
-        IInstanceInspector? inspector = null)
+        IInstanceInspector? inspector = null,
+        IMigrationRecoveryCoordinator? recovery = null,
+        IMigrationRollbackConfirmation? rollbackConfirmation = null)
     {
         var backupPlanner = new BackupPlanner();
         return new MigrationPreviewViewModel(
@@ -656,7 +818,9 @@ public sealed class MigrationPreviewViewModelTests
                 new RecordingBackupExecutor(calls, backupResult),
                 execution ?? new RecordingExecutionOrchestrator(calls)),
             _ => null,
-            confirmation);
+            confirmation,
+            recovery,
+            rollbackConfirmation);
     }
 
     private static MigrationPreviewViewModel CreateModel(
@@ -755,6 +919,9 @@ public sealed class MigrationPreviewViewModelTests
             calls.Add("execute");
             return Task.FromResult(new ExecutionOrchestrationResult(
                 status,
+                Journal: status == ExecutionOrchestrationStatus.RecoveryRequired
+                    ? new ExecutionJournalReference("journal", "journal-file")
+                    : null,
                 AppliedSteps: 1));
         }
     }
@@ -812,6 +979,71 @@ public sealed class MigrationPreviewViewModelTests
             Requests.Add(request);
             return confirmed;
         }
+    }
+
+    private static MigrationRecoveryDiagnosis RollbackableDiagnosis()
+    {
+        var plan = new RollbackPlan(
+            RollbackPlanStatus.Ready,
+            [new RollbackPlanEntry(
+                0, "config", ExpectedEntryKind.Directory, ExecutionOperationKind.Copy,
+                RollbackActionKind.DeleteCreatedEntry,
+                new ExecutionContentFingerprint(1, 0, 1, new string('A', 64)))],
+            []);
+        return new MigrationRecoveryDiagnosis(
+            MigrationRecoveryDiagnosisStatus.RollbackAvailable,
+            plan,
+            AppliedExecutionSteps: 1,
+            DeleteCreatedEntryCount: 1);
+    }
+
+    private sealed class StubRollbackConfirmation(bool confirmed) : IMigrationRollbackConfirmation
+    {
+        public List<MigrationRollbackConfirmation> Requests { get; } = [];
+        public bool Confirm(MigrationRollbackConfirmation request)
+        {
+            Requests.Add(request);
+            return confirmed;
+        }
+    }
+
+    private sealed class StubRecoveryCoordinator(
+        MigrationRecoveryDiagnosis diagnosis,
+        MigrationRecoveryResult? result = null) : IMigrationRecoveryCoordinator
+    {
+        public int DiagnoseCalls { get; private set; }
+        public int ExecuteCalls { get; private set; }
+        public Task<MigrationRecoveryDiagnosis> DiagnoseAsync(MigrationRecoveryRequest request, CancellationToken cancellationToken = default)
+        {
+            DiagnoseCalls++;
+            return Task.FromResult(diagnosis);
+        }
+        public Task<MigrationRecoveryResult> ExecuteAsync(MigrationRecoveryRequest request, MigrationRecoveryDiagnosis actual, CancellationToken cancellationToken = default)
+        {
+            ExecuteCalls++;
+            return Task.FromResult(result ?? new MigrationRecoveryResult(MigrationRecoveryOutcome.Applied));
+        }
+    }
+
+    private sealed class PendingRecoveryCoordinator(
+        MigrationRecoveryDiagnosis diagnosis,
+        Task<MigrationRecoveryResult> result) : IMigrationRecoveryCoordinator
+    {
+        public int ExecuteCalls { get; private set; }
+        public Task<MigrationRecoveryDiagnosis> DiagnoseAsync(MigrationRecoveryRequest request, CancellationToken cancellationToken = default) => Task.FromResult(diagnosis);
+        public Task<MigrationRecoveryResult> ExecuteAsync(MigrationRecoveryRequest request, MigrationRecoveryDiagnosis actual, CancellationToken cancellationToken = default)
+        {
+            ExecuteCalls++;
+            return result;
+        }
+    }
+
+    private sealed class ThrowingRecoveryCoordinator : IMigrationRecoveryCoordinator
+    {
+        public Task<MigrationRecoveryDiagnosis> DiagnoseAsync(MigrationRecoveryRequest request, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("private recovery path");
+        public Task<MigrationRecoveryResult> ExecuteAsync(MigrationRecoveryRequest request, MigrationRecoveryDiagnosis diagnosis, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("private rollback path");
     }
 
     private sealed class ThrowOnSecondPlanCallPlanner : IMigrationPlanner

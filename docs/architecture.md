@@ -571,8 +571,28 @@ Copy-only plans pass no backup parent and rely on `BackupPlanStatus.NotRequired`
 backup evidence are avoided. Once confirmed, the workflow's existing backend order remains unchanged.
 During the operation, roots, workspace, choices, Preview regeneration, and duplicate Execute are disabled.
 Cancellation is passed to the workflow and the UI reports its typed result without assuming whether files
-changed. `RecoveryRequired` is distinct, prohibits another Execute and input editing, and exposes no
-Rollback action in this phase.
+changed. `RecoveryRequired` is distinct and prohibits another Execute and input editing.
+
+## Phase 4.3 recovery diagnosis / guarded rollback UI
+
+`MigrationRecoveryCoordinator` is the Application boundary for recovery. It recreates the execution
+journal draft from the reviewed `MigrationPlan`, reloads the durable execution snapshot, revalidates a
+backup only when an Applied Replace step needs it, and delegates rollback-plan creation to
+`IExecutionSafetyPlanner`. It returns typed counts and eligibility; App never parses journal records or
+duplicates fingerprint, backup, containment, or reparse policy.
+
+The WPF ViewModel retains the exact locked workflow session that produced `RecoveryRequired`. A rollback
+request can be built only from that session's destination, journal reference, reviewed plan, backup plan,
+and backup result. A backend-authorized plan plus explicit `IMigrationRollbackConfirmation` is required
+before `IRollbackExecutor` is crossed. While rollback runs, all inputs and duplicate rollback are disabled;
+after any result, the session cannot execute or roll back again. Application also binds each rollbackable
+diagnosis to its exact request and plan with a one-use authorization, so stale, modified, or replayed
+diagnosis evidence cannot cross the executor boundary.
+
+The coordinator reloads the durable rollback-attempt journal after execution and projects its typed
+terminal evidence. All Applied actions become the presentation state Recovered. GuardRejected remains a
+safe refusal, Failed remains failure evidence, and any Started action lacking a valid terminal is Uncertain.
+Missing or unreadable attempt evidence is also treated as Uncertain. No automatic retry or resume exists.
 
 ## Migration Engine direction
 
@@ -608,7 +628,8 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
 - **Diagnose / Rollback:** Phase 3.3 defines reverse-order rollback requirements; Phase 3.7 implements
   guarded Windows rollback IO. Automatic rollback requires the destination to still match its post-write
   fingerprint, and Replace additionally requires a freshly validated backup. Failed/uncertain execution
-  outcomes and any partial rollback failure remain recovery-required.
+  outcomes and any partial rollback failure remain recovery-required. Phase 4.3 exposes typed diagnosis
+  and explicit-confirmation rollback without moving safety policy into WPF.
 - **Report:** Distinguish succeeded, failed, cancelled, partially changed, rolled back, and
   recovery-required outcomes. Define bounded, redacted diagnostics before persisting any report.
 
