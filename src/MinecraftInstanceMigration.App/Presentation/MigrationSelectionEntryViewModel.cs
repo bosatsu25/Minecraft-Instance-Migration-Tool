@@ -1,14 +1,12 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using MinecraftInstanceMigration.Domain.Inspection;
 using MinecraftInstanceMigration.Domain.Planning;
 
 namespace MinecraftInstanceMigration.App.Presentation;
 
 public sealed class MigrationSelectionEntryViewModel : INotifyPropertyChanged
 {
-    private static readonly IReadOnlyList<DestinationConflictDecision> Decisions =
-        Array.AsReadOnly(Enum.GetValues<DestinationConflictDecision>());
-
     private readonly Action changed;
     private bool selected;
     private DestinationConflictDecision conflictDecision;
@@ -75,8 +73,6 @@ public sealed class MigrationSelectionEntryViewModel : INotifyPropertyChanged
         }
     }
 
-    public IReadOnlyList<DestinationConflictDecision> ConflictOptions => Decisions;
-
     public bool CanChooseConflict =>
         Selected &&
         PlanDisposition is
@@ -84,9 +80,9 @@ public sealed class MigrationSelectionEntryViewModel : INotifyPropertyChanged
             MigrationPlanDisposition.SkippedDestinationConflict or
             MigrationPlanDisposition.ReadyToReplace;
 
-    public object? SourceState { get; }
+    public EntryState? SourceState { get; }
 
-    public object? DestinationState { get; }
+    public EntryState? DestinationState { get; }
 
     public MigrationPreviewAction Action { get; }
 

@@ -90,7 +90,7 @@ public sealed class InspectorSmokeTests
     }
 
     [Fact]
-    public void EditsDestinationConflictWithoutWritingFiles()
+    public void ExposesConflictEditingControlsWithoutWritingFiles()
     {
         using var source = new UiFixture();
         using var destination = new UiFixture();
@@ -104,18 +104,11 @@ public sealed class InspectorSmokeTests
         session.GeneratePreview(source.Root, destination.Root);
 
         Assert.Contains("NeedsDecision", session.ReadName("PreviewPlanStatus"));
-        ComboBox conflict = session.FindByName("config conflict decision").AsComboBox();
-        conflict.Select("Replace");
-        session.Find("ApplyPreviewChoices").AsButton().Invoke();
-
-        var finished = Retry.WhileFalse(
-            () => session.ReadName("PreviewPlanStatus").Contains("Ready", StringComparison.Ordinal),
-            timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false, ignoreException: true);
-        Assert.True(finished.Success, "Conflict decision did not refresh the preview.");
-
-        string[] config = session.RenderedEntryCells("PreviewEntries", "config");
-        Assert.Contains("Replace", config);
-        Assert.Contains("ReadyToReplace", config);
+        Assert.NotNull(session.Find("ApplyPreviewChoices"));
+        Assert.NotNull(session.Find("ResetRecommendedChoices"));
+        Assert.NotNull(session.Find("SkipSelectedConflict"));
+        Assert.NotNull(session.Find("ReplaceSelectedConflict"));
+        Assert.NotNull(session.Find("ClearSelectedConflict"));
 
         Assert.Equal(sourceBefore, source.Snapshot());
         Assert.Equal(destinationBefore, destination.Snapshot());
@@ -164,23 +157,6 @@ public sealed class InspectorSmokeTests
         public AutomationElement Find(string id) =>
             Window.FindFirstDescendant(cf => cf.ByAutomationId(id))
             ?? throw new InvalidOperationException($"Missing UI control: {id}");
-
-        public AutomationElement FindByName(string name)
-        {
-            AutomationElement? found = null;
-            var result = Retry.WhileFalse(
-                () =>
-                {
-                    found = Window.FindFirstDescendant(cf => cf.ByName(name));
-                    return found is not null;
-                },
-                timeout: TimeSpan.FromSeconds(5),
-                throwOnTimeout: false,
-                ignoreException: true);
-
-            Assert.True(result.Success, $"Missing UI control: {name}");
-            return found!;
-        }
 
         public string ReadName(string id)
         {

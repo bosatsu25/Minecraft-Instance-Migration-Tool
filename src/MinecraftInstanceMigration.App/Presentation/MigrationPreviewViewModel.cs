@@ -15,6 +15,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     private MigrationWorkflowSession? session;
     private MigrationPreview? preview;
     private IReadOnlyList<MigrationSelectionEntryViewModel> entries = [];
+    private MigrationSelectionEntryViewModel? selectedEntry;
     private bool hasPendingChoices;
     private string status = "Choose source and destination folders, then generate a dry-run preview.";
 
@@ -40,6 +41,16 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ResetRecommendedCommand = new RelayCommand(
             ResetRecommended,
             () => !IsBusy && preview is not null);
+        SkipConflictCommand = new RelayCommand(
+            () => SetSelectedConflict(DestinationConflictDecision.Skip),
+            CanSetSelectedConflict);
+        ReplaceConflictCommand = new RelayCommand(
+            () => SetSelectedConflict(DestinationConflictDecision.Replace),
+            CanSetSelectedConflict);
+        ClearConflictCommand = new RelayCommand(
+            () => SetSelectedConflict(DestinationConflictDecision.Unresolved),
+            () => CanSetSelectedConflict() &&
+                selectedEntry?.ConflictDecision != DestinationConflictDecision.Unresolved);
         CancelCommand = new RelayCommand(Cancel, () => IsBusy);
     }
 
@@ -54,6 +65,12 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     public RelayCommand ApplyChoicesCommand { get; }
 
     public RelayCommand ResetRecommendedCommand { get; }
+
+    public RelayCommand SkipConflictCommand { get; }
+
+    public RelayCommand ReplaceConflictCommand { get; }
+
+    public RelayCommand ClearConflictCommand { get; }
 
     public RelayCommand CancelCommand { get; }
 
@@ -76,6 +93,22 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     }
 
     public IReadOnlyList<MigrationSelectionEntryViewModel> Entries => entries;
+
+    public MigrationSelectionEntryViewModel? SelectedEntry
+    {
+        get => selectedEntry;
+        set
+        {
+            if (ReferenceEquals(selectedEntry, value))
+            {
+                return;
+            }
+
+            selectedEntry = value;
+            Notify();
+            RefreshChoiceCommands();
+        }
+    }
 
     public string PlanStatus => preview?.Status.ToString() ?? "Not generated";
 
@@ -209,6 +242,20 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ApplyChoices();
     }
 
+    private bool CanSetSelectedConflict() =>
+        !IsBusy && selectedEntry?.CanChooseConflict == true;
+
+    private void SetSelectedConflict(DestinationConflictDecision decision)
+    {
+        if (!CanSetSelectedConflict() || selectedEntry is null)
+        {
+            return;
+        }
+
+        selectedEntry.ConflictDecision = decision;
+        RefreshChoiceCommands();
+    }
+
     private void PublishPreview(
         MigrationWorkflowSession current,
         bool choicesApplied = false)
@@ -221,6 +268,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             return;
         }
 
+        string? selectedName = selectedEntry?.Name;
         entries = preview.Entries
             .Select(entry => new MigrationSelectionEntryViewModel(
                 entry,
@@ -229,6 +277,10 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
                     : DestinationConflictDecision.Unresolved,
                 MarkChoicesChanged))
             .ToArray();
+        selectedEntry = selectedName is null
+            ? null
+            : entries.FirstOrDefault(entry =>
+                string.Equals(entry.Name, selectedName, StringComparison.Ordinal));
 
         hasPendingChoices = false;
         status = preview.Status switch
@@ -238,12 +290,13 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             MigrationPlanStatus.Ready =>
                 "Dry-run preview ready. Edit selection or conflict choices if needed. No files were changed.",
             MigrationPlanStatus.NeedsDecision =>
-                "Dry-run preview needs conflict decisions. Choose Skip or Replace, then apply choices. No files were changed.",
+                "Dry-run preview needs conflict decisions. Select a conflict row, choose Skip or Replace, then apply choices. No files were changed.",
             _ =>
                 "Dry-run preview is blocked. Review the listed states; no files were changed.",
         };
 
         NotifyPreview();
+        Notify(nameof(SelectedEntry));
         RefreshChoiceCommands();
     }
 
@@ -298,7 +351,9 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     {
         preview = null;
         entries = [];
+        selectedEntry = null;
         hasPendingChoices = false;
+        Notify(nameof(SelectedEntry));
         RefreshChoiceCommands();
     }
 
@@ -326,6 +381,9 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     {
         ApplyChoicesCommand.Refresh();
         ResetRecommendedCommand.Refresh();
+        SkipConflictCommand.Refresh();
+        ReplaceConflictCommand.Refresh();
+        ClearConflictCommand.Refresh();
     }
 
     private void Notify([CallerMemberName] string? propertyName = null) =>

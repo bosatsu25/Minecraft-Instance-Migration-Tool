@@ -82,7 +82,9 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal("NeedsDecision", model.PlanStatus);
         MigrationSelectionEntryViewModel config = Entry(model, "config");
         Assert.True(config.CanChooseConflict);
-        config.ConflictDecision = DestinationConflictDecision.Replace;
+        model.SelectedEntry = config;
+        Assert.True(model.ReplaceConflictCommand.CanExecute(null));
+        model.ReplaceConflictCommand.Execute(null);
         model.ApplyChoicesCommand.Execute(null);
 
         Assert.Equal("Ready", model.PlanStatus);
@@ -107,7 +109,9 @@ public sealed class MigrationPreviewViewModelTests
         await model.GeneratePreviewAsync();
 
         MigrationSelectionEntryViewModel config = Entry(model, "config");
-        config.ConflictDecision = DestinationConflictDecision.Skip;
+        model.SelectedEntry = config;
+        Assert.True(model.SkipConflictCommand.CanExecute(null));
+        model.SkipConflictCommand.Execute(null);
         model.ApplyChoicesCommand.Execute(null);
 
         Assert.Equal("Ready", model.PlanStatus);
@@ -115,6 +119,25 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal(MigrationPreviewAction.Skip, config.Action);
         Assert.False(config.RequiresBackup);
         Assert.Equal(DestinationConflictDecision.Skip, config.ConflictDecision);
+    }
+
+    [Fact]
+    public async Task ConflictCommandsAreDisabledForNonConflictRows()
+    {
+        var inspector = new StubInspector((path, _) => Task.FromResult(
+            path == "source"
+                ? Inspection(("config", EntryState.Directory))
+                : Inspection()));
+        var model = CreateModel(inspector);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        await model.GeneratePreviewAsync();
+
+        model.SelectedEntry = Entry(model, "config");
+
+        Assert.False(model.SkipConflictCommand.CanExecute(null));
+        Assert.False(model.ReplaceConflictCommand.CanExecute(null));
+        Assert.False(model.ClearConflictCommand.CanExecute(null));
     }
 
     [Fact]
