@@ -317,7 +317,7 @@ Application ports
 - **Domain** — 観測モデル、MigrationPlan、選択 / conflict policy、backup / execution / rollback policy
 - **Application** — use case、orchestration、外部 effect 用 port
 - **Infrastructure** — Windows filesystem、backup、journal、mutation、verification、rollback adapter
-- **App** — WPF / MVVM、Inspector / Preview / selection / conflict / Execute UI、composition root
+- **App** — WPF / MVVM、Inspector / Preview / selection / conflict / Execute / Recovery Diagnosis / Guarded Rollback / Migration Report UI、composition root
 - **Tests** — Domain / Application / Infrastructure / App / FlaUI UI smoke
 
 依存は内向きです。
@@ -423,7 +423,7 @@ warnings は build failure として扱います。
 
 次の大きな領域:
 
-20. release hardening
+20. **Phase 5.0 — Release hardening**
 
 旧版由来の移行候補と未解決 rule は [migration rules](docs/migration-rules.md)、
 rollback の保証範囲は [rollback](docs/rollback.md)、

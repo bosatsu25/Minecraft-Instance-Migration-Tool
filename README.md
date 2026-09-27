@@ -322,7 +322,7 @@ Application ports
 - **Domain** — observations, MigrationPlan, selection/conflict policy, backup/execution/rollback policy
 - **Application** — use cases, orchestration, and ports for external effects
 - **Infrastructure** — Windows filesystem, backup, journals, mutation, verification, rollback adapters
-- **App** — WPF/MVVM Inspector, Preview, selection/conflict, and Execute UI plus composition root
+- **App** — WPF/MVVM Inspector, Preview, selection/conflict, Execute, Recovery Diagnosis, Guarded Rollback, and Migration Report UI plus composition root
 - **Tests** — Domain / Application / Infrastructure / App plus FlaUI UI smoke
 
 Dependencies point inward. Application and Domain do not reference Infrastructure or UI.
@@ -427,7 +427,7 @@ Implemented:
 
 Next major areas:
 
-20. release hardening
+20. **Phase 5.0 — Release hardening**
 
 See [migration rules](docs/migration-rules.md) for legacy candidates and unresolved rules,
 [rollback](docs/rollback.md) for rollback guarantees,
