@@ -1,4 +1,6 @@
 using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using MinecraftInstanceMigration.Application.Backup;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Backup;
@@ -13,6 +15,206 @@ namespace MinecraftInstanceMigration.Infrastructure.Tests;
 [SupportedOSPlatform("windows")]
 public sealed class RollbackIntegrationTests
 {
+    [Fact]
+    public void HeldRollbackTreeDeniesNestedWritesUntilDeletion()
+    {
+        using var fixture = new InspectionFixture();
+        string destination = fixture.At("destination");
+        string nested = fixture.At("destination/config/nested/user.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(nested)!);
+        File.WriteAllText(nested, "migrated");
+
+        using WindowsExecutionTree.HeldDirectory root =
+            WindowsExecutionTree.OpenDirectoryChain(destination, writableFinal: true);
+        using WindowsExecutionTree.HeldNodeTree tree =
+            WindowsExecutionTree.OpenHeldTree(
+                root.Root, "config", forDelete: true);
+
+        Assert.Throws<IOException>(() => File.WriteAllText(nested, "new-user-edit"));
+        WindowsExecutionTree.TreeFingerprint before =
+            WindowsExecutionTree.FingerprintHeldTree(
+                tree, TestContext.Current.CancellationToken);
+        WindowsExecutionTree.TreeFingerprint after =
+            WindowsExecutionTree.FingerprintHeldTree(
+                tree, TestContext.Current.CancellationToken);
+        Assert.Equal(before, after);
+
+        WindowsExecutionTree.DeleteHeldTree(tree, () => { });
+        tree.Dispose();
+        Assert.False(Directory.Exists(fixture.At("destination/config")));
+    }
+
+    [Fact]
+    public void HeldBackupTreeDeniesNestedWritesDuringRestoreEvidence()
+    {
+        using var fixture = new InspectionFixture();
+        string backup = fixture.At("backup");
+        string nested = fixture.At("backup/config/nested/user.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(nested)!);
+        File.WriteAllText(nested, "original");
+
+        using WindowsExecutionTree.HeldDirectory root =
+            WindowsExecutionTree.OpenDirectoryChain(backup, writableFinal: false);
+        using WindowsExecutionTree.HeldNodeTree tree =
+            WindowsExecutionTree.OpenHeldTree(
+                root.Root, "config", forDelete: false);
+
+        WindowsExecutionTree.TreeFingerprint before =
+            WindowsExecutionTree.FingerprintHeldTree(
+                tree, TestContext.Current.CancellationToken);
+        Assert.Throws<IOException>(() => File.WriteAllText(nested, "tampered"));
+        WindowsExecutionTree.TreeFingerprint after =
+            WindowsExecutionTree.FingerprintHeldTree(
+                tree, TestContext.Current.CancellationToken);
+
+        Assert.Equal(before, after);
+        Assert.Equal("original", File.ReadAllText(nested));
+    }
+
+    [Fact]
+    public async Task NestedDeleteAccessDenialIsGuardRejectedBeforeMutation()
+    {
+        using var fixture = new InspectionFixture();
+        string destination = fixture.At("destination");
+        string nested = fixture.At("destination/config/nested");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "user.json"), "migrated");
+
+        WindowsExecutionTree.TreeFingerprint fingerprint;
+        using (WindowsExecutionTree.HeldDirectory root =
+            WindowsExecutionTree.OpenDirectoryChain(
+                destination, writableFinal: false))
+        {
+            fingerprint = WindowsExecutionTree.FingerprintNode(
+                root.Root, "config", ExpectedEntryKind.Directory,
+                TestContext.Current.CancellationToken);
+        }
+
+        var directory = new DirectoryInfo(nested);
+        DirectorySecurity original = directory.GetAccessControl();
+        DirectorySecurity denied = directory.GetAccessControl();
+        using var identity = WindowsIdentity.GetCurrent();
+        denied.AddAccessRule(new FileSystemAccessRule(
+            identity.User!, FileSystemRights.DeleteSubdirectoriesAndFiles,
+            AccessControlType.Deny));
+        try
+        {
+            directory.SetAccessControl(denied);
+            var action = new RollbackPlanEntry(
+                0, "config", ExpectedEntryKind.Directory,
+                ExecutionOperationKind.Copy,
+                RollbackActionKind.DeleteCreatedEntry,
+                fingerprint.ToDomain());
+
+            RollbackStorageResult result =
+                await new WindowsRollbackStorage().ApplyAsync(
+                    destination, null, null, action,
+                    TestContext.Current.CancellationToken);
+
+            Assert.Equal(RollbackStorageStatus.GuardRejected, result.Status);
+            Assert.True(File.Exists(Path.Combine(nested, "user.json")));
+        }
+        finally
+        {
+            denied.SetSecurityDescriptorBinaryForm(
+                original.GetSecurityDescriptorBinaryForm(),
+                AccessControlSections.Access);
+            directory.SetAccessControl(denied);
+        }
+    }
+
+    [Fact]
+    public async Task MissingBackupRootIsReportedAsBackupMissing()
+    {
+        using var fixture = new InspectionFixture();
+        string destination = fixture.At("destination");
+        Directory.CreateDirectory(destination);
+        File.WriteAllText(Path.Combine(destination, "options.txt"), "migrated");
+        var backupPlan = new BackupPlan(
+            BackupPlanStatus.Ready,
+            [new BackupPlanEntry(
+                "options.txt", ExpectedEntryKind.File, EntryState.File)],
+            []);
+        var evidence = new RollbackBackupEvidence(
+            backupPlan,
+            new BackupVerificationSummary(1, 0, 8, new string('A', 64)));
+        var action = new RollbackPlanEntry(
+            0, "options.txt", ExpectedEntryKind.File,
+            ExecutionOperationKind.Replace,
+            RollbackActionKind.RestoreFromBackup,
+            new ExecutionContentFingerprint(1, 0, 8, new string('B', 64)));
+
+        RollbackStorageResult result =
+            await new WindowsRollbackStorage().ApplyAsync(
+                destination, fixture.At("missing-backup"), evidence, action,
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(RollbackStorageStatus.GuardRejected, result.Status);
+        Assert.Equal(RollbackStorageFailureKind.BackupMissing, result.FailureKind);
+        Assert.Equal("migrated", File.ReadAllText(
+            Path.Combine(destination, "options.txt")));
+    }
+
+    [Fact]
+    public async Task ExtraBackupContentAfterValidationBlocksRestore()
+    {
+        using var fixture = new InspectionFixture();
+        string destination = fixture.At("destination");
+        string backups = fixture.At("backups");
+        Directory.CreateDirectory(destination);
+        Directory.CreateDirectory(backups);
+        File.WriteAllText(Path.Combine(destination, "options.txt"), "original");
+        var backupPlan = new BackupPlan(
+            BackupPlanStatus.Ready,
+            [new BackupPlanEntry(
+                "options.txt", ExpectedEntryKind.File, EntryState.File)],
+            []);
+        var backupStorage = new WindowsBackupStorage();
+        BackupExecutionResult created = await new BackupExecutor(
+            backupStorage, new BackupPlanner()).ExecuteAsync(
+                destination, backups, backupPlan,
+                TestContext.Current.CancellationToken);
+        Assert.Equal(BackupExecutionStatus.Completed, created.Status);
+
+        File.WriteAllText(Path.Combine(destination, "options.txt"), "migrated");
+        BackupArtifactValidationResult validation =
+            await new BackupArtifactValidator(backupStorage).ValidateAsync(
+                created.BackupRootPath!, backupPlan,
+                TestContext.Current.CancellationToken);
+        Assert.True(validation.IsValid);
+
+        WindowsExecutionTree.TreeFingerprint migrated;
+        using (WindowsExecutionTree.HeldDirectory root =
+            WindowsExecutionTree.OpenDirectoryChain(
+                destination, writableFinal: false))
+        {
+            migrated = WindowsExecutionTree.FingerprintNode(
+                root.Root, "options.txt", ExpectedEntryKind.File,
+                TestContext.Current.CancellationToken);
+        }
+
+        File.WriteAllText(
+            Path.Combine(created.BackupRootPath!, "unplanned.txt"),
+            "extra");
+        var action = new RollbackPlanEntry(
+            0, "options.txt", ExpectedEntryKind.File,
+            ExecutionOperationKind.Replace,
+            RollbackActionKind.RestoreFromBackup,
+            migrated.ToDomain());
+
+        RollbackStorageResult result =
+            await new WindowsRollbackStorage().ApplyAsync(
+                destination, created.BackupRootPath,
+                new RollbackBackupEvidence(
+                    backupPlan, validation.Verification!),
+                action, TestContext.Current.CancellationToken);
+
+        Assert.Equal(RollbackStorageStatus.GuardRejected, result.Status);
+        Assert.Equal(RollbackStorageFailureKind.BackupChanged, result.FailureKind);
+        Assert.Equal("migrated", File.ReadAllText(
+            Path.Combine(destination, "options.txt")));
+    }
+
     [Fact]
     public async Task AppliedCopyCanBeDeletedOnlyWhileFingerprintStillMatches()
     {

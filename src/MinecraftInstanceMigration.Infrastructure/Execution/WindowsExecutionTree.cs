@@ -222,6 +222,7 @@ internal static class WindowsExecutionTree
             throw MapNativeFailure(metadataStatus);
         }
 
+        bool directory;
         using (metadata)
         {
             FileAttributes attributes = BackupNativeMethods.ReadAttributes(metadata);
@@ -230,60 +231,61 @@ internal static class WindowsExecutionTree
                 throw new ExecutionTreeException(ExecutionTreeFailureKind.ReparsePoint);
             }
 
-            bool directory = attributes.HasFlag(FileAttributes.Directory);
-            uint desiredAccess =
+            directory = attributes.HasFlag(FileAttributes.Directory);
+        }
+
+        uint desiredAccess =
                 BackupNativeMethods.FileReadAttributes |
                 BackupNativeMethods.Synchronize;
 
-            if (forDelete)
-            {
-                desiredAccess |= ExecutionNativeMethods.DeleteAccess;
-                desiredAccess |= directory
-                    ? BackupNativeMethods.FileListDirectory |
-                        BackupNativeMethods.FileTraverse |
-                        ExecutionNativeMethods.FileDeleteChild
-                    : BackupNativeMethods.FileReadData;
-            }
-            else
-            {
-                desiredAccess |= directory
-                    ? BackupNativeMethods.FileListDirectory |
-                        BackupNativeMethods.FileTraverse
-                    : BackupNativeMethods.FileReadData;
-            }
+        if (forDelete)
+        {
+            desiredAccess |= ExecutionNativeMethods.DeleteAccess;
+            desiredAccess |= directory
+                ? BackupNativeMethods.FileListDirectory |
+                    BackupNativeMethods.FileTraverse |
+                    ExecutionNativeMethods.FileDeleteChild
+                : BackupNativeMethods.FileReadData;
+        }
+        else
+        {
+            desiredAccess |= directory
+                ? BackupNativeMethods.FileListDirectory |
+                    BackupNativeMethods.FileTraverse
+                : BackupNativeMethods.FileReadData;
+        }
 
-            (SafeFileHandle data, int status) = BackupNativeMethods.OpenRelative(
+        (SafeFileHandle data, int status) = BackupNativeMethods.OpenRelative(
                 parent,
                 name,
                 desiredAccess,
-                shareAccess,
+                BackupNativeMethods.ShareRead,
                 BackupNativeMethods.FileOpen,
                 BackupNativeMethods.FileOpenReparsePoint |
                 BackupNativeMethods.FileOpenNoRecall |
                 BackupNativeMethods.FileSynchronousIoNonAlert);
 
-            if (status != 0)
-            {
-                data.Dispose();
-                throw MapNativeFailure(status);
-            }
-
-            FileAttributes confirmed = BackupNativeMethods.ReadAttributes(data);
-            if (confirmed.HasFlag(FileAttributes.ReparsePoint))
-            {
-                data.Dispose();
-                throw new ExecutionTreeException(ExecutionTreeFailureKind.ReparsePoint);
-            }
-
-            bool confirmedDirectory = confirmed.HasFlag(FileAttributes.Directory);
-            if (confirmedDirectory != directory)
-            {
-                data.Dispose();
-                throw new ExecutionTreeException(ExecutionTreeFailureKind.Changed);
-            }
-
-            return new OpenedNode(data, directory);
+        if (status != 0)
+        {
+            data.Dispose();
+            throw MapNativeFailure(status);
         }
+
+        FileAttributes confirmed = BackupNativeMethods.ReadAttributes(data);
+        if (confirmed.HasFlag(FileAttributes.ReparsePoint))
+        {
+            data.Dispose();
+            throw new ExecutionTreeException(ExecutionTreeFailureKind.ReparsePoint);
+        }
+
+        bool confirmedDirectory = confirmed.HasFlag(FileAttributes.Directory);
+        if (confirmedDirectory != directory)
+        {
+            data.Dispose();
+            throw new ExecutionTreeException(ExecutionTreeFailureKind.Changed);
+        }
+
+        return new OpenedNode(data, directory);
     }
 
     internal static void EnsureExpectedKind(
@@ -351,6 +353,138 @@ internal static class WindowsExecutionTree
         }
 
         ExecutionNativeMethods.DeleteByHandle(node.Handle);
+    }
+
+    // Retain every descendant handle from fingerprinting until deletion or restore is complete.
+    // ShareRead denies new writers and deleters, including for nested entries.
+    internal static HeldNodeTree OpenHeldTree(
+        SafeFileHandle parent,
+        string name,
+        bool forDelete)
+    {
+        OpenedNode node = OpenExistingNode(parent, name, forDelete);
+        var children = new List<HeldNodeTree>();
+        try
+        {
+            if (node.IsDirectory)
+            {
+                foreach (string childName in BackupNativeMethods.EnumerateNames(node.Handle))
+                {
+                    children.Add(OpenHeldTree(node.Handle, childName, forDelete));
+                }
+            }
+
+            return new HeldNodeTree(name, node, children);
+        }
+        catch
+        {
+            foreach (HeldNodeTree child in children)
+            {
+                child.Dispose();
+            }
+
+            node.Dispose();
+            throw;
+        }
+    }
+
+    internal static TreeFingerprint FingerprintHeldTree(
+        HeldNodeTree tree,
+        CancellationToken cancellationToken)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        int files = 0;
+        int directories = 0;
+        long totalBytes = 0;
+        AppendHeldFingerprint(tree, tree.Name, hash,
+            ref files, ref directories, ref totalBytes, cancellationToken);
+        return new TreeFingerprint(files, directories, totalBytes,
+            Convert.ToHexString(hash.GetHashAndReset()));
+    }
+
+    internal static TreeFingerprint FingerprintHeldBackupPlan(
+        IReadOnlyList<HeldNodeTree> trees,
+        CancellationToken cancellationToken)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        int files = 0;
+        int directories = 0;
+        long totalBytes = 0;
+        foreach (HeldNodeTree tree in trees)
+        {
+            AppendHeldFingerprint(tree, tree.Name, hash,
+                ref files, ref directories, ref totalBytes, cancellationToken);
+        }
+
+        return new TreeFingerprint(files, directories, totalBytes,
+            Convert.ToHexString(hash.GetHashAndReset()));
+    }
+
+    private static void AppendHeldFingerprint(
+        HeldNodeTree tree,
+        string relativePath,
+        IncrementalHash hash,
+        ref int files,
+        ref int directories,
+        ref long totalBytes,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        AppendRecordPrefix(hash, tree.Node.IsDirectory ? (byte)1 : (byte)2,
+            relativePath);
+        if (tree.Node.IsDirectory)
+        {
+            directories++;
+            foreach (HeldNodeTree child in tree.Children)
+            {
+                AppendHeldFingerprint(child, relativePath + "/" + child.Name,
+                    hash, ref files, ref directories, ref totalBytes,
+                    cancellationToken);
+            }
+
+            return;
+        }
+
+        files++;
+        AppendFileContent(tree.Node.Handle, hash, ref totalBytes,
+            cancellationToken);
+    }
+
+    internal static void DeleteHeldTree(
+        HeldNodeTree tree,
+        Action deleted)
+    {
+        foreach (HeldNodeTree child in tree.Children)
+        {
+            DeleteHeldTree(child, deleted);
+            child.Dispose();
+        }
+
+        ExecutionNativeMethods.DeleteByHandle(tree.Node.Handle);
+        deleted();
+    }
+
+    internal static void CopyHeldTree(
+        HeldNodeTree source,
+        SafeFileHandle destinationParent,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (source.Node.IsDirectory)
+        {
+            using SafeFileHandle destination =
+                CreateDirectory(destinationParent, source.Name);
+            foreach (HeldNodeTree child in source.Children)
+            {
+                CopyHeldTree(child, destination, cancellationToken);
+            }
+
+            return;
+        }
+
+        using SafeFileHandle destinationFile =
+            CreateFile(destinationParent, source.Name);
+        CopyFileBytes(source.Node.Handle, destinationFile, cancellationToken);
     }
 
     internal static TreeFingerprint FingerprintNode(
@@ -458,7 +592,17 @@ internal static class WindowsExecutionTree
         }
 
         files++;
-        long length = RandomAccess.GetLength(node.Handle);
+        AppendFileContent(node.Handle, hash, ref totalBytes,
+            cancellationToken);
+    }
+
+    private static void AppendFileContent(
+        SafeFileHandle handle,
+        IncrementalHash hash,
+        ref long totalBytes,
+        CancellationToken cancellationToken)
+    {
+        long length = RandomAccess.GetLength(handle);
         totalBytes = checked(totalBytes + length);
 
         Span<byte> lengthBytes = stackalloc byte[8];
@@ -473,7 +617,7 @@ internal static class WindowsExecutionTree
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 int read = RandomAccess.Read(
-                    node.Handle,
+                    handle,
                     buffer.AsSpan(0, BufferSize),
                     offset);
 
@@ -486,7 +630,7 @@ internal static class WindowsExecutionTree
                 offset += read;
             }
 
-            if (RandomAccess.GetLength(node.Handle) != length)
+            if (RandomAccess.GetLength(handle) != length)
             {
                 throw new ExecutionTreeException(ExecutionTreeFailureKind.Changed);
             }
@@ -699,6 +843,28 @@ internal static class WindowsExecutionTree
         internal bool IsDirectory { get; } = isDirectory;
 
         public void Dispose() => Handle.Dispose();
+    }
+
+    internal sealed class HeldNodeTree(
+        string name,
+        OpenedNode node,
+        IReadOnlyList<HeldNodeTree> children) : IDisposable
+    {
+        internal string Name { get; } = name;
+
+        internal OpenedNode Node { get; } = node;
+
+        internal IReadOnlyList<HeldNodeTree> Children { get; } = children;
+
+        public void Dispose()
+        {
+            foreach (HeldNodeTree child in Children)
+            {
+                child.Dispose();
+            }
+
+            Node.Dispose();
+        }
     }
 
     internal sealed record TreeFingerprint(

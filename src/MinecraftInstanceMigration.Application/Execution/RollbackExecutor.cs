@@ -98,6 +98,11 @@ public sealed class RollbackExecutor(
                     validation.Verification);
             }
 
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return CancellationResult(completedActions);
+            }
+
             RollbackStorageResult result;
             try
             {

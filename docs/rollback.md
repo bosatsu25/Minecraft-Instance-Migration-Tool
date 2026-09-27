@@ -26,7 +26,10 @@ RollbackExecutor
 
 Every automatic action carries the post-write `ExecutionContentFingerprint` recorded after Execute.
 
-Rollback opens the current destination entry with no-follow semantics and fingerprints the held node.
+Rollback opens the current destination entry and every descendant with no-follow semantics, retains
+those handles, and fingerprints that held tree. The retained handles deny writes and deletes by other
+handles until the guarded deletion finishes. A nested entry that cannot be held with delete access
+rejects the action before any deletion.
 If the current content or structure no longer matches journal evidence, rollback does nothing to that
 entry. This protects edits made after migration.
 
@@ -38,7 +41,7 @@ current destination fingerprint
         +-- mismatch -> GuardRejected
         |
         v
-delete the same held node
+delete the same held tree, from leaves to root
         |
         v
 verify top-level name is absent
@@ -49,7 +52,8 @@ verify top-level name is absent
 Replace rollback has two independent prerequisites:
 
 1. Application revalidates the completed backup artifact against the current `BackupPlan`.
-2. Infrastructure proves the current destination still matches the execution fingerprint.
+2. Infrastructure pins the backup payload and metadata, revalidates the complete artifact under
+   those handles, and proves the current destination still matches the execution fingerprint.
 
 Only then does restore begin:
 
@@ -59,19 +63,20 @@ validated backup artifact
 destination matches Applied fingerprint
         |
         v
-fingerprint backup
+hold every planned backup entry and descendant; compare their aggregate fingerprint
+to the validator's evidence
         |
         v
 delete guarded destination
         |
         v
-copy backup create-only
+copy from the retained backup handles, create-only
         |
         v
 fingerprint restored destination
         |
         v
-fingerprint backup again
+fingerprint the same retained backup handles again
         |
         +-- stable backup == destination -> Applied
         +-- otherwise -> RecoveryRequired
@@ -85,7 +90,7 @@ paths. Reparse points are never intentionally followed.
 `RollbackPlan` is already ordered in reverse execution order. `RollbackExecutor` preserves that
 order.
 
-Cancellation is honored before an action starts. Once an individual rollback storage action begins,
+Cancellation is checked again after backup validation and before storage starts. Once an individual rollback storage action begins,
 Application passes a non-cancelled token so cancellation cannot intentionally interrupt safety
 bookkeeping halfway through that destructive repair.
 

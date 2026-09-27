@@ -98,9 +98,7 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             }
 
             using WindowsExecutionTree.HeldDirectory backupDirectory =
-                WindowsExecutionTree.OpenDirectoryChain(
-                    backup!,
-                    writableFinal: false);
+                OpenBackupDirectory(backup!);
 
             if (WindowsExecutionTree.PhysicalRootsOverlap(
                     destinationDirectory,
@@ -110,27 +108,84 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                     RollbackStorageFailureKind.OverlappingRoots);
             }
 
-            WindowsExecutionTree.TreeFingerprint validatedBackup =
-                WindowsExecutionTree.FingerprintBackupPlan(
-                    backupDirectory.Root,
-                    backupEvidence!.Plan,
-                    cancellationToken);
-
-            if (!MatchesBackupEvidence(
-                    validatedBackup,
-                    backupEvidence.Verification))
+            var backupTrees = new List<WindowsExecutionTree.HeldNodeTree>();
+            try
             {
-                return GuardRejected(
-                    RollbackStorageFailureKind.BackupChanged);
-            }
+                WindowsExecutionTree.HeldNodeTree? actionBackup = null;
+                foreach (var entry in backupEvidence!.Plan.Entries)
+                {
+                    WindowsExecutionTree.HeldNodeTree tree =
+                        OpenBackupTree(backupDirectory.Root, entry.Name);
+                    backupTrees.Add(tree);
+                    WindowsExecutionTree.EnsureExpectedKind(
+                        tree.Node, entry.ExpectedKind);
+                    if (entry.Name == action.Name &&
+                        entry.ExpectedKind == action.ExpectedKind)
+                    {
+                        actionBackup = tree;
+                    }
+                }
 
-            return RestoreFromBackup(
-                destinationDirectory.Root,
-                backupDirectory.Root,
-                backupEvidence,
-                validatedBackup,
-                action,
-                cancellationToken);
+                if (actionBackup is null)
+                {
+                    return GuardRejected(
+                        RollbackStorageFailureKind.InvalidPlan);
+                }
+
+                // Pin metadata as well as payload while a second complete validation runs.
+                // The first validation's summary alone cannot prove that the manifest and
+                // ownership marker survived the gap before these handles were acquired.
+                using WindowsExecutionTree.HeldNodeTree owner =
+                    OpenBackupTree(
+                        backupDirectory.Root, ".mim-backup-owner.json");
+                using WindowsExecutionTree.HeldNodeTree manifest =
+                    OpenBackupTree(
+                        backupDirectory.Root, "backup-manifest.json");
+                if (owner.Node.IsDirectory || manifest.Node.IsDirectory)
+                {
+                    return GuardRejected(
+                        RollbackStorageFailureKind.BackupChanged);
+                }
+
+                var revalidation = new WindowsBackupStorage()
+                    .ValidateBackupAsync(
+                        backup!, backupEvidence.Plan, cancellationToken)
+                    .GetAwaiter().GetResult();
+                if (!revalidation.IsValid ||
+                    revalidation.Verification is null ||
+                    revalidation.Verification != backupEvidence.Verification)
+                {
+                    return GuardRejected(
+                        RollbackStorageFailureKind.BackupChanged);
+                }
+
+                WindowsExecutionTree.TreeFingerprint validatedBackup =
+                    WindowsExecutionTree.FingerprintHeldBackupPlan(
+                        backupTrees, cancellationToken);
+
+                if (!MatchesBackupEvidence(
+                        validatedBackup,
+                        backupEvidence.Verification))
+                {
+                    return GuardRejected(
+                        RollbackStorageFailureKind.BackupChanged);
+                }
+
+                return RestoreFromBackup(
+                    destinationDirectory.Root,
+                    backupTrees,
+                    actionBackup,
+                    validatedBackup,
+                    action,
+                    cancellationToken);
+            }
+            finally
+            {
+                foreach (WindowsExecutionTree.HeldNodeTree tree in backupTrees)
+                {
+                    tree.Dispose();
+                }
+            }
         }
         catch (OperationCanceledException)
         {
@@ -176,14 +231,12 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
 
         try
         {
-            using (WindowsExecutionTree.OpenedNode destination =
-                OpenDestinationForDelete(destinationRoot, action))
+            using (WindowsExecutionTree.HeldNodeTree destination =
+                OpenDestinationTree(destinationRoot, action))
             {
                 WindowsExecutionTree.TreeFingerprint actual =
-                    WindowsExecutionTree.FingerprintOpenedNode(
-                        destination,
-                        action.Name,
-                        cancellationToken);
+                    WindowsExecutionTree.FingerprintHeldTree(
+                        destination, cancellationToken);
 
                 if (actual.ToDomain() != action.ExpectedCurrentFingerprint)
                 {
@@ -191,10 +244,8 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                         RollbackStorageFailureKind.DestinationChanged);
                 }
 
-                mutationStarted = true;
-                WindowsExecutionTree.DeleteOpenedNode(
-                    destination,
-                    cancellationToken);
+                WindowsExecutionTree.DeleteHeldTree(
+                    destination, () => mutationStarted = true);
             }
 
             if (!IsMissing(destinationRoot, action.Name))
@@ -251,8 +302,8 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
 
     private static RollbackStorageResult RestoreFromBackup(
         SafeFileHandle destinationRoot,
-        SafeFileHandle backupRoot,
-        RollbackBackupEvidence backupEvidence,
+        IReadOnlyList<WindowsExecutionTree.HeldNodeTree> backupTrees,
+        WindowsExecutionTree.HeldNodeTree backup,
         WindowsExecutionTree.TreeFingerprint validatedBackup,
         RollbackPlanEntry action,
         CancellationToken cancellationToken)
@@ -261,35 +312,16 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
 
         try
         {
-            using WindowsExecutionTree.OpenedNode backup =
-                OpenBackup(backupRoot, action);
-
             WindowsExecutionTree.TreeFingerprint backupBefore =
-                WindowsExecutionTree.FingerprintOpenedNode(
-                    backup,
-                    action.Name,
-                    cancellationToken);
+                WindowsExecutionTree.FingerprintHeldTree(
+                    backup, cancellationToken);
 
-            WindowsExecutionTree.TreeFingerprint backupAfterValidation =
-                WindowsExecutionTree.FingerprintOpenedNode(
-                    backup,
-                    action.Name,
-                    cancellationToken);
-
-            if (backupBefore != backupAfterValidation)
-            {
-                return GuardRejected(
-                    RollbackStorageFailureKind.BackupChanged);
-            }
-
-            using (WindowsExecutionTree.OpenedNode destination =
-                OpenDestinationForDelete(destinationRoot, action))
+            using (WindowsExecutionTree.HeldNodeTree destination =
+                OpenDestinationTree(destinationRoot, action))
             {
                 WindowsExecutionTree.TreeFingerprint current =
-                    WindowsExecutionTree.FingerprintOpenedNode(
-                        destination,
-                        action.Name,
-                        cancellationToken);
+                    WindowsExecutionTree.FingerprintHeldTree(
+                        destination, cancellationToken);
 
                 if (current.ToDomain() != action.ExpectedCurrentFingerprint)
                 {
@@ -297,16 +329,13 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                         RollbackStorageFailureKind.DestinationChanged);
                 }
 
-                mutationStarted = true;
-                WindowsExecutionTree.DeleteOpenedNode(
-                    destination,
-                    cancellationToken);
+                WindowsExecutionTree.DeleteHeldTree(
+                    destination, () => mutationStarted = true);
             }
 
-            WindowsExecutionTree.CopyNode(
+            WindowsExecutionTree.CopyHeldTree(
                 backup,
                 destinationRoot,
-                action.Name,
                 cancellationToken);
 
             WindowsExecutionTree.TreeFingerprint restored =
@@ -317,22 +346,15 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                     cancellationToken);
 
             WindowsExecutionTree.TreeFingerprint backupAfter =
-                WindowsExecutionTree.FingerprintOpenedNode(
-                    backup,
-                    action.Name,
-                    cancellationToken);
+                WindowsExecutionTree.FingerprintHeldTree(
+                    backup, cancellationToken);
 
             WindowsExecutionTree.TreeFingerprint aggregateAfter =
-                WindowsExecutionTree.FingerprintBackupPlan(
-                    backupRoot,
-                    backupEvidence.Plan,
-                    cancellationToken);
+                WindowsExecutionTree.FingerprintHeldBackupPlan(
+                    backupTrees, cancellationToken);
 
             if (backupBefore != backupAfter ||
-                validatedBackup != aggregateAfter ||
-                !MatchesBackupEvidence(
-                    aggregateAfter,
-                    backupEvidence.Verification))
+                validatedBackup != aggregateAfter)
             {
                 return RecoveryRequired(
                     RollbackStorageFailureKind.BackupChanged);
@@ -390,14 +412,14 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
         }
     }
 
-    private static WindowsExecutionTree.OpenedNode OpenDestinationForDelete(
+    private static WindowsExecutionTree.HeldNodeTree OpenDestinationTree(
         SafeFileHandle destinationRoot,
         RollbackPlanEntry action)
     {
         try
         {
-            WindowsExecutionTree.OpenedNode node =
-                WindowsExecutionTree.OpenExistingNode(
+            WindowsExecutionTree.HeldNodeTree tree =
+                WindowsExecutionTree.OpenHeldTree(
                     destinationRoot,
                     action.Name,
                     forDelete: true);
@@ -405,13 +427,13 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             try
             {
                 WindowsExecutionTree.EnsureExpectedKind(
-                    node,
+                    tree.Node,
                     action.ExpectedKind);
-                return node;
+                return tree;
             }
             catch
             {
-                node.Dispose();
+                tree.Dispose();
                 throw;
             }
         }
@@ -429,29 +451,13 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
         }
     }
 
-    private static WindowsExecutionTree.OpenedNode OpenBackup(
-        SafeFileHandle backupRoot,
-        RollbackPlanEntry action)
+    private static WindowsExecutionTree.HeldDirectory OpenBackupDirectory(
+        string path)
     {
         try
         {
-            WindowsExecutionTree.OpenedNode node =
-                WindowsExecutionTree.OpenExistingNode(
-                    backupRoot,
-                    action.Name);
-
-            try
-            {
-                WindowsExecutionTree.EnsureExpectedKind(
-                    node,
-                    action.ExpectedKind);
-                return node;
-            }
-            catch
-            {
-                node.Dispose();
-                throw;
-            }
+            return WindowsExecutionTree.OpenDirectoryChain(
+                path, writableFinal: false);
         }
         catch (ExecutionTreeException error) when (
             error.Kind == ExecutionTreeFailureKind.Missing)
@@ -459,11 +465,22 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             throw new RollbackStorageException(
                 RollbackStorageFailureKind.BackupMissing);
         }
+    }
+
+    private static WindowsExecutionTree.HeldNodeTree OpenBackupTree(
+        SafeFileHandle root,
+        string name)
+    {
+        try
+        {
+            return WindowsExecutionTree.OpenHeldTree(
+                root, name, forDelete: false);
+        }
         catch (ExecutionTreeException error) when (
-            error.Kind == ExecutionTreeFailureKind.Changed)
+            error.Kind == ExecutionTreeFailureKind.Missing)
         {
             throw new RollbackStorageException(
-                RollbackStorageFailureKind.BackupChanged);
+                RollbackStorageFailureKind.BackupMissing);
         }
     }
 

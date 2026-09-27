@@ -436,6 +436,7 @@ Domain/Application coverage includes:
 - a first fingerprint guard rejection is Blocked;
 - a guard rejection after an earlier rollback action is RecoveryRequired;
 - cancellation before rollback performs no storage action;
+- cancellation during a successful backup validation still stops before destructive storage;
 - cancellation after an earlier applied rollback is RecoveryRequired;
 - storage failures after mutation begins remain RecoveryRequired.
 
@@ -446,7 +447,10 @@ Windows integration coverage includes:
 - an Applied Replace can restore the verified backup end-to-end;
 - the restored destination is independently fingerprinted against a stable backup;
 - tampering with the completed backup blocks restore before destination mutation;
-- nested backup reparse points fail closed and their target is never followed.
+- nested backup reparse points fail closed and their target is never followed;
+- retained destination and backup descendant handles deny concurrent writes through the guard and copy;
+- nested delete-access denial is rejected before mutation, while a missing backup root has a backup-side failure kind;
+- unexpected backup content inserted after earlier validation blocks restore before destination mutation.
 
 Rollback is intentionally not described as transactionally crash-safe. No durable rollback-attempt
 journal exists in Phase 3.7. A failure after rollback mutation starts may leave partial state and is

@@ -120,6 +120,28 @@ public sealed class RollbackExecutorTests
     }
 
     [Fact]
+    public async Task CancellationDuringSuccessfulBackupValidationStopsBeforeStorage()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var backup = new StubBackupValidator
+        {
+            OnValidation = cancellation.Cancel,
+        };
+        var storage = new StubStorage();
+
+        RollbackExecutionResult result = await new RollbackExecutor(
+            backup, storage).ExecuteAsync(
+                Request(
+                    ReadyPlan(RestoreAction("config")),
+                    backupRoot: "backup",
+                    backupPlan: ReadyBackupPlan()),
+                cancellation.Token);
+
+        Assert.Equal(RollbackExecutionStatus.Cancelled, result.Status);
+        Assert.Equal(0, storage.Calls);
+    }
+
+    [Fact]
     public async Task FirstGuardRejectionBlocksWithoutClaimingRollback()
     {
         var storage = new StubStorage
@@ -285,6 +307,8 @@ public sealed class RollbackExecutorTests
 
         public int Calls { get; private set; }
 
+        public Action? OnValidation { get; set; }
+
         public BackupArtifactValidationResult Result { get; set; } =
             new(
                 BackupArtifactValidationStatus.Valid,
@@ -301,6 +325,7 @@ public sealed class RollbackExecutorTests
         {
             Calls++;
             events?.Add("backup");
+            OnValidation?.Invoke();
             return Task.FromResult(Result);
         }
     }
