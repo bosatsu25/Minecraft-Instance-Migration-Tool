@@ -5,14 +5,14 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.0 Migration Workflow / Session is implemented and merged.**
+**Status: Phase 4.1 Selection / Conflict Editing UI is implemented on the current development branch.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
 Windows Copy / Replace, independent post-write verification, and fingerprint-guarded rollback.
 
 The **current WPF UI still exposes only Inspector and Migration Preview**.
-Selection/conflict editing, Execute / Rollback, Recovery, and Report flows are not wired into the UI yet.
+The WPF Migration Preview now supports custom selection plus explicit Skip / Replace conflict editing. Execute / Rollback, Recovery, and Report flows are not wired into the UI yet.
 
 ## Current implementation
 
@@ -108,6 +108,14 @@ The audited Phase 4.0 behavior includes:
 
 Phase 4.0 does not add WPF behavior or new filesystem adapters. Phase 4.1 is expected to
 connect selection and Skip / Replace conflict editing to this workflow.
+
+## Phase 4.1 selection / conflict editing
+
+The Migration Preview is now connected to the Phase 4.0 workflow as its orchestration boundary.
+Recommended remains the initial selection, but users can select a preview row and explicitly include or exclude it.
+For a current destination conflict, the UI exposes only the already-defined `Skip` / `Replace` decisions; there is still no Merge behavior.
+Choice edits are pending until **Apply choices** rebuilds the plan and preview from the existing inspection evidence, so editing does not re-inspect or write files.
+Changing source/destination clears the prior session choices, and **Reset Recommended** restores the default preset.
 
 ## What the current UI can do
 
@@ -302,8 +310,6 @@ The following are not complete:
 - Rollback UI
 - Recovery UX
 - Report UI / persistent report
-- UI editing for custom selection
-- UI editing for Skip / Replace conflict decisions
 - automatic rollback resume
 - legacy `hanemod-client.json` exclusion
 - Merge conflict semantics
@@ -378,7 +384,7 @@ Implemented:
 
 Next major areas:
 
-16. selection / conflict editing UI
+16. Phase 4.1 — selection / conflict editing UI
 17. end-to-end Execute / Rollback UI
 18. explicit Recovery UX and Report
 19. release hardening
