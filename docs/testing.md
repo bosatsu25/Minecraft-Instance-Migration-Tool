@@ -530,3 +530,10 @@ Application workflow tests use ports and controlled stubs; they never access the
 The workflow does not choose conflict policy, perform IO, expose private exception messages, or implement
 automatic resume. Phase 4.1 can add selection/conflict editing by re-entering `ConfigurePlan` with the
 same inspected evidence.
+
+
+## Phase 4.1: selection / conflict editing UI
+
+App tests verify that Recommended is the initial selection, opt-in/opt-out changes affect only the selected row, Skip / Replace resolve current destination conflicts, Apply choices rebuilds the preview without reinspection, Reset Recommended restores defaults, path changes clear pending choices, and workflow failures do not leak private exception messages.
+
+Hosted WPF smoke coverage verifies that the editing controls are exposed for a real destination conflict while source and destination fixtures remain unchanged. Backup / Execute are deliberately not invoked by Phase 4.1 UI tests.
