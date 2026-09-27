@@ -215,7 +215,20 @@ public sealed class InspectorSmokeTests
                 finished.Success,
                 $"Dry-run preview did not render the config row in fifteen seconds. " +
                 $"Status='{TryReadName("PreviewStatus")}', PlanStatus='{TryReadName("PreviewPlanStatus")}', " +
-                $"PreviewIds='{PreviewAutomationIds()}'.");
+                $"PreviewIds='{PreviewAutomationIds()}', Process='{ProcessState()}'.");
+        }
+
+        public string ProcessState()
+        {
+            try
+            {
+                using var process = Process.GetProcessById(processId);
+                return process.HasExited ? $"Exited:{process.ExitCode}" : "Running";
+            }
+            catch (ArgumentException)
+            {
+                return "Exited";
+            }
         }
 
         public string PreviewAutomationIds() =>
