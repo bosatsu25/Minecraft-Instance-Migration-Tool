@@ -5,10 +5,10 @@
 A planned Windows desktop tool for selectively moving Minecraft user data from an old
 instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 3.7 Guarded Rollback IO.** The app UI remains Inspector / Preview only. Infrastructure can
-now execute guarded automatic rollback for journal-proven Applied steps: copied entries are deleted only
-while their post-write fingerprint still matches, and replaced entries are restored only from a currently
-validated backup. Execute / rollback UI controls and reporting are still absent.
+**Status: Phase 3.8 Durable Rollback Attempt Journal.** The app UI remains Inspector / Preview only.
+Guarded automatic rollback now creates a separate append-only, checksummed rollback-attempt journal before
+any destructive rollback action. Each action must durably record Started before storage mutation and then
+Applied / GuardRejected / Failed afterward. Execute / rollback UI controls and reporting are still absent.
 
 ## Why
 
@@ -105,7 +105,8 @@ See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for 
 11. Phase 3.5: live revalidation + execution orchestration contract, with mutation/verifier ports only.
 12. Phase 3.6: Windows handle-relative Copy / Replace mutation plus independent post-write verification.
 13. Phase 3.7: fingerprint-guarded DeleteCreatedEntry / RestoreFromBackup rollback IO.
-14. Separate later changes: end-to-end execution UI/reporting → rollback-attempt durability → release hardening.
+14. Phase 3.8: durable rollback-attempt journal with crash-safe Started / terminal evidence.
+15. Separate later changes: end-to-end execution UI/reporting → explicit recovery UX → release hardening.
 
 Each node gets a focused issue/PR and its own acceptance tests before the next expansion.
 Legacy selection candidates are documented in [migration rules](docs/migration-rules.md).
@@ -114,4 +115,4 @@ except `saves` and `screenshots`, which remain opt-in. Destination conflicts rem
 unless a caller explicitly chooses Skip or Replace. Phase 2.2 exposes a UI dry-run using the
 Recommended preset; this UI currently displays unresolved conflicts rather than editing decisions.
 The legacy `hanemod-client.json` exclusion, Merge semantics, size estimates, compatibility claims,
-execution UI/reporting and durable resumable rollback-attempt journaling are not implemented.
+execution UI/reporting and automatic rollback resume are not implemented.
