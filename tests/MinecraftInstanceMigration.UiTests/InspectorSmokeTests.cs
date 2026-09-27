@@ -211,7 +211,22 @@ public sealed class InspectorSmokeTests
                 timeout: TimeSpan.FromSeconds(15),
                 throwOnTimeout: false,
                 ignoreException: true);
-            Assert.True(finished.Success, "Dry-run preview did not render the config row in fifteen seconds.");
+            Assert.True(
+                finished.Success,
+                $"Dry-run preview did not render the config row in fifteen seconds. " +
+                $"Status='{TryReadName("PreviewStatus")}', PlanStatus='{TryReadName("PreviewPlanStatus")}'.");
+        }
+
+        public string TryReadName(string id)
+        {
+            try
+            {
+                return Find(id).Name ?? "<null>";
+            }
+            catch (Exception error)
+            {
+                return $"<{error.GetType().Name}>";
+            }
         }
 
         public string[] RenderedEntryCells(string gridId, string name)
