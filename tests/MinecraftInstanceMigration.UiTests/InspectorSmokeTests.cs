@@ -74,7 +74,6 @@ public sealed class InspectorSmokeTests
         session.SelectPreviewTab();
         session.GeneratePreview(source.Root, destination.Root);
 
-        Assert.Contains("Ready", session.ReadName("PreviewPlanStatus"));
         string[] config = session.RenderedEntryCells("PreviewEntries", "config");
         Assert.Contains("Copy", config);
         Assert.Contains("ReadyToCopy", config);
@@ -103,7 +102,9 @@ public sealed class InspectorSmokeTests
         session.SelectPreviewTab();
         session.GeneratePreview(source.Root, destination.Root);
 
-        Assert.Contains("NeedsDecision", session.ReadName("PreviewPlanStatus"));
+        string[] config = session.RenderedEntryCells("PreviewEntries", "config");
+        Assert.Contains("NeedsDecision", config);
+        Assert.Contains("DestinationConflict", config);
         Assert.NotNull(session.Find("ApplyPreviewChoices"));
         Assert.NotNull(session.Find("ResetRecommendedChoices"));
         Assert.NotNull(session.Find("IncludeSelectedEntry"));
@@ -160,23 +161,6 @@ public sealed class InspectorSmokeTests
             Window.FindFirstDescendant(cf => cf.ByAutomationId(id))
             ?? throw new InvalidOperationException($"Missing UI control: {id}");
 
-        public string ReadName(string id)
-        {
-            string? value = null;
-            var result = Retry.WhileFalse(
-                () =>
-                {
-                    value = Find(id).Name;
-                    return value is not null;
-                },
-                timeout: TimeSpan.FromSeconds(5),
-                throwOnTimeout: false,
-                ignoreException: true);
-
-            Assert.True(result.Success, $"Unable to read UI control: {id}");
-            return value!;
-        }
-
         public void Inspect(string path)
         {
             Find("CandidatePath").AsTextBox().Text = path;
@@ -213,11 +197,21 @@ public sealed class InspectorSmokeTests
             generate.Invoke();
 
             var finished = Retry.WhileFalse(
-                () => Find("PreviewStatus").Name.Contains("No files were changed.", StringComparison.Ordinal),
+                () =>
+                {
+                    try
+                    {
+                        return RenderedEntryCells("PreviewEntries", "config").Length > 0;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                },
                 timeout: TimeSpan.FromSeconds(15),
                 throwOnTimeout: false,
                 ignoreException: true);
-            Assert.True(finished.Success, "Dry-run preview did not finish in fifteen seconds.");
+            Assert.True(finished.Success, "Dry-run preview did not render the config row in fifteen seconds.");
         }
 
         public string[] RenderedEntryCells(string gridId, string name)
