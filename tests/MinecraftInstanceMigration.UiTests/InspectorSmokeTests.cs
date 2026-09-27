@@ -103,13 +103,14 @@ public sealed class InspectorSmokeTests
         session.SelectPreviewTab();
         session.GeneratePreview(source.Root, destination.Root);
 
-        Assert.Contains("NeedsDecision", session.Find("PreviewPlanStatus").Name);
+        AutomationElement planStatus = session.Find("PreviewPlanStatus");
+        Assert.Contains("NeedsDecision", planStatus.Name);
         ComboBox conflict = session.FindByName("config conflict decision").AsComboBox();
         conflict.Select("Replace");
         session.Find("ApplyPreviewChoices").AsButton().Invoke();
 
         var finished = Retry.WhileFalse(
-            () => session.Find("PreviewPlanStatus").Name.Contains("Ready", StringComparison.Ordinal),
+            () => planStatus.Name.Contains("Ready", StringComparison.Ordinal),
             timeout: TimeSpan.FromSeconds(5), throwOnTimeout: false, ignoreException: true);
         Assert.True(finished.Success, "Conflict decision did not refresh the preview.");
 
@@ -192,11 +193,12 @@ public sealed class InspectorSmokeTests
         {
             Find("PreviewSourcePath").AsTextBox().Text = sourcePath;
             Find("PreviewDestinationPath").AsTextBox().Text = destinationPath;
+            AutomationElement status = Find("PreviewStatus");
             Find("GeneratePreview").AsButton().Invoke();
             var finished = Retry.WhileFalse(
-                () => Find("PreviewStatus").Name.StartsWith("Dry-run preview ", StringComparison.Ordinal),
+                () => status.Name.StartsWith("Dry-run preview ", StringComparison.Ordinal),
                 timeout: TimeSpan.FromSeconds(15), throwOnTimeout: false, ignoreException: true);
-            Assert.True(finished.Success, "Dry-run preview did not finish in fifteen seconds.");
+            Assert.True(finished.Success, $"Dry-run preview did not finish in fifteen seconds. Last status: {status.Name}");
         }
 
         public string[] RenderedEntryCells(string gridId, string name)
