@@ -33,6 +33,8 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal("Ready", model.PlanStatus);
         Assert.Equal(MigrationPreviewAction.Copy, Entry(model, "config").Action);
         Assert.Equal(MigrationPreviewAction.Excluded, Entry(model, "saves").Action);
+        Assert.False(Entry(model, "saves").Selected);
+        Assert.False(Entry(model, "screenshots").Selected);
         Assert.Contains("No files were changed", model.Status);
         Assert.False(model.HasPendingChoices);
     }
@@ -121,6 +123,70 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal(MigrationPreviewAction.Skip, config.Action);
         Assert.False(config.RequiresBackup);
         Assert.Equal("config: Included; conflict: Skip.", model.SelectedChoiceSummary);
+    }
+
+    [Fact]
+    public async Task ConflictDecisionCanBeClearedBeforeApply()
+    {
+        var calls = new List<string>();
+        var inspector = new StubInspector((path, _) =>
+        {
+            calls.Add(path);
+            return Task.FromResult(Inspection(("config", EntryState.Directory)));
+        });
+        var model = CreateModel(inspector);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        await model.GeneratePreviewAsync();
+
+        model.SelectedEntry = Entry(model, "config");
+        model.ReplaceConflictCommand.Execute(null);
+        Assert.True(model.ClearConflictCommand.CanExecute(null));
+
+        model.ClearConflictCommand.Execute(null);
+
+        Assert.Contains("Unresolved", model.SelectedChoiceSummary);
+        Assert.False(model.ClearConflictCommand.CanExecute(null));
+        Assert.True(model.ApplyChoicesCommand.CanExecute(null));
+
+        model.ApplyChoicesCommand.Execute(null);
+
+        Assert.Equal("NeedsDecision", model.PlanStatus);
+        Assert.Equal(new[] { "source", "destination" }, calls);
+    }
+
+    [Fact]
+    public async Task FailedPlanUpdateDoesNotRebuildThePreviousPreview()
+    {
+        var planner = new ThrowOnSecondPlanCallPlanner();
+        var previewer = new CountingPreviewer(new MigrationPreview(
+            MigrationPlanStatus.NeedsDecision,
+            [new MigrationPreviewEntry(
+                "config",
+                true,
+                EntryState.Directory,
+                EntryState.Directory,
+                MigrationPreviewAction.NeedsDecision,
+                MigrationPlanDisposition.DestinationConflict,
+                false)],
+            [],
+            [new ConflictDecisionIssue("config", ConflictDecisionIssueKind.NoDestinationConflict)]));
+        var model = CreateModel(
+            new StubInspector((path, _) => Task.FromResult(
+                Inspection(("config", EntryState.Directory)))),
+            planner,
+            previewer);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+
+        await model.GeneratePreviewAsync();
+        model.SelectedEntry = Entry(model, "config");
+        model.SkipConflictCommand.Execute(null);
+        model.ApplyChoicesCommand.Execute(null);
+
+        Assert.Equal("NeedsDecision", model.PlanStatus);
+        Assert.Contains("PlanFailed", model.Status);
+        Assert.Equal(1, previewer.Calls);
     }
 
     [Fact]
@@ -279,6 +345,20 @@ public sealed class MigrationPreviewViewModelTests
     private static MigrationPreviewViewModel CreateModel(IInstanceInspector inspector) =>
         new(CreateWorkflow(inspector), _ => null);
 
+    private static MigrationPreviewViewModel CreateModel(
+        IInstanceInspector inspector,
+        IMigrationPlanner planner,
+        IMigrationPreviewer previewer) =>
+        new(
+            new MigrationWorkflow(
+                inspector,
+                planner,
+                previewer,
+                new BackupPlanner(),
+                new NeverCalledBackupExecutor(),
+                new NeverCalledExecutionOrchestrator()),
+            _ => null);
+
     private static IMigrationWorkflow CreateWorkflow(IInstanceInspector inspector)
     {
         var backupPlanner = new BackupPlanner();
@@ -331,5 +411,45 @@ public sealed class MigrationPreviewViewModelTests
             ExecutionOrchestrationRequest request,
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Preview UI must not execute migration IO.");
+    }
+
+    private sealed class ThrowOnSecondPlanCallPlanner : IMigrationPlanner
+    {
+        private int calls;
+
+        public MigrationPlan CreatePlan(
+            InstanceInspectionResult source,
+            InstanceInspectionResult destination,
+            IEnumerable<string> selectedEntryNames,
+            IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null)
+        {
+            if (++calls > 1)
+            {
+                throw new InvalidOperationException("planned failure");
+            }
+
+            return new MigrationPlanner().CreatePlan(
+                source,
+                destination,
+                selectedEntryNames,
+                conflictDecisions);
+        }
+
+        public MigrationPlan CreateRecommendedPlan(
+            InstanceInspectionResult source,
+            InstanceInspectionResult destination,
+            IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null) =>
+            new MigrationPlanner().CreateRecommendedPlan(source, destination, conflictDecisions);
+    }
+
+    private sealed class CountingPreviewer(MigrationPreview preview) : IMigrationPreviewer
+    {
+        public int Calls { get; private set; }
+
+        public MigrationPreview CreatePreview(MigrationPlan plan)
+        {
+            Calls++;
+            return preview;
+        }
     }
 }

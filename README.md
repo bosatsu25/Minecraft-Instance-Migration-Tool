@@ -145,7 +145,8 @@ Source and Destination are inspected read-only and projected through the Recomme
 
 Recommended leaves `saves` and `screenshots` OFF by default.
 Existing destination conflicts are shown as `NeedsDecision`.
-The Domain supports Skip / Replace conflict intent, but **the current Preview UI does not edit those decisions**.
+The Preview UI can set Skip / Replace or clear a decision back to unresolved, then explicitly apply
+those choices without reinspecting either root.
 
 Preview is metadata-only and never authorizes later writes.
 

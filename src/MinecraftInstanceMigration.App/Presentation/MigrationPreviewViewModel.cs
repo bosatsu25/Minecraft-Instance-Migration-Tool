@@ -235,7 +235,9 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
                 selected,
                 decisions);
 
-            if (current.State != MigrationWorkflowState.Preview)
+            if (current.State != MigrationWorkflowState.Preview ||
+                current.FailureKind is not null ||
+                current.MigrationPlan is null)
             {
                 session = current;
                 status = WorkflowFailureStatus(current, "Choices could not be applied.");

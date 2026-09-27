@@ -160,6 +160,7 @@
           <DataGrid Grid.Row="5" ItemsSource="{Binding Entries}"
                     SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
                     AutoGenerateColumns="False"
+                    EnableRowVirtualization="False" EnableColumnVirtualization="False"
                     IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                     SelectionMode="Single" SelectionUnit="FullRow"
                     HeadersVisibility="Column" AutomationProperties.Name="Migration preview entries"

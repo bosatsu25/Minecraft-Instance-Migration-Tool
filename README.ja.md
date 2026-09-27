@@ -142,7 +142,8 @@ Source / Destination を読み取り専用で再観測し、Recommended preset �
 
 Recommended では `saves` と `screenshots` は既定 OFF です。
 既存 destination conflict は UI 上では `NeedsDecision` のまま表示されます。
-Domain には Skip / Replace が存在しますが、**現在の Preview UI では conflict を編集できません**。
+Preview UI から Skip / Replace を設定し、未解決状態へ戻すこともできます。選択内容は明示的に
+Apply したときだけ、root を再 inspection せず plan / preview へ反映されます。
 
 Preview は metadata-only であり、将来の write を承認するものではありません。
 

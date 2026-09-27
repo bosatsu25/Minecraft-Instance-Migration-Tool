@@ -140,9 +140,9 @@ meaning after Planner evolves. Preview copies plan status, unknown selections, a
 issues into its own immutable snapshot.
 
 The WPF Preview tab inspects source and destination with the existing read-only Inspector, creates a
-Recommended plan, and projects that exact plan into Preview. It does not offer conflict editing yet:
-an existing destination is visibly `NeedsDecision`. Changing either input clears the prior preview;
-cancellation and error handling do not retain a late or partial result.
+Recommended plan, and projects that exact plan into Preview. At Phase 2.2 an existing destination was
+displayed as `NeedsDecision`; Phase 4.1 adds the explicit editing flow described below. Changing either
+input clears the prior preview; cancellation and error handling do not retain a late or partial result.
 
 Phase 2.2 intentionally has no recursive size estimate, hash, nested file inventory, compatibility
 analysis, or exclusion enforcement because Phase 1 metadata observation does not provide those facts.
