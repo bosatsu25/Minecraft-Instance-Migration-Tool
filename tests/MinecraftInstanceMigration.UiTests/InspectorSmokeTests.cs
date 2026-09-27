@@ -106,6 +106,8 @@ public sealed class InspectorSmokeTests
         Assert.Contains("NeedsDecision", session.ReadName("PreviewPlanStatus"));
         Assert.NotNull(session.Find("ApplyPreviewChoices"));
         Assert.NotNull(session.Find("ResetRecommendedChoices"));
+        Assert.NotNull(session.Find("IncludeSelectedEntry"));
+        Assert.NotNull(session.Find("ExcludeSelectedEntry"));
         Assert.NotNull(session.Find("SkipSelectedConflict"));
         Assert.NotNull(session.Find("ReplaceSelectedConflict"));
         Assert.NotNull(session.Find("ClearSelectedConflict"));

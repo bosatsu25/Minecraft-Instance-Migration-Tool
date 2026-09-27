@@ -54,7 +54,9 @@ public sealed class MigrationPreviewViewModelTests
         await model.GeneratePreviewAsync();
 
         MigrationSelectionEntryViewModel saves = Entry(model, "saves");
-        saves.Selected = true;
+        model.SelectedEntry = saves;
+        Assert.True(model.IncludeSelectedCommand.CanExecute(null));
+        model.IncludeSelectedCommand.Execute(null);
         Assert.True(model.HasPendingChoices);
         Assert.True(model.ApplyChoicesCommand.CanExecute(null));
 
@@ -119,6 +121,31 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal(MigrationPreviewAction.Skip, config.Action);
         Assert.False(config.RequiresBackup);
         Assert.Equal(DestinationConflictDecision.Skip, config.ConflictDecision);
+    }
+
+    [Fact]
+    public async Task IncludeAndExcludeCommandsEditOnlyTheSelectedRow()
+    {
+        var inspector = new StubInspector((path, _) => Task.FromResult(
+            path == "source"
+                ? Inspection(("config", EntryState.Directory), ("saves", EntryState.Directory))
+                : Inspection()));
+        var model = CreateModel(inspector);
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        await model.GeneratePreviewAsync();
+
+        MigrationSelectionEntryViewModel saves = Entry(model, "saves");
+        model.SelectedEntry = saves;
+        Assert.True(model.IncludeSelectedCommand.CanExecute(null));
+        model.IncludeSelectedCommand.Execute(null);
+        Assert.True(saves.Selected);
+        Assert.True(model.ExcludeSelectedCommand.CanExecute(null));
+
+        model.ExcludeSelectedCommand.Execute(null);
+
+        Assert.False(saves.Selected);
+        Assert.True(model.IncludeSelectedCommand.CanExecute(null));
     }
 
     [Fact]

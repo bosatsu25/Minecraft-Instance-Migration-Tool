@@ -41,6 +41,12 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ResetRecommendedCommand = new RelayCommand(
             ResetRecommended,
             () => !IsBusy && preview is not null);
+        IncludeSelectedCommand = new RelayCommand(
+            () => SetSelectedIncluded(true),
+            () => !IsBusy && selectedEntry is not null && !selectedEntry.Selected);
+        ExcludeSelectedCommand = new RelayCommand(
+            () => SetSelectedIncluded(false),
+            () => !IsBusy && selectedEntry?.Selected == true);
         SkipConflictCommand = new RelayCommand(
             () => SetSelectedConflict(DestinationConflictDecision.Skip),
             CanSetSelectedConflict);
@@ -65,6 +71,10 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     public RelayCommand ApplyChoicesCommand { get; }
 
     public RelayCommand ResetRecommendedCommand { get; }
+
+    public RelayCommand IncludeSelectedCommand { get; }
+
+    public RelayCommand ExcludeSelectedCommand { get; }
 
     public RelayCommand SkipConflictCommand { get; }
 
@@ -242,6 +252,17 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ApplyChoices();
     }
 
+    private void SetSelectedIncluded(bool included)
+    {
+        if (IsBusy || selectedEntry is null)
+        {
+            return;
+        }
+
+        selectedEntry.Selected = included;
+        RefreshChoiceCommands();
+    }
+
     private bool CanSetSelectedConflict() =>
         !IsBusy && selectedEntry?.CanChooseConflict == true;
 
@@ -381,6 +402,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     {
         ApplyChoicesCommand.Refresh();
         ResetRecommendedCommand.Refresh();
+        IncludeSelectedCommand.Refresh();
+        ExcludeSelectedCommand.Refresh();
         SkipConflictCommand.Refresh();
         ReplaceConflictCommand.Refresh();
         ClearConflictCommand.Refresh();

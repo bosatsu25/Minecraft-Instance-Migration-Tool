@@ -126,7 +126,14 @@
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
               <TextBlock VerticalAlignment="Center" Margin="0,0,8,0"
-                         Text="Selected conflict:" FontWeight="SemiBold" />
+                         Text="Selected row:" FontWeight="SemiBold" />
+              <Button Content="Include" Padding="16,5" Command="{Binding IncludeSelectedCommand}"
+                      AutomationProperties.AutomationId="IncludeSelectedEntry" />
+              <Button Content="Exclude" Padding="16,5" Margin="8,0,0,0"
+                      Command="{Binding ExcludeSelectedCommand}"
+                      AutomationProperties.AutomationId="ExcludeSelectedEntry" />
+              <TextBlock VerticalAlignment="Center" Margin="16,0,8,0"
+                         Text="Conflict:" FontWeight="SemiBold" />
               <Button Content="Skip" Padding="16,5" Command="{Binding SkipConflictCommand}"
                       AutomationProperties.AutomationId="SkipSelectedConflict" />
               <Button Content="Replace" Padding="16,5" Margin="8,0,0,0"
@@ -150,15 +157,13 @@
           <DataGrid Grid.Row="5" ItemsSource="{Binding Entries}"
                     SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
                     AutoGenerateColumns="False"
-                    IsReadOnly="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                    IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                     SelectionMode="Single" SelectionUnit="FullRow"
                     HeadersVisibility="Column" AutomationProperties.Name="Migration preview entries"
                     AutomationProperties.AutomationId="PreviewEntries">
             <DataGrid.Columns>
               <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" IsReadOnly="True" />
-              <DataGridCheckBoxColumn Header="Selected"
-                                      Binding="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                      Width="80" />
+              <DataGridCheckBoxColumn Header="Selected" Binding="{Binding Selected}" Width="80" />
               <DataGridTextColumn Header="Conflict" Binding="{Binding ConflictDecision}"
                                   Width="110" IsReadOnly="True" />
               <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="110" IsReadOnly="True" />
@@ -170,7 +175,7 @@
           </DataGrid>
 
           <TextBlock Grid.Row="6" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Recommended leaves saves and screenshots unselected. Edit selection directly. For a destination conflict, select its row, choose Skip or Replace, then Apply choices. Preview remains metadata-only and never authorizes writes; observations can become stale." />
+                     Text="Recommended leaves saves and screenshots unselected. Select a row and use Include / Exclude; for a destination conflict use Skip / Replace, then Apply choices. Preview remains metadata-only and never authorizes writes; observations can become stale." />
         </Grid>
       </TabItem>
     </TabControl>
