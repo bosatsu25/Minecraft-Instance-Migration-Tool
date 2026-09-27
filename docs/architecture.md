@@ -531,9 +531,13 @@ SelectRoots -> Inspect -> ConfigurePlan -> Preview
 `MigrationWorkflow` delegates each stage through existing Application contracts. It creates no backup,
 journal, or migration artifact directly. A preview with unresolved decisions or blockers remains in
 `Preview`, so a later selection/conflict UI can reconfigure the same session without bypassing planning.
-Backup and journal parents are recorded before backup execution; execution can start only after a
-completed or not-required backup result and a journal parent are present. Execution cancellation after
-applied steps is surfaced as `RecoveryRequired` rather than a clean cancellation.
+The backup parent is required only when the plan contains replacement entries; a `NotRequired` backup
+advances without crossing the backup executor boundary. The journal parent may be selected with the
+backup, but is required at the execution boundary. Re-entering `ConfigurePlan` from any pre-execution
+state defensively copies selections and conflict decisions and clears all downstream preview, backup,
+and execution evidence. An exception escaping the execution port is treated as `RecoveryRequired`,
+because the workflow cannot prove that no mutation occurred. Typed cancellation returned by the
+orchestrator remains a clean cancellation only when it carries no applied steps.
 
 The workflow is an orchestration boundary, not a replacement for Domain policies. Selection, conflict,
 backup, live validation, mutation, verification, and rollback safety remain owned by their existing

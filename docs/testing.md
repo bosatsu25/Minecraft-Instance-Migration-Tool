@@ -520,7 +520,12 @@ Application workflow tests use ports and controlled stubs; they never access the
 - backup execution must complete or be `NotRequired` before `ReadyForExecution`;
 - execution receives the reviewed roots, plan, backup result, and journal parent through its port;
 - completed execution reaches `Completed`, while recovery-required execution reaches `RecoveryRequired`;
-- cancellation during inspection discards partial observations.
+- cancellation during inspection discards partial observations;
+- a `NotRequired` backup reaches `BackupReady` without invoking the backup executor or requiring a path;
+- required backup plans reject missing backup parents, while journal-parent validation remains at execution preparation;
+- reconfiguring a pre-execution plan copies caller collections and clears preview, backup, parent, and execution evidence;
+- session construction and state setters are application-owned, so tests cannot forge a workflow state;
+- an operation-canceled exception escaping execution is classified as `RecoveryRequired`.
 
 The workflow does not choose conflict policy, perform IO, expose private exception messages, or implement
 automatic resume. Phase 4.1 can add selection/conflict editing by re-entering `ConfigurePlan` with the

@@ -2,42 +2,284 @@
 
 [日本語](README.ja.md)
 
-A planned Windows desktop tool for selectively moving Minecraft user data from an old
-instance to a new one when changing mod packs or launch configurations.
+A Windows desktop application for selectively and safely migrating Minecraft user data
+from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.0 Migration Workflow / Session.** The app UI remains Inspector / Preview only.
-Guarded automatic rollback creates a separate append-only, checksummed rollback-attempt journal before
-any destructive rollback action. Each action must durably record Started before storage mutation and then
-Applied / GuardRejected / Failed afterward. Execute / rollback UI controls and reporting are still absent.
+**Status: Phase 4.0 Migration Workflow / Session.**
+The Application workflow now connects inspection, planning, preview, backup preparation,
+backup execution, and execution through explicit session states. The WPF UI still exposes
+only Inspector and Migration Preview.
+The backend now includes read-only Inspect / Plan / Preview, verified Backup,
+a durable execution journal, Windows Copy / Replace, independent post-write verification,
+fingerprint-guarded rollback, and a durable rollback-attempt journal.
 
-## Why
+The **current WPF UI still exposes only Inspector and Migration Preview**.
+User-facing Execute / Rollback / Recovery / Report flows are not wired into the UI yet.
 
-User settings, worlds, and other personal data deserve a reviewable migration plan,
-explicit backup, and verification. The intended flow is:
+## Current implementation
 
-Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Report
+The backend execution path is implemented through:
 
-On verification failure: Diagnose → Rollback → Report. The backend now contains verified backup,
-durable execution evidence, production Copy / Replace, independent verification, and guarded rollback IO.
-User-facing Execute / Rollback controls and reporting remain future work.
+```text
+Inspect
+  ↓
+Plan
+  ↓
+Preview / Dry Run
+  ↓
+Backup Preflight
+  ↓
+Backup IO
+  ↓
+Backup Revalidation
+  ↓
+Execution Workspace Safety
+  ↓
+Durable Execution Journal
+  ↓
+Live Revalidation
+  ↓
+Copy / Replace
+  ↓
+Independent Post-write Verification
+  ↓
+Durable Applied / Failed evidence
+```
+
+Rollback after failed verification is also implemented:
+
+```text
+Execution evidence
+  ↓
+RollbackPlan
+  ↓
+Backup Revalidation (Replace only)
+  ↓
+Durable Rollback Started
+  ↓
+Fingerprint-guarded Rollback IO
+  ↓
+Applied / GuardRejected / Failed
+  ↓
+Durable Rollback Attempt evidence
+```
+
+If a rollback attempt is reopened with durable `Started` but no terminal record,
+it recovers as `Uncertain`. The implementation does not guess whether the action succeeded,
+failed, should be replayed, or should be skipped.
+
+Phase 3.8 makes recovery diagnosis durable; it does **not** implement automatic resume.
+
+## What the current UI can do
+
+### Inspector
+
+Select any local folder name and observe these eleven known direct children read-only:
+
+- `options.txt`
+- `config`
+- `resourcepacks`
+- `shaderpacks`
+- `schematics`
+- `saves`
+- `screenshots`
+- `XaeroWaypoints`
+- `XaeroWorldMap`
+- `itemscroller`
+- `g4mespeed`
+
+Expected kind and observed state are displayed separately.
+Missing / Inaccessible / Unavailable / ReparsePoint remain distinct.
+Junctions, symlinks, and other reparse points are never intentionally followed.
+
+### Migration Preview / Dry Run
+
+Source and Destination are inspected read-only and projected through the Recommended preset.
+
+Recommended leaves `saves` and `screenshots` OFF by default.
+Existing destination conflicts are shown as `NeedsDecision`.
+The Domain supports Skip / Replace conflict intent, but **the current Preview UI does not edit those decisions**.
+
+Preview is metadata-only and never authorizes later writes.
+
+## Safety model
+
+This is not a simple recursive-copy tool. The backend is structured as a migration engine
+that attempts to preserve evidence about what happened when operations fail.
+
+### Windows filesystem
+
+- absolute local-drive paths only
+- handle-relative traversal
+- retained parent handles
+- no-follow reparse policy
+- nested junction / symlink / reparse-point failure is fail-closed
+- lexical overlap plus canonical handle-path overlap checks
+- physical aliases such as SUBST are considered
+- Copy uses create-only semantics
+- Replace requires live-state and backup revalidation
+- user-provided paths are treated as untrusted input
+
+### Backup
+
+Only Replace entries require a pre-write backup.
+
+Implemented backup properties include:
+
+- owned backup roots
+- ownership marker
+- versioned completion manifest
+- planned top-level membership checks
+- recomputed tree fingerprint
+- nested reparse rejection
+- read-only validation of completed backup artifacts
+- failed / cancelled artifacts are not accepted as recovery evidence
+
+Backup is not an exact NTFS clone. ACLs, alternate data streams, and complete
+timestamp / metadata fidelity are not guaranteed.
+
+### Durable execution journal
+
+Before a write is allowed, `Started` must be durably persisted.
+Only an independently verified mutation can receive durable `Applied`.
+
+```text
+Live Revalidation
+  ↓
+Backup Revalidation (Replace)
+  ↓
+durable Started
+  ↓
+single-entry mutation
+  ↓
+independent verification
+  ↓
+durable Applied
+```
+
+JSONL records carry SHA-256 checksums and a previous-checksum chain.
+An acknowledged record succeeds only after `Flush(flushToDisk: true)`.
+
+An unterminated final record may be treated as a torn tail.
+A newline-terminated malformed, checksum-invalid, or state-invalid record fails closed.
+
+### Independent verification
+
+The mutation return value is not trusted by itself.
+
+```text
+source fingerprint #1
+destination fingerprint
+source fingerprint #2
+```
+
+If source #1 differs from source #2, verification reports `SourceChanged`.
+If a stable source differs from destination, verification reports `VerificationMismatch`.
+
+Fingerprints are path-free and cover relative tree structure, regular-file default-stream bytes,
+file/directory counts, total bytes, and SHA-256.
+
+### Guarded rollback
+
+Rollback uses the execution journal's post-write fingerprint as a mandatory guard.
+
+- Copy: delete only while the current destination still matches the execution fingerprint
+- Replace: restore only after backup revalidation and while the current destination still matches
+- nested destination / backup trees are retained by handle across guard and mutation boundaries
+- data changed after migration by the user or another process is not automatically deleted or overwritten
+- failures after destructive rollback begins become `RecoveryRequired`
+
+### Durable rollback-attempt journal
+
+Phase 3.8 persists rollback evidence separately from the immutable execution journal.
+
+```text
+NotStarted
+   ↓
+durable Started
+   ↓
+guarded rollback IO
+   ↓
+Applied / GuardRejected / Failed
+```
+
+A `Started` action without a terminal record reloads as `Uncertain`.
+
+The attempt journal is bound to the exact `RollbackPlan`, including order, name,
+expected kind, execution operation, rollback action, and post-write fingerprint.
+
+Unknown JSON properties, duplicate properties, missing required fields,
+checksum / chain / ordering mismatches are rejected.
+Entry names must be single Windows names, preventing absolute paths or path fragments
+from being serialized into the journal.
+
+Checksums detect accidental corruption; they are not authentication against an actor
+who can rewrite the complete journal and recompute its checksum chain.
 
 ## Architecture
 
-- **Domain:** immutable observation models, deterministic plan policy, Recommended selection defaults, and explicit conflict intent; compatibility/nested exclusion rules remain future work.
-- **Application:** use cases and ports, referencing Domain.
-- **Infrastructure:** Windows metadata and handle-relative backup adapters, referencing Application/Domain.
-- **App:** WPF Inspector and Preview / Dry Run views, MVVM presentation state, and composition root.
-- **Tests:** xUnit behavior/integration/ViewModel tests and architecture regression checks.
+```text
+App (WPF)
+   ↓
+Application
+   ↓
+Domain
 
-App references Application and Infrastructure for composition; Infrastructure never flows
-back into Application or Domain. See [architecture](docs/architecture.md).
+Infrastructure
+   ↑
+Application ports
+```
+
+- **Domain** — observations, MigrationPlan, selection/conflict policy, backup/execution/rollback policy
+- **Application** — use cases, orchestration, and ports for external effects
+- **Infrastructure** — Windows filesystem, backup, journals, mutation, verification, rollback adapters
+- **App** — WPF/MVVM Inspector and Preview UI plus composition root
+- **Tests** — Domain / Application / Infrastructure / App plus FlaUI UI smoke
+
+Dependencies point inward. Application and Domain do not reference Infrastructure or UI.
+
+Technology:
+
+- C#
+- .NET 10
+- WPF
+- MVVM
+- System.IO / Windows native filesystem APIs
+- System.Text.Json
+- xUnit v3
+- FlaUI
+- GitHub Actions
+
+Production code intentionally avoids unnecessary DI, MVVM, and logging frameworks.
+The design primarily uses the BCL and explicit ports/adapters.
+
+See [architecture](docs/architecture.md) for details.
+
+## Not implemented yet
+
+The following are not complete:
+
+- end-to-end Execute UI
+- Rollback UI
+- Recovery UX
+- Report UI / persistent report
+- UI editing for custom selection
+- UI editing for Skip / Replace conflict decisions
+- automatic rollback resume
+- legacy `hanemod-client.json` exclusion
+- Merge conflict semantics
+- size / free-space estimation
+- Minecraft / mod / loader compatibility analysis
+- exact NTFS clone semantics
+- release packaging / signing / installer
+
+In particular, **being safe to copy is not the same as being compatible with the target instance**.
+The current implementation does not claim compatibility.
 
 ## Development
 
-Use Windows with the .NET 10 SDK selected by [global.json](global.json) (10.0.401,
-latest patch in that feature band). The SDK includes the WPF build tools. An IDE is optional.
-
-From the repository root:
+Use Windows with the .NET 10 SDK selected by [global.json](global.json)
+(10.0.401, latest patch in that feature band).
 
 ```powershell
 dotnet restore
@@ -45,75 +287,67 @@ dotnet build --configuration Release --no-restore
 dotnet run --project src/MinecraftInstanceMigration.App --configuration Release --no-build
 ```
 
-Dependency restore requires access to NuGet. The app itself has no network functionality.
-The libraries target `net10.0`; the WPF host targets `net10.0-windows`.
-Do not change target frameworks to bypass a missing Windows/SDK environment.
-
-## Using the Inspector
-
-Choose **Browse**, select a local folder (any name is accepted), then **Inspect**.
-An absolute local drive path can also be entered. **Cancel** stops between metadata calls.
-Changing the input clears previous observations. Inspect checks only:
-`options.txt`, `config`, `resourcepacks`, `shaderpacks`, `schematics`, `saves`,
-`screenshots`, `XaeroWaypoints`, `XaeroWorldMap`, `itemscroller`, and `g4mespeed`.
-
-The table separates expected kind from actual state. Missing is distinct from inaccessible
-or unavailable. Links are reported without following them; a link anywhere in the root path
-blocks inspection. No recursion or content reading occurs. Known names do not establish a
-Minecraft instance, compatibility, or migration eligibility. Results are not an atomic snapshot.
-UNC, mapped network drives, device paths, relative paths, and parent traversal are unsupported.
+Libraries target `net10.0`; the WPF host targets `net10.0-windows`.
+Restore requires NuGet connectivity, but the application itself has no network functionality.
 
 ## Verification
 
+Deterministic gate:
+
 ```powershell
+dotnet restore
+dotnet build --configuration Release --no-restore
 dotnet test --configuration Release --no-build --no-restore
 dotnet format --verify-no-changes --no-restore
 git diff --check
 git status --short --branch
 ```
 
-Run restore and build first. Windows [CI](.github/workflows/ci.yml) runs restore, Release
-build, tests, and formatting checks on pushes and pull requests. Warnings fail the build.
-Use `dotnet format --no-restore` to apply C# formatting locally. The formatter does not
-fully validate Markdown, YAML, or XAML layout; review those diffs too.
-
-The small WPF UI smoke suite runs separately on Windows:
+WPF UI smoke:
 
 ```powershell
-dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release
+dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release --no-restore
 ```
 
-See [testing](docs/testing.md) for its scope and a manual smoke procedure.
+GitHub Actions runs build / test / format plus UI smoke on Windows.
+Warnings fail the build.
 
-Development follows the [evidence-driven Graph Loop](docs/graph-loop.md).
-See [AGENTS.md](AGENTS.md) for concise rules and [testing](docs/testing.md) for verification scope.
+High-risk filesystem and rollback tests use only owned temporary fixtures.
+Tests never intentionally mutate a real Minecraft instance.
+
+See [testing](docs/testing.md) for details.
 
 ## Roadmap
 
-1. Phase 0: solution, boundaries, tests, CI, documentation, minimal shell.
-2. Phase 1: read-only Instance Inspector.
-3. Phase 2: deterministic read-only Migration Planner core.
-4. Phase 2.1: Recommended selection preset and explicit Skip / Replace conflict intent.
-5. Phase 2.2: Preview / Dry Run model and WPF preview flow.
-6. Phase 3.0: Backup Preflight and versioned manifest draft, with no filesystem writes.
-7. Phase 3.1: Windows Backup IO foundation with owned roots, handle-relative traversal, cancellation,
-   nested reparse rejection, and post-copy fingerprint verification.
-8. Phase 3.2: read-only completed-backup revalidation against ownership marker, manifest, plan, and
-   recomputed tree fingerprint.
-9. Phase 3.3: versioned execution-journal contract and deterministic rollback planning, with no migration writes.
-10. Phase 3.4: durable Windows execution-journal storage with append/flush ordering and crash-tail recovery.
-11. Phase 3.5: live revalidation + execution orchestration contract, with mutation/verifier ports only.
-12. Phase 3.6: Windows handle-relative Copy / Replace mutation plus independent post-write verification.
-13. Phase 3.7: fingerprint-guarded DeleteCreatedEntry / RestoreFromBackup rollback IO.
-14. Phase 3.8: durable rollback-attempt journal with crash-safe Started / terminal evidence.
-15. Phase 4.0: Application-owned migration workflow/session connecting inspection, planning, preview, backup, and execution.
-16. Separate later changes: selection/conflict UI → Backup/Execute UI → recovery/reporting UX → release hardening.
+Implemented:
 
-Each node gets a focused issue/PR and its own acceptance tests before the next expansion.
-Legacy selection candidates are documented in [migration rules](docs/migration-rules.md).
-Phase 2.1 implements the legacy Recommended selection direction: all known candidates are selected
-except `saves` and `screenshots`, which remain opt-in. Destination conflicts remain unresolved
-unless a caller explicitly chooses Skip or Replace. Phase 2.2 exposes a UI dry-run using the
-Recommended preset; this UI currently displays unresolved conflicts rather than editing decisions.
-The legacy `hanemod-client.json` exclusion, Merge semantics, size estimates, compatibility claims,
-execution UI/reporting and automatic rollback resume are not implemented.
+1. Phase 0 — solution / layer boundaries / tests / CI / minimal WPF shell
+2. Phase 1 — read-only Instance Inspector
+3. Phase 2 — deterministic Migration Planner
+4. Phase 2.1 — Recommended preset + Skip / Replace conflict intent
+5. Phase 2.2 — Preview / Dry Run + WPF preview
+6. Phase 3.0 — Backup Preflight
+7. Phase 3.1 — Windows Backup IO
+8. Phase 3.2 — completed-backup revalidation
+9. Phase 3.3 — execution journal / rollback contract
+10. Phase 3.4 — durable execution journal
+11. Phase 3.5 — live revalidation + execute orchestration
+12. Phase 3.6 — Windows Copy / Replace + independent verification
+13. Phase 3.7 — guarded rollback IO
+14. Phase 3.8 — durable rollback-attempt journal
+15. Phase 4.0 — Application-owned migration workflow/session
+
+Next major areas:
+
+16. selection / conflict editing UI
+17. end-to-end Execute / Rollback UI
+18. explicit Recovery UX and Report
+19. release hardening
+
+See [migration rules](docs/migration-rules.md) for legacy candidates and unresolved rules,
+[rollback](docs/rollback.md) for rollback guarantees,
+and [execution journal](docs/execution-journal.md) for execution evidence.
+
+See [AGENTS.md](AGENTS.md) for working agreements,
+[testing](docs/testing.md) for verification scope,
+and [graph loop](docs/graph-loop.md) for the evidence-driven development loop.

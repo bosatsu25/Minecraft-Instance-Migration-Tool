@@ -41,7 +41,7 @@ public enum MigrationWorkflowFailureKind
 
 public sealed record MigrationWorkflowSession
 {
-    public MigrationWorkflowSession(MigrationWorkflowState state)
+    internal MigrationWorkflowSession(MigrationWorkflowState state)
     {
         State = state;
         SelectedEntryNames = [];
@@ -50,35 +50,35 @@ public sealed record MigrationWorkflowSession
                 StringComparer.OrdinalIgnoreCase));
     }
 
-    public MigrationWorkflowState State { get; init; }
+    public MigrationWorkflowState State { get; internal init; }
 
-    public string? SourceRoot { get; init; }
+    public string? SourceRoot { get; internal init; }
 
-    public string? DestinationRoot { get; init; }
+    public string? DestinationRoot { get; internal init; }
 
-    public string? BackupParent { get; init; }
+    public string? BackupParent { get; internal init; }
 
-    public string? JournalParent { get; init; }
+    public string? JournalParent { get; internal init; }
 
-    public InstanceInspectionResult? SourceInspection { get; init; }
+    public InstanceInspectionResult? SourceInspection { get; internal init; }
 
-    public InstanceInspectionResult? DestinationInspection { get; init; }
+    public InstanceInspectionResult? DestinationInspection { get; internal init; }
 
-    public IReadOnlyList<string> SelectedEntryNames { get; init; }
+    public IReadOnlyList<string> SelectedEntryNames { get; internal init; }
 
-    public IReadOnlyDictionary<string, DestinationConflictDecision> ConflictDecisions { get; init; }
+    public IReadOnlyDictionary<string, DestinationConflictDecision> ConflictDecisions { get; internal init; }
 
-    public MigrationPlan? MigrationPlan { get; init; }
+    public MigrationPlan? MigrationPlan { get; internal init; }
 
-    public MigrationPreview? MigrationPreview { get; init; }
+    public MigrationPreview? MigrationPreview { get; internal init; }
 
-    public BackupPlan? BackupPlan { get; init; }
+    public BackupPlan? BackupPlan { get; internal init; }
 
-    public BackupExecutionResult? BackupResult { get; init; }
+    public BackupExecutionResult? BackupResult { get; internal init; }
 
-    public ExecutionOrchestrationResult? ExecutionResult { get; init; }
+    public ExecutionOrchestrationResult? ExecutionResult { get; internal init; }
 
-    public MigrationWorkflowFailureKind? FailureKind { get; init; }
+    public MigrationWorkflowFailureKind? FailureKind { get; internal init; }
 
     public bool HasInspections =>
         SourceInspection is not null && DestinationInspection is not null;

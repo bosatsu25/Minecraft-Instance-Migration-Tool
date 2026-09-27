@@ -125,7 +125,10 @@ public sealed class MigrationWorkflow(
         ArgumentNullException.ThrowIfNull(selectedEntryNames);
 
         if (session.State is not MigrationWorkflowState.ConfigurePlan and
-            not MigrationWorkflowState.Preview ||
+            not MigrationWorkflowState.Preview and
+            not MigrationWorkflowState.ReadyForBackup and
+            not MigrationWorkflowState.BackupReady and
+            not MigrationWorkflowState.ReadyForExecution ||
             session.SourceInspection is null ||
             session.DestinationInspection is null)
         {
@@ -204,8 +207,8 @@ public sealed class MigrationWorkflow(
 
     public MigrationWorkflowSession PrepareBackup(
         MigrationWorkflowSession session,
-        string backupParent,
-        string journalParent)
+        string? backupParent,
+        string? journalParent)
     {
         ArgumentNullException.ThrowIfNull(session);
 
@@ -213,11 +216,6 @@ public sealed class MigrationWorkflow(
             session.MigrationPlan is null)
         {
             return Failure(session, MigrationWorkflowFailureKind.InvalidState);
-        }
-
-        if (string.IsNullOrWhiteSpace(journalParent))
-        {
-            return Failure(session, MigrationWorkflowFailureKind.JournalRequired);
         }
 
         try
@@ -246,8 +244,8 @@ public sealed class MigrationWorkflow(
             return session with
             {
                 BackupPlan = backupPlan,
-                BackupParent = backupParent,
-                JournalParent = journalParent,
+                BackupParent = string.IsNullOrWhiteSpace(backupParent) ? null : backupParent,
+                JournalParent = string.IsNullOrWhiteSpace(journalParent) ? null : journalParent,
                 FailureKind = null,
             };
         }
@@ -267,10 +265,29 @@ public sealed class MigrationWorkflow(
             session.MigrationPlan is null ||
             session.BackupPlan is null ||
             session.SourceRoot is null ||
-            session.DestinationRoot is null ||
-            session.BackupParent is null)
+            session.DestinationRoot is null)
         {
             return Failure(session, MigrationWorkflowFailureKind.InvalidState);
+        }
+
+        if (session.BackupPlan.Status == BackupPlanStatus.Blocked)
+        {
+            return Failure(session, MigrationWorkflowFailureKind.BackupNotReady);
+        }
+
+        if (session.BackupPlan.Status == BackupPlanStatus.NotRequired)
+        {
+            return session with
+            {
+                State = MigrationWorkflowState.BackupReady,
+                BackupResult = new BackupExecutionResult(BackupExecutionStatus.NotRequired),
+                FailureKind = null,
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(session.BackupParent))
+        {
+            return Failure(session, MigrationWorkflowFailureKind.BackupRequired);
         }
 
         try
@@ -409,8 +426,8 @@ public sealed class MigrationWorkflow(
         {
             return executing with
             {
-                State = MigrationWorkflowState.Cancelled,
-                FailureKind = MigrationWorkflowFailureKind.Cancelled,
+                State = MigrationWorkflowState.RecoveryRequired,
+                FailureKind = MigrationWorkflowFailureKind.ExecutionRecoveryRequired,
             };
         }
         catch (Exception)

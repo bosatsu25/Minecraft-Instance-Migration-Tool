@@ -78,7 +78,7 @@ public sealed class MigrationWorkflowTests
     }
 
     [Fact]
-    public void PreviewThatNeedsDecisionDoesNotAdvanceToBackup()
+    public async Task PreviewThatNeedsDecisionDoesNotAdvanceToBackup()
     {
         var preview = new MigrationPreview(
             MigrationPlanStatus.NeedsDecision,
@@ -89,14 +89,7 @@ public sealed class MigrationWorkflowTests
             planner: new StubPlanner(ReadyPlan()),
             previewer: new StubPreviewer(preview));
 
-        MigrationWorkflowSession session = workflow.SelectRoots(
-            workflow.CreateSession(), "source", "destination");
-        session = session with
-        {
-            State = MigrationWorkflowState.ConfigurePlan,
-            SourceInspection = Inspection(),
-            DestinationInspection = Inspection(),
-        };
+        MigrationWorkflowSession session = await InspectedSession(workflow);
         session = workflow.ConfigurePlan(session, ["options.txt"], null);
         session = workflow.CreatePreview(session);
 
@@ -113,11 +106,11 @@ public sealed class MigrationWorkflowTests
             planner: new StubPlanner(ReadyPlan()),
             previewer: new StubPreviewer(new MigrationPreview(
                 MigrationPlanStatus.Ready, [], [], [])),
-            backupPlanner: new StubBackupPlanner(),
+            backupPlanner: new StubBackupPlanner(RequiredBackupPlan()),
             backupExecutor: new StubBackupExecutor(calls),
             execution: new StubExecutionOrchestrator(calls));
 
-        MigrationWorkflowSession session = ReadyForBackup(workflow);
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
         session = workflow.PrepareBackup(session, "backups", "journals");
         Assert.Equal(MigrationWorkflowState.ReadyForBackup, session.State);
         session = await workflow.ExecuteBackupAsync(session, TestContext.Current.CancellationToken);
@@ -131,17 +124,70 @@ public sealed class MigrationWorkflowTests
     }
 
     [Fact]
+    public async Task NotRequiredBackupAdvancesWithoutInvokingBackupExecutor()
+    {
+        var calls = new List<string>();
+        MigrationWorkflow workflow = CreateWorkflow(
+            backupExecutor: new StubBackupExecutor(calls));
+
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
+        session = workflow.PrepareBackup(session, backupParent: null, journalParent: null);
+        session = await workflow.ExecuteBackupAsync(session, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MigrationWorkflowState.BackupReady, session.State);
+        Assert.Equal(BackupExecutionStatus.NotRequired, session.BackupResult?.Status);
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public async Task RequiredBackupRejectsMissingBackupParent()
+    {
+        MigrationWorkflow workflow = CreateWorkflow(
+            backupPlanner: new StubBackupPlanner(RequiredBackupPlan()));
+
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
+        session = workflow.PrepareBackup(session, backupParent: null, journalParent: "journals");
+
+        Assert.Equal(MigrationWorkflowState.ReadyForBackup, session.State);
+        Assert.Equal(MigrationWorkflowFailureKind.BackupRequired, session.FailureKind);
+        Assert.NotNull(session.BackupPlan);
+    }
+
+    [Fact]
+    public async Task ReselectingRootsStartsAFreshSessionAfterCompletion()
+    {
+        MigrationWorkflow workflow = CreateWorkflow();
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
+        session = workflow.PrepareBackup(session, backupParent: null, journalParent: "journals");
+        session = await workflow.ExecuteBackupAsync(session, TestContext.Current.CancellationToken);
+        session = workflow.PrepareExecution(session);
+        session = await workflow.ExecuteAsync(session, TestContext.Current.CancellationToken);
+
+        session = workflow.SelectRoots(session, "new-source", "new-destination");
+
+        Assert.Equal(MigrationWorkflowState.Inspect, session.State);
+        Assert.Equal("new-source", session.SourceRoot);
+        Assert.Equal("new-destination", session.DestinationRoot);
+        Assert.Null(session.SourceInspection);
+        Assert.Null(session.DestinationInspection);
+        Assert.Null(session.MigrationPlan);
+        Assert.Null(session.BackupResult);
+        Assert.Null(session.ExecutionResult);
+        Assert.Null(session.FailureKind);
+    }
+
+    [Fact]
     public async Task RecoveryRequiredExecutionStopsInRecoveryState()
     {
         MigrationWorkflow workflow = CreateWorkflow(
             planner: new StubPlanner(ReadyPlan()),
             previewer: new StubPreviewer(new MigrationPreview(
                 MigrationPlanStatus.Ready, [], [], [])),
-            backupPlanner: new StubBackupPlanner(),
+            backupPlanner: new StubBackupPlanner(RequiredBackupPlan()),
             backupExecutor: new StubBackupExecutor([]),
             execution: new StubExecutionOrchestrator([], ExecutionOrchestrationStatus.RecoveryRequired));
 
-        MigrationWorkflowSession session = ReadyForBackup(workflow);
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
         session = workflow.PrepareBackup(session, "backups", "journals");
         session = await workflow.ExecuteBackupAsync(session, TestContext.Current.CancellationToken);
         session = workflow.PrepareExecution(session);
@@ -171,17 +217,89 @@ public sealed class MigrationWorkflowTests
         Assert.Null(session.DestinationInspection);
     }
 
-    private static MigrationWorkflowSession ReadyForBackup(MigrationWorkflow workflow)
+    [Fact]
+    public async Task ReconfiguringPlanCopiesInputsAndClearsDownstreamEvidence()
     {
-        MigrationWorkflowSession session = workflow.SelectRoots(
-            workflow.CreateSession(), "source", "destination") with
+        MigrationWorkflow workflow = CreateWorkflow(
+            backupPlanner: new StubBackupPlanner(RequiredBackupPlan()),
+            backupExecutor: new StubBackupExecutor([],
+                new BackupExecutionResult(BackupExecutionStatus.Completed)),
+            previewer: new StubPreviewer(new MigrationPreview(
+                MigrationPlanStatus.Ready, [], [], [])));
+
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
+        session = workflow.PrepareBackup(session, "backups", "journals");
+        session = await workflow.ExecuteBackupAsync(session, TestContext.Current.CancellationToken);
+
+        var selected = new List<string> { "options.txt" };
+        var decisions = new Dictionary<string, DestinationConflictDecision>(
+            StringComparer.OrdinalIgnoreCase)
         {
-            State = MigrationWorkflowState.ConfigurePlan,
-            SourceInspection = Inspection(),
-            DestinationInspection = Inspection(),
+            ["config"] = DestinationConflictDecision.Replace,
         };
+        session = workflow.ConfigurePlan(session, selected, decisions);
+
+        selected.Add("saves");
+        decisions["config"] = DestinationConflictDecision.Skip;
+
+        Assert.Equal(MigrationWorkflowState.Preview, session.State);
+        Assert.Equal(["options.txt"], session.SelectedEntryNames);
+        Assert.Equal(DestinationConflictDecision.Replace, session.ConflictDecisions["config"]);
+        Assert.Null(session.MigrationPreview);
+        Assert.Null(session.BackupPlan);
+        Assert.Null(session.BackupResult);
+        Assert.Null(session.BackupParent);
+        Assert.Null(session.JournalParent);
+    }
+
+    [Fact]
+    public async Task ExecutionCancellationExceptionRequiresRecovery()
+    {
+        using var cancellation = new CancellationTokenSource();
+        MigrationWorkflow workflow = CreateWorkflow(
+            backupPlanner: new StubBackupPlanner(RequiredBackupPlan()),
+            backupExecutor: new StubBackupExecutor([],
+                new BackupExecutionResult(BackupExecutionStatus.Completed)),
+            execution: new ThrowingExecutionOrchestrator());
+
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
+        session = workflow.PrepareBackup(session, "backups", "journals");
+        session = await workflow.ExecuteBackupAsync(session, cancellation.Token);
+        session = workflow.PrepareExecution(session);
+        cancellation.Cancel();
+        session = await workflow.ExecuteAsync(session, cancellation.Token);
+
+        Assert.Equal(MigrationWorkflowState.RecoveryRequired, session.State);
+        Assert.Equal(MigrationWorkflowFailureKind.ExecutionRecoveryRequired, session.FailureKind);
+    }
+
+    [Fact]
+    public void SessionConstructionIsApplicationOwned()
+    {
+        var constructor = typeof(MigrationWorkflowSession).GetConstructor(
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance,
+            binder: null,
+            [typeof(MigrationWorkflowState)],
+            modifiers: null);
+
+        Assert.Null(constructor);
+        Assert.All(
+            typeof(MigrationWorkflowSession).GetProperties(),
+            property => Assert.False(property.SetMethod?.IsPublic ?? false));
+    }
+
+    private static async Task<MigrationWorkflowSession> ReadyForBackup(MigrationWorkflow workflow)
+    {
+        MigrationWorkflowSession session = await InspectedSession(workflow);
         session = workflow.ConfigurePlan(session, ["options.txt"], null);
         return workflow.CreatePreview(session);
+    }
+
+    private static async Task<MigrationWorkflowSession> InspectedSession(MigrationWorkflow workflow)
+    {
+        MigrationWorkflowSession session = workflow.SelectRoots(
+            workflow.CreateSession(), "source", "destination");
+        return await workflow.InspectAsync(session, TestContext.Current.CancellationToken);
     }
 
     private static MigrationWorkflow CreateWorkflow(
@@ -244,24 +362,44 @@ public sealed class MigrationWorkflowTests
         public MigrationPreview CreatePreview(MigrationPlan plan) => preview;
     }
 
-    private sealed class StubBackupPlanner : IBackupPlanner
+    private sealed class StubBackupPlanner(BackupPlan? backupPlan = null) : IBackupPlanner
     {
         public BackupPlan CreateBackupPlan(MigrationPlan migrationPlan) =>
-            new(BackupPlanStatus.NotRequired, [], []);
+            backupPlan ?? new(BackupPlanStatus.NotRequired, [], []);
 
         public BackupManifestDraft CreateManifestDraft(BackupPlan backupPlan) =>
             throw new NotSupportedException();
     }
 
-    private sealed class StubBackupExecutor(List<string> calls) : IBackupExecutor
+    private sealed class StubBackupExecutor(
+        List<string> calls,
+        BackupExecutionResult? result = null) : IBackupExecutor
     {
         public Task<BackupExecutionResult> ExecuteAsync(string destinationRoot, string backupParent,
             BackupPlan plan, CancellationToken cancellationToken = default)
         {
             calls.Add("backup");
-            return Task.FromResult(new BackupExecutionResult(BackupExecutionStatus.NotRequired));
+            return Task.FromResult(result ?? new BackupExecutionResult(BackupExecutionStatus.NotRequired));
         }
     }
+
+    private sealed class ThrowingExecutionOrchestrator : IExecutionOrchestrator
+    {
+        public Task<ExecutionOrchestrationResult> ExecuteAsync(
+            ExecutionOrchestrationRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<ExecutionOrchestrationResult>(
+                new OperationCanceledException(cancellationToken));
+    }
+
+    private static BackupPlan RequiredBackupPlan() =>
+        new(
+            BackupPlanStatus.Ready,
+            [new BackupPlanEntry(
+                "config",
+                ExpectedEntryKind.Directory,
+                EntryState.Directory)],
+            []);
 
     private sealed class StubExecutionOrchestrator(List<string> calls,
         ExecutionOrchestrationStatus status = ExecutionOrchestrationStatus.Completed) : IExecutionOrchestrator

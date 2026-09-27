@@ -28,8 +28,8 @@ public interface IMigrationWorkflow
 
     MigrationWorkflowSession PrepareBackup(
         MigrationWorkflowSession session,
-        string backupParent,
-        string journalParent);
+        string? backupParent,
+        string? journalParent);
 
     Task<MigrationWorkflowSession> ExecuteBackupAsync(
         MigrationWorkflowSession session,
