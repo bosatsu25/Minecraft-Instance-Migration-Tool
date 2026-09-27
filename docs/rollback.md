@@ -112,16 +112,41 @@ Before mutation, an inability to prove safety is a guard rejection. Examples inc
 After mutation starts, any failure is `RecoveryRequired`. The code never reports a partially completed
 rollback as successful.
 
-## Deliberate limitation: rollback is not resumable yet
+## Phase 3.8 durable rollback-attempt journal
 
-Phase 3.7 does not add a durable rollback-attempt journal.
+Automatic rollback now creates a separate `mim-rollback-{guid}.jsonl` artifact before the first action.
+The journal is bound to the exact ordered RollbackPlan and contains no absolute migration/backup paths.
 
-A process crash or IO failure during recursive delete or restore can leave partial rollback state.
-The original execution journal remains the source of evidence, but it does not record which rollback
-sub-actions completed.
+Each action follows:
 
-A later automatic attempt must pass the original post-write fingerprint guard again. Partial rollback
-normally makes that fingerprint differ, causing a safe stop and manual recovery rather than a blind
-retry.
+```text
+NotStarted
+   |
+   v
+durable Started
+   |
+   v
+guarded rollback IO
+   |
+   +-- Applied       -> durable Applied
+   +-- GuardRejected -> durable GuardRejected
+   +-- partial/error -> durable Failed
+```
 
-A future phase may add durable rollback-attempt records before exposing recovery controls broadly in UI.
+The journal is append-only at the logical level, checksum-chained, and flushed to disk before an
+acknowledged transition returns. A later action cannot start unless every earlier action is durably Applied.
+
+If the process disappears after Started but before a terminal record is durable, reload maps that action
+to `Uncertain`. This is the critical crash fact that Phase 3.7 could not persist.
+
+### Deliberate limitation: diagnosis is durable, automatic resume is not
+
+Phase 3.8 records which rollback actions are NotStarted, Applied, GuardRejected, Failed, or Uncertain.
+It does **not** automatically resume an interrupted rollback.
+
+A durable Uncertain means mutation may or may not have completed. The original execution fingerprint guard
+usually prevents blind replay once state is partial, but Phase 3.8 does not infer success from filesystem
+appearance alone.
+
+A future recovery UX/policy may inspect this journal and guide manual recovery or define a stronger
+independently-verifiable resume protocol.
