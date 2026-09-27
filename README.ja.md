@@ -5,9 +5,9 @@
 MOD パックや起動構成を変更する際に、旧インスタンスから新インスタンスへ
 Minecraft のユーザーデータを選択的に移行する Windows デスクトップアプリを計画しています。
 
-**現在は Phase 3.7 の Guarded Rollback IO です。** UI は引き続き Inspector / Preview のみです。
-journal で Applied が証明された step に対し、Copy は post-write fingerprint が一致する間だけ削除し、
-Replace は現在も有効な backup を再検証してから restore する guarded rollback を Infrastructure に追加しました。
+**現在は Phase 3.8 の Durable Rollback Attempt Journal です。** UI は引き続き Inspector / Preview のみです。
+guarded rollback は destructive action の前に専用の append-only / checksum 付き rollback-attempt journal を作成し、
+各 action で durable Started → storage mutation → durable Applied / GuardRejected / Failed を記録するようになりました。
 Execute / Rollback UI と report はまだありません。
 
 ## 目的
@@ -108,7 +108,8 @@ dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.
 11. Phase 3.5: live revalidation + execute orchestration contract。mutation / verifier は port のみ。
 12. Phase 3.6: Windows handle-relative Copy / Replace mutation + independent post-write verification。
 13. Phase 3.7: fingerprint guard 付き DeleteCreatedEntry / RestoreFromBackup rollback IO。
-14. 以後は end-to-end Execute UI / Report → rollback attempt の durable 化 → release hardening を個別に実装。
+14. Phase 3.8: crash-safe Started / terminal evidence を持つ durable rollback-attempt journal。
+15. 以後は end-to-end Execute UI / Report → 明示的な recovery UX → release hardening を個別に実装。
 
 ノード単位で Issue / PR を分け、受け入れテストとともに進めます。
 旧版由来の移行候補は [migration rules](docs/migration-rules.md) に整理しています。
@@ -116,4 +117,4 @@ Phase 2.1 では legacy の Recommended 方向として、既知候補のうち 
 だけを既定 OFF とし、それ以外を選択します。destination conflict は明示的に Skip / Replace
 を指定しない限り未解決のままです。Phase 2.2 の UI dry run は Recommended preset を使い、
 未解決 conflict をそのまま表示します。旧版 `hanemod-client.json` exclusion、Merge、
-size estimate、互換性保証、Execute UI / Report、再開可能な durable rollback-attempt journal は未実装です。
+size estimate、互換性保証、Execute UI / Report、自動 rollback resume は未実装です。
