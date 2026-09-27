@@ -117,6 +117,11 @@ live migration inputs and bind the validated backup to an execution journal.
 Phase 3.3 consumes completed-backup validation as recovery evidence. An applied Replace can become an
 automatic `RestoreFromBackup` rollback requirement only when backup validation is currently valid.
 
-That requirement is still only a Domain plan. Future rollback IO must revalidate both the backup and
-the current destination state against the execution journal's post-write fingerprint before replacing
-anything. A stale or edited destination must become recovery-required rather than being overwritten.
+Phase 3.7 implements that requirement. Before RestoreFromBackup, Application revalidates the completed
+backup artifact against its BackupPlan. Infrastructure then fingerprints the held current destination
+entry and compares it with the execution journal's post-write fingerprint before deleting anything.
+The backup entry is fingerprinted before restore and again after copy; the restored destination must
+match the stable backup. A stale or edited destination is guard-rejected rather than overwritten.
+
+This does not make rollback transactional. A failure after destination removal has begun is reported as
+RecoveryRequired; Phase 3.7 does not persist a separate durable rollback-attempt journal.

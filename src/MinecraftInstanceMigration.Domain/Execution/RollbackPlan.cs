@@ -1,3 +1,5 @@
+using MinecraftInstanceMigration.Domain.Inspection;
+
 namespace MinecraftInstanceMigration.Domain.Execution;
 
 public enum RollbackPlanStatus
@@ -37,6 +39,7 @@ public sealed record RollbackBlocker(
 public sealed record RollbackPlanEntry(
     int Order,
     string Name,
+    ExpectedEntryKind ExpectedKind,
     ExecutionOperationKind Operation,
     RollbackActionKind Action,
     ExecutionContentFingerprint? ExpectedCurrentFingerprint = null,

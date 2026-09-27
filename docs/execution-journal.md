@@ -188,3 +188,25 @@ fails, the orchestrator persists Failed where possible and returns RecoveryRequi
 
 Rollback IO remains separate work and must use the journal fingerprint guard before deleting or
 restoring any destination content.
+
+
+## Phase 3.7 rollback binding
+
+The durable execution journal's Applied fingerprint is now an active rollback safety guard.
+
+`RollbackPlanPolicy` propagates the original expected entry kind into each rollback action and keeps
+actions in reverse execution order. `RollbackExecutor` refuses automatic work for Blocked or
+RecoveryRequired plans.
+
+For DeleteCreatedEntry, Windows rollback storage fingerprints the exact held destination node before
+deleting it. If it no longer equals the Applied fingerprint, rollback stops without mutation.
+
+For RestoreFromBackup, the completed backup artifact is revalidated immediately before the action.
+The exact held destination node must still equal the Applied fingerprint. The backup entry is then
+fingerprinted, the destination is removed, backup content is copied create-only, and both backup and
+restored destination are fingerprinted again.
+
+The execution journal is not extended with rollback-attempt records in Phase 3.7. Therefore a failure
+after rollback mutation begins is reported as RecoveryRequired and must not be described as resumable
+automatic rollback. A later retry must still pass the original fingerprint guard; partial rollback
+normally causes that guard to fail closed.
