@@ -15,7 +15,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     private MigrationWorkflowSession? session;
     private MigrationPreview? preview;
     private IReadOnlyList<MigrationSelectionEntryViewModel> choices = [];
-    private MigrationPreviewEntry? selectedEntry;
+    private MigrationSelectionEntryViewModel? selectedEntry;
     private bool hasPendingChoices;
     private string status = "Choose source and destination folders, then generate a dry-run preview.";
 
@@ -102,9 +102,9 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         set => SetPath(ref destinationPath, value);
     }
 
-    public IReadOnlyList<MigrationPreviewEntry> Entries => preview?.Entries ?? [];
+    public IReadOnlyList<MigrationSelectionEntryViewModel> Entries => choices;
 
-    public MigrationPreviewEntry? SelectedEntry
+    public MigrationSelectionEntryViewModel? SelectedEntry
     {
         get => selectedEntry;
         set
@@ -149,11 +149,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
           $"No source: {preview.NoSourceCount}; unresolved: {preview.NeedsDecisionCount}; " +
           $"blocked: {preview.BlockedCount}; backup required: {preview.RequiresBackup}.";
 
-    private MigrationSelectionEntryViewModel? SelectedChoice =>
-        selectedEntry is null
-            ? null
-            : choices.FirstOrDefault(choice =>
-                string.Equals(choice.Name, selectedEntry.Name, StringComparison.Ordinal));
+    private MigrationSelectionEntryViewModel? SelectedChoice => selectedEntry;
 
     public async Task GeneratePreviewAsync()
     {
@@ -329,8 +325,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             .ToArray();
         selectedEntry = selectedName is null
             ? null
-            : preview.Entries.FirstOrDefault(entry =>
-                string.Equals(entry.Name, selectedName, StringComparison.Ordinal));
+            : choices.FirstOrDefault(choice =>
+                string.Equals(choice.Name, selectedName, StringComparison.Ordinal));
 
         hasPendingChoices = false;
         status = preview.Status switch
