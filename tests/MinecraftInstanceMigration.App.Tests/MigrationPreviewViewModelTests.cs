@@ -53,7 +53,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         await model.GeneratePreviewAsync();
 
-        MigrationPreviewEntry saves = Entry(model, "saves");
+        MigrationSelectionEntryViewModel saves = Entry(model, "saves");
         model.SelectedEntry = saves;
         Assert.True(model.IncludeSelectedCommand.CanExecute(null));
         model.IncludeSelectedCommand.Execute(null);
@@ -83,7 +83,7 @@ public sealed class MigrationPreviewViewModelTests
         await model.GeneratePreviewAsync();
 
         Assert.Equal("NeedsDecision", model.PlanStatus);
-        MigrationPreviewEntry config = Entry(model, "config");
+        MigrationSelectionEntryViewModel config = Entry(model, "config");
         model.SelectedEntry = config;
         Assert.True(model.ReplaceConflictCommand.CanExecute(null));
         model.ReplaceConflictCommand.Execute(null);
@@ -110,7 +110,7 @@ public sealed class MigrationPreviewViewModelTests
 
         await model.GeneratePreviewAsync();
 
-        MigrationPreviewEntry config = Entry(model, "config");
+        MigrationSelectionEntryViewModel config = Entry(model, "config");
         model.SelectedEntry = config;
         Assert.True(model.SkipConflictCommand.CanExecute(null));
         model.SkipConflictCommand.Execute(null);
@@ -135,7 +135,7 @@ public sealed class MigrationPreviewViewModelTests
         model.DestinationPath = "destination";
         await model.GeneratePreviewAsync();
 
-        MigrationPreviewEntry saves = Entry(model, "saves");
+        MigrationSelectionEntryViewModel saves = Entry(model, "saves");
         model.SelectedEntry = saves;
         Assert.True(model.IncludeSelectedCommand.CanExecute(null));
         model.IncludeSelectedCommand.Execute(null);
@@ -291,7 +291,7 @@ public sealed class MigrationPreviewViewModelTests
             new NeverCalledExecutionOrchestrator());
     }
 
-    private static MigrationPreviewEntry Entry(MigrationPreviewViewModel model, string name) =>
+    private static MigrationSelectionEntryViewModel Entry(MigrationPreviewViewModel model, string name) =>
         Assert.Single(model.Entries, entry => entry.Name == name);
 
     private static InstanceInspectionResult Inspection(params (string Name, EntryState State)[] overrides)
