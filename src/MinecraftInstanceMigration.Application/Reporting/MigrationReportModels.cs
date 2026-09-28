@@ -39,7 +39,8 @@ public sealed record MigrationReportMigrationSummary(
     int SkipCount,
     int ExcludedCount,
     int SourceMissingCount,
-    int BlockedCount);
+    int BlockedCount,
+    IReadOnlyList<string> ContentRuleSummaries);
 
 public sealed record MigrationReportExecutionSummary(
     int PlannedWriteCount,

@@ -1,7 +1,15 @@
+using MinecraftInstanceMigration.Domain.Rules;
+
 namespace MinecraftInstanceMigration.Domain.Planning;
 
 public sealed class MigrationPreview
 {
+    private static readonly IReadOnlyList<string> KnownContentRuleSummaries =
+        Array.AsReadOnly(new[]
+        {
+            KnownMigrationContentRules.HanemodClientExclusionSummary,
+        });
+
     public MigrationPreview(
         MigrationPlanStatus status,
         IEnumerable<MigrationPreviewEntry> entries,
@@ -25,6 +33,8 @@ public sealed class MigrationPreview
     public IReadOnlyList<string> UnknownSelections { get; }
 
     public IReadOnlyList<ConflictDecisionIssue> ConflictDecisionIssues { get; }
+
+    public IReadOnlyList<string> ContentRuleSummaries => KnownContentRuleSummaries;
 
     public int CopyCount => Entries.Count(entry => entry.Action == MigrationPreviewAction.Copy);
 

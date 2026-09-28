@@ -29,6 +29,7 @@ public sealed class MigrationReportViewModelTests
         Assert.False(model.HasRecovery);
         Assert.Equal("Completed", model.OverallOutcome);
         Assert.Contains("Copy: 1", model.MigrationSummary, StringComparison.Ordinal);
+        Assert.Contains("hanemod-client.json", model.MigrationSummary, StringComparison.Ordinal);
         Assert.Contains("verification: Succeeded", model.ExecutionSummary, StringComparison.Ordinal);
         Assert.DoesNotContain("private", Combined(model), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("C:\\", Combined(model), StringComparison.OrdinalIgnoreCase);

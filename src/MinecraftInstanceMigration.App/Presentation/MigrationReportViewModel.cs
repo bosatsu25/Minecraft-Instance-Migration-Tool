@@ -27,7 +27,8 @@ public sealed class MigrationReportViewModel(
         : $"Selected: {report.Migration.SelectedEntryCount}; Copy: {report.Migration.CopyCount}; " +
           $"Replace: {report.Migration.ReplaceCount}; Skip: {report.Migration.SkipCount}; " +
           $"Excluded: {report.Migration.ExcludedCount}; source missing: {report.Migration.SourceMissingCount}; " +
-          $"blocked: {report.Migration.BlockedCount}.";
+          $"blocked: {report.Migration.BlockedCount}. Rules: " +
+          string.Join(" ", report.Migration.ContentRuleSummaries);
 
     public string ExecutionSummary => report is null
         ? ""

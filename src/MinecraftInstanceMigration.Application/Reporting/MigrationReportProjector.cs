@@ -24,7 +24,8 @@ public sealed class MigrationReportProjector : IMigrationReportProjector
             preview.SkipCount,
             preview.Entries.Count(entry => entry.Action == MigrationPreviewAction.Excluded),
             preview.NoSourceCount,
-            preview.BlockedCount);
+            preview.BlockedCount,
+            Array.AsReadOnly(preview.ContentRuleSummaries.ToArray()));
         int plannedWrites = preview.CopyCount + preview.ReplaceCount;
 
         if (!TryCreateOverallOutcome(

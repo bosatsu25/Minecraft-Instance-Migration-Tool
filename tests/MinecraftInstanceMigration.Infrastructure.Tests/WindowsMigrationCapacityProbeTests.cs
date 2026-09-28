@@ -7,6 +7,28 @@ namespace MinecraftInstanceMigration.Infrastructure.Tests;
 public sealed class WindowsMigrationCapacityProbeTests
 {
     [Fact]
+    public async Task DirectoryMeasurementExcludesHanemodClientFilesAtEveryDepth()
+    {
+        using var fixture = new InspectionFixture();
+        Directory.CreateDirectory(fixture.At("config/nested"));
+        await File.WriteAllBytesAsync(fixture.At("config/normal.bin"), new byte[11],
+            TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(fixture.At("config/hanemod-client.json"), new byte[101],
+            TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(fixture.At("config/nested/HANEMOD-CLIENT.JSON"), new byte[103],
+            TestContext.Current.CancellationToken);
+
+        LogicalSizeProbeResult result = await new WindowsMigrationCapacityProbe().MeasureAsync(
+            fixture.Root,
+            "config",
+            ExpectedEntryKind.Directory,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(LogicalSizeProbeStatus.Available, result.Status);
+        Assert.Equal(11, result.LogicalBytes);
+    }
+
+    [Fact]
     public async Task MeasuresFileLogicalSize()
     {
         using var fixture = new InspectionFixture();

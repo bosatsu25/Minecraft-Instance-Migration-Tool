@@ -115,10 +115,10 @@ This phase intentionally does not define Merge behavior. Directory merge needs n
 collision ordering, exclusion precedence, containment, backup, and rollback semantics that the
 current top-level metadata plan cannot prove.
 
-The legacy `hanemod-client.json` exclusion is also still unresolved because the supplied product
-brief does not establish whether it means one exact relative path, basename-at-any-depth, or another
-case-insensitive Windows matching rule. No execution path exists yet, so no code may claim the
-exclusion is enforced.
+Phase 4.6 resolves the legacy `hanemod-client.json` exclusion from the inspected reference code.
+`KnownMigrationContentRules` owns exact-basename, case-insensitive Windows matching for files at every
+depth inside selected directory candidates. Infrastructure applies that rule to payload traversal,
+fingerprints, Backup, rollback, and capacity; WPF only projects the bounded rule summary.
 
 
 ## Phase 2.2 Preview / Dry Run contract
@@ -638,7 +638,8 @@ Inspect → Plan → Preview / Dry Run → Backup → Execute → Verify → Rep
   observations. No destination creation or modification. Unknown/inaccessible entries are
   reported as incomplete inspection, not silently treated as absent.
 - **Plan:** Domain produces explicit top-level candidate intent, selection defaults, blockers, and typed
-  destination conflict intent. Nested exclusions, Merge behavior, compatibility, and execution state remain separate.
+  destination conflict intent. The known content exclusion is Domain-owned; Merge behavior,
+  compatibility analysis, and execution state remain separate.
 - **Preview / Dry Run:** The implemented read-only preview presents the same plan without writes,
   including exclusions, planned actions, blockers, unresolved conflicts, and backup intent. Phase 4.5
   measures only plan-selected write and backup entries through a bounded, no-follow capacity adapter.
@@ -703,3 +704,19 @@ The workflow session owns capacity evidence. `CanPrepareBackup` requires Ready e
 Reconfiguration and new Preview creation clear capacity alongside downstream evidence. The ViewModel
 exposes only a Check Capacity command and read-only projections; it does not inspect drives or duplicate
 the margin/same-volume policy. See [capacity preflight](capacity-preflight.md).
+
+## Phase 4.6 ModPackTransfer compatibility closure
+
+The inspected legacy feature inventory and traceability matrix live in
+[ModPackTransfer compatibility closure](modpacktransfer-compatibility.md). The Domain owns the fixed
+`hanemod-client.json` basename rule and the ordered All/Recommended presets. Application models expose
+the rule summary through Preview and Report evidence. Infrastructure performs the same filtered traversal
+for Copy, Replace, Backup, independent verification, rollback restore, and logical-size measurement.
+
+Replace removes non-excluded destination content while preserving an existing excluded file and the
+directories needed to contain it. Source copies never introduce the excluded file. Backup and rollback
+operate only on the included payload, so the protected destination file is not accidentally captured,
+deleted, or restored. Reparse points still fail closed before being treated as an excluded ordinary file.
+
+This is a fixed product rule. UI code cannot add patterns, Infrastructure cannot invent another filter,
+and Phase 4.6 does not introduce Merge semantics or compatibility analysis.

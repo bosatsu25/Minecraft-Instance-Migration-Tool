@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 4.5 の Capacity / Free-space Preflight を実装済みです。**
+**Phase 4.6 の ModPackTransfer compatibility closure を実装済みです。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -15,6 +15,9 @@ WPF UI から Inspector、Migration Preview、selection / conflict 編集、明�
 必要時の Backup、検証付き Copy / Replace 実行、Recovery 診断、確認付き guarded rollback、
 読み取り専用 Migration Report まで操作できます。
 選択中の safety workspace に対する最新の容量確認も、実行前の必須条件です。
+ModPackTransfer の既存 migration feature set は、追跡可能な compatibility matrix と回帰テストで
+確認しています。11候補を維持しつつ、overwrite、path、backup、verification、rollback、
+error redaction、capacity の安全性を強化した後継実装です。
 
 ## 現在の実装範囲
 
@@ -364,7 +367,6 @@ BCL と明示的な port / adapter を中心に構成しています。
 
 - report persistence / ユーザー操作による export
 - automatic rollback resume
-- legacy `hanemod-client.json` exclusion
 - Merge conflict semantics
 - Minecraft / mod / loader compatibility 判定
 - exact NTFS clone semantics
@@ -438,14 +440,15 @@ warnings は build failure として扱います。
 18. Phase 4.3 — Recovery Diagnosis / Guarded Rollback UI
 19. Phase 4.4 — 読み取り専用 Migration Report
 20. Phase 4.5 — Capacity / Free-space Preflight
+21. Phase 4.6 — ModPackTransfer compatibility closure
 
 次の大きな領域:
 
-21. **Phase 4.6 — ModPackTransfer compatibility closure**
-22. Phase 5.0 — Release hardening
+22. **Phase 5.0 — Release hardening**
 23. Phase 5.1 — v1.0 release validation
 
-旧版由来の移行候補と未解決 rule は [migration rules](docs/migration-rules.md)、
+調査した旧版機能と回帰証拠は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md)、
+移行候補と rule は [migration rules](docs/migration-rules.md)、
 rollback の保証範囲は [rollback](docs/rollback.md)、
 execution evidence は [execution journal](docs/execution-journal.md) を参照してください。
 Report projection と persistence 境界は [report](docs/report.md) を参照してください。

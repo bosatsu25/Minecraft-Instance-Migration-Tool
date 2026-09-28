@@ -65,6 +65,12 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ResetRecommendedCommand = new RelayCommand(
             ResetRecommended,
             () => CanEditChoices && preview is not null);
+        SelectAllCommand = new RelayCommand(
+            SelectAll,
+            () => CanEditChoices && preview is not null);
+        SelectNoneCommand = new RelayCommand(
+            SelectNone,
+            () => CanEditChoices && preview is not null);
         IncludeSelectedCommand = new RelayCommand(
             () => SetSelectedIncluded(true),
             () => CanEditChoices && SelectedChoice is { Selected: false });
@@ -106,6 +112,10 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     public RelayCommand ApplyChoicesCommand { get; }
 
     public RelayCommand ResetRecommendedCommand { get; }
+
+    public RelayCommand SelectAllCommand { get; }
+
+    public RelayCommand SelectNoneCommand { get; }
 
     public RelayCommand IncludeSelectedCommand { get; }
 
@@ -256,6 +266,10 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         : $"Copy: {preview.CopyCount}; Replace: {preview.ReplaceCount}; Skip: {preview.SkipCount}; " +
           $"No source: {preview.NoSourceCount}; unresolved: {preview.NeedsDecisionCount}; " +
           $"blocked: {preview.BlockedCount}; backup required: {preview.RequiresBackup}.";
+
+    public string ContentRuleSummary => preview is null
+        ? ""
+        : string.Join(" ", preview.ContentRuleSummaries);
 
     private MigrationSelectionEntryViewModel? SelectedChoice => selectedEntry;
 
@@ -642,6 +656,38 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ApplyChoices();
     }
 
+    private void SelectAll()
+    {
+        if (session is null || preview is null || IsBusy)
+        {
+            return;
+        }
+
+        var all = MigrationSelectionPresets.All.ToHashSet(StringComparer.Ordinal);
+        foreach (MigrationSelectionEntryViewModel choice in choices)
+        {
+            choice.Selected = all.Contains(choice.Name);
+        }
+
+        ApplyChoices();
+    }
+
+    private void SelectNone()
+    {
+        if (session is null || preview is null || IsBusy)
+        {
+            return;
+        }
+
+        foreach (MigrationSelectionEntryViewModel choice in choices)
+        {
+            choice.Selected = false;
+            choice.ConflictDecision = DestinationConflictDecision.Unresolved;
+        }
+
+        ApplyChoices();
+    }
+
     private void SetSelectedIncluded(bool included)
     {
         MigrationSelectionEntryViewModel? choice = SelectedChoice;
@@ -854,6 +900,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         Notify(nameof(Entries));
         Notify(nameof(PlanStatus));
         Notify(nameof(Summary));
+        Notify(nameof(ContentRuleSummary));
         Notify(nameof(Status));
         Notify(nameof(HasPendingChoices));
     }
@@ -880,6 +927,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     {
         ApplyChoicesCommand.Refresh();
         ResetRecommendedCommand.Refresh();
+        SelectAllCommand.Refresh();
+        SelectNoneCommand.Refresh();
         IncludeSelectedCommand.Refresh();
         ExcludeSelectedCommand.Refresh();
         SkipConflictCommand.Refresh();
