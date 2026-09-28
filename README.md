@@ -5,7 +5,7 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.6 ModPackTransfer compatibility closure is implemented.**
+**Status: Phase 4.6 ModPackTransfer compatibility closure is complete and merged into `main`. Phase 5.0 Release Hardening is next.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
@@ -16,8 +16,13 @@ confirmation, Backup when required, verified Copy / Replace execution, Recovery 
 explicitly confirmed guarded rollback, and a read-only Migration Report.
 Execution also requires a current capacity preflight result for the selected safety workspace.
 The inspected ModPackTransfer migration feature set is covered by a traceable compatibility matrix
-and regression tests. The successor keeps the same eleven migration candidates while strengthening
-overwrite, path, backup, verification, rollback, error-redaction, and capacity behavior.
+and regression tests. Against reference commit `e174cdac8229f3e061175a36121d55db01961452`,
+18 migration-relevant behaviors were inventoried and the compatibility matrix contains **0 Missing**
+items. The successor keeps the same eleven migration candidates while strengthening overwrite, path,
+backup, verification, rollback, error-redaction, and capacity behavior.
+
+The Phase 4.6 verification baseline is **429 unit/integration tests + 6 FlaUI UI smoke tests**, with
+0 build warnings/errors and hosted `verify` / `ui-smoke` checks green before merge.
 
 ## Current implementation
 
@@ -177,6 +182,25 @@ Changing roots, choices, Preview, or safety workspace invalidates the result. Ex
 the current Preview and workspace have a Ready result. This preflight reduces obvious capacity failures;
 execution still performs live validation and handles disk-full or other IO failures conservatively.
 See [capacity preflight](docs/capacity-preflight.md).
+
+## Phase 4.6 ModPackTransfer compatibility closure
+
+Phase 4.6 audited the reference `TaichiServer/ModPackTransfer` implementation at commit
+`e174cdac8229f3e061175a36121d55db01961452` and recorded 18 user-visible or
+migration-relevant behaviors in a traceable compatibility matrix. There are no `Missing` rows.
+
+The legacy `hanemod-client.json` exclusion is now an explicit, Domain-owned migration-content rule.
+It applies case-insensitively at every directory depth and is used consistently by Copy, Replace
+preservation, Backup, Rollback restore, independent verification/fingerprinting, capacity measurement,
+Preview, and Report projection. Similar filenames are not excluded.
+
+Legacy behaviors that would weaken safety are intentionally represented by safer equivalents rather than
+copied literally: unconditional overwrite becomes explicit Skip/Replace, raw recursive copy becomes
+handle-relative no-follow traversal, and Replace retains verified Backup, live revalidation, durable
+journaling, independent verification, guarded rollback, and capacity gating.
+
+See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the full
+18-item inventory, reference locations, automated regression evidence, and intentional safer differences.
 
 ## What the current UI can do
 
