@@ -720,3 +720,21 @@ deleted, or restored. Reparse points still fail closed before being treated as a
 
 This is a fixed product rule. UI code cannot add patterns, Infrastructure cannot invent another filter,
 and Phase 4.6 does not introduce Merge semantics or compatibility analysis.
+
+## Phase 5.0 release boundary
+
+Release packaging stays outside Domain, Application, and Infrastructure. `Directory.Build.props` owns
+product/version metadata, the App publish profile fixes the `win-x64` self-contained shape, and
+`eng/release` owns package construction and validation. The WPF layer reads its About values from
+compiled assembly metadata instead of duplicating version policy.
+
+The release output is an untrimmed folder so existing WPF and Windows native interop behavior is not
+transformed without dedicated compatibility evidence. Inno Setup wraps the same published directory in
+a per-user installer; its stable AppId defines upgrade identity and it owns only application files and
+shortcuts. Migration data, backup, and journals remain outside installer ownership.
+
+The release workflow has an explicit trust boundary. Pull requests and manual dry-runs can build unsigned
+packages with read-only repository permission. Only a repository version tag can request production
+signing and the tag path fails when secrets, timestamp configuration, or Authenticode verification are
+missing. See [release](release.md), [install](install.md), and
+[ADR 0002](adr/0002-windows-release-packaging.md).

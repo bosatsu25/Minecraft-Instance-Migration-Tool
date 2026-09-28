@@ -5,7 +5,7 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.6 ModPackTransfer compatibility closure is complete and merged into `main`. Phase 5.0 Release Hardening is next.**
+**Status: Phase 5.0 release hardening is implemented on the current feature branch. Stable release remains blocked by the original icon, repository license, production signing, hosted dry-run, and Phase 5.1 validation.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
@@ -23,6 +23,10 @@ backup, verification, rollback, error-redaction, and capacity behavior.
 
 The Phase 4.6 verification baseline is **429 unit/integration tests + 6 FlaUI UI smoke tests**, with
 0 build warnings/errors and hosted `verify` / `ui-smoke` checks green before merge.
+
+Phase 5.0 fixes development version `0.9.0` and prepares a Windows 11 x64 self-contained folder publish,
+portable ZIP, per-user Inno Setup installer, SHA-256 checksums, assembly-derived About display, and a
+least-privilege release workflow. It does not create a `v1.0.0` tag or public release.
 
 ## Current implementation
 
@@ -389,6 +393,20 @@ The design primarily uses the BCL and explicit ports/adapters.
 
 See [architecture](docs/architecture.md) for details.
 
+## Installation status
+
+The pipeline prepares these fixed artifact names:
+
+- `MinecraftInstanceMigrationTool-0.9.0-win-x64.zip`
+- `MinecraftInstanceMigrationTool-0.9.0-win-x64-setup.exe`
+- `SHA256SUMS.txt`
+
+There is no stable download yet. Phase 5.1 must validate the artifacts before `v1.0.0`. The installer is
+per-user; the ZIP is portable; both are self-contained. See [install](docs/install.md) and
+[release process](docs/release.md) for checksum, signing, upgrade, and support details.
+
+This is an unofficial community tool and is not affiliated with Mojang Studios or Microsoft.
+
 ## Not implemented yet
 
 The following are not complete:
@@ -398,7 +416,9 @@ The following are not complete:
 - Merge conflict semantics
 - Minecraft / mod / loader compatibility analysis
 - exact NTFS clone semantics
-- release packaging / signing / installer
+- production Authenticode signing and stable release publication
+- original application icon and owner-selected repository license
+- clean-machine install / upgrade / migration validation
 
 In particular, **being safe to copy is not the same as being compatible with the target instance**.
 The current implementation does not claim compatibility.
@@ -472,7 +492,7 @@ Implemented:
 
 Next major areas:
 
-22. **Phase 5.0 — Release hardening**
+22. **Phase 5.0 — Release hardening (implementation ready; release blockers and hosted evidence pending)**
 23. Phase 5.1 — v1.0 release validation
 
 See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the inspected

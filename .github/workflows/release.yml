@@ -1,0 +1,161 @@
+name: Release dry-run
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'README.ja.md'
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore
+        run: dotnet restore
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+      - name: Test
+        run: dotnet test --configuration Release --no-build --no-restore
+      - name: Verify formatting
+        run: dotnet format --verify-no-changes --no-restore
+
+  ui-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore UI tests
+        run: dotnet restore tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj
+      - name: Run WPF UI smoke
+        run: dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release --no-restore
+
+  release-package:
+    needs: [verify, ui-smoke]
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install verified Inno Setup compiler
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $installer
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Pyrsys B\.V\.') {
+            throw 'Inno Setup compiler signature verification failed.'
+          }
+          $installDir = Join-Path $env:RUNNER_TEMP 'InnoSetup'
+          $process = Start-Process $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
+          "ISCC_PATH=$installDir\ISCC.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Prepare trusted signing certificate
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+          TIMESTAMP_URL: ${{ vars.WINDOWS_SIGNING_TIMESTAMP_URL }}
+        run: |
+          if (-not $env:CERTIFICATE_BASE64 -or -not $env:CERTIFICATE_PASSWORD -or -not $env:TIMESTAMP_URL) {
+            throw 'Trusted tag signing configuration is incomplete.'
+          }
+          $certificate = Join-Path $env:RUNNER_TEMP 'windows-signing.pfx'
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          "SIGNING_CERTIFICATE_PATH=$certificate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SIGNING_TIMESTAMP_URL=$env:TIMESTAMP_URL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Locate SignTool
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signTool) { throw 'SignTool was not found.' }
+          "SIGNTOOL_PATH=$($signTool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Build and verify unsigned release artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: pwsh
+        run: |
+          ./eng/release/Build-Release.ps1 -IsccPath $env:ISCC_PATH
+      - name: Build and verify signed release artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          MIM_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          ./eng/release/Build-Release.ps1 `
+            -IsccPath $env:ISCC_PATH `
+            -ExpectedVersion $env:GITHUB_REF_NAME.Substring(1) `
+            -RequireSigning `
+            -SignToolPath $env:SIGNTOOL_PATH `
+            -SigningCertificatePath $env:SIGNING_CERTIFICATE_PATH `
+            -TimestampUrl $env:SIGNING_TIMESTAMP_URL
+      - name: Validate per-user install and uninstall
+        shell: pwsh
+        run: |
+          $props = [xml](Get-Content Directory.Build.props -Raw)
+          $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+          ./eng/release/Test-Installer.ps1 -InstallerPath "artifacts/release/MinecraftInstanceMigrationTool-$version-win-x64-setup.exe"
+      - name: Upload release dry-run artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MinecraftInstanceMigrationTool-release-${{ github.run_id }}
+          path: artifacts/release/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove temporary signing certificate
+        if: always() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Remove-Item -LiteralPath $env:SIGNING_CERTIFICATE_PATH -Force -ErrorAction SilentlyContinue
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release-package
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download signed artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: MinecraftInstanceMigrationTool-release-${{ github.run_id }}
+          path: artifacts/release
+      - name: Create draft GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME artifacts/release/* --draft --verify-tag --title $env:GITHUB_REF_NAME --notes-file docs/release-notes-template.md

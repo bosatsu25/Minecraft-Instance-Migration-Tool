@@ -624,3 +624,20 @@ conflict, privacy, and UI smoke suites remain regression gates.
 
 The traceability matrix names the inspected reference commit and links every original behavior to the new
 implementation and deterministic tests. A `Missing` row blocks the Phase 4.6 completion assessment.
+
+## Phase 5.0: release hardening
+
+App tests verify assembly-derived product/version information and configuration invariants for the central
+version, `win-x64`, self-contained publishing, disabled trimming/AOT/single-file, PDB omission, and the
+per-user x64 installer. Existing layer and migration tests remain unchanged.
+
+`Build-Release.ps1` performs a real RID restore/publish, rejects source/test/fixture/debug files, checks
+Windows version metadata, launches the published executable, creates the portable ZIP and installer,
+checks signature state, writes checksums last, and reopens the ZIP for content verification.
+`Test-Installer.ps1` silently installs into one owned temporary directory, verifies the executable and
+uninstaller, then uninstalls it. Phase 5.1 still owns clean-machine and real upgrade validation.
+
+Hosted completion requires the ordinary `verify` and `ui-smoke` gates plus the release workflow's
+`release-package` job. The package job depends on its own core/UI verification and cannot upload artifacts
+after a failed gate. README-only changes remain excluded from these workflows. Trusted tag signing is not
+exercised without production credentials and may never run for pull requests.

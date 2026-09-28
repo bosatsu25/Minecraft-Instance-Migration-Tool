@@ -1,0 +1,69 @@
+# Release process
+
+Phase 5.0 prepares a Windows release candidate. It does not publish `v1.0.0`.
+
+## Fixed release configuration
+
+| Setting | Value |
+| --- | --- |
+| Development version | `0.9.0` from `Directory.Build.props` |
+| Supported release target | Windows 11 x64 |
+| Runtime identifier | `win-x64` |
+| Deployment | self-contained folder publish |
+| Single-file | disabled |
+| Trimming / Native AOT / ReadyToRun | disabled |
+| Installer | Inno Setup 6.7.3, per-user |
+| Package names | `MinecraftInstanceMigrationTool-{version}-win-x64.zip`, `MinecraftInstanceMigrationTool-{version}-win-x64-setup.exe`, `SHA256SUMS.txt` |
+
+The folder publish was selected because WPF, native Windows filesystem calls, and recovery behavior benefit from the least transformed output. Single-file adds a large bundle and another loading/extraction mode without improving the installer experience. Trimming and AOT are deferred until a separate compatibility effort can prove the full migration and recovery paths.
+
+The Phase 5.0 comparison used the same SDK, RID, self-contained mode, and disabled trimming/AOT. Both forms opened the WPF main window. The normal publish contained 403 files / 146,725,125 bytes with a 162,816-byte app host; the single-file evaluation contained one 140,106,806-byte executable. A roughly 4.5% directory-size reduction does not offset native-library extraction behavior, less transparent diagnostics, or the lack of benefit once an installer/ZIP is used, so the normal folder publish is the release format.
+
+## Local dry-run
+
+Install the official Inno Setup 6.7.3 compiler, verify its Authenticode signature, then run:
+
+```powershell
+./eng/release/Build-Release.ps1 -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+./eng/release/Test-Installer.ps1 -InstallerPath ./artifacts/release/MinecraftInstanceMigrationTool-0.9.0-win-x64-setup.exe
+```
+
+The build restores the `win-x64` runtime, publishes without PDBs, launches the published application, creates both packages, verifies package contents and version metadata, and writes SHA-256 checksums. Output is restricted to ignored `artifacts/` directories.
+
+## CI modes
+
+`.github/workflows/release.yml` supports:
+
+- pull-request and manual unsigned dry-runs after core and UI verification;
+- trusted `v*` tags, which require valid signing configuration before a draft GitHub release can be created.
+
+Normal jobs have `contents: read`. Only the tag-only draft-release job receives `contents: write`. Pull requests never receive or use production signing material.
+
+## Signing boundary
+
+Unsigned dry-run artifacts are intentionally reported as unsigned. Trusted tag builds require:
+
+- secret `WINDOWS_SIGNING_CERTIFICATE_BASE64`;
+- secret `WINDOWS_SIGNING_CERTIFICATE_PASSWORD`;
+- variable `WINDOWS_SIGNING_TIMESTAMP_URL`.
+
+The tag job signs the application executable before installer creation, signs the installer afterwards, verifies both with `Get-AuthenticodeSignature`, and generates checksums last. Missing or invalid signing configuration fails the tag job. No certificate or credential is stored in the repository.
+
+The equivalent signing command is `signtool sign /fd SHA256 /td SHA256 /tr <timestamp-url> /f <certificate.pfx> /p <password> <artifact>`. The password is supplied only through the Actions secret environment and is never committed or written to a tracked file.
+
+## Versioning
+
+Semantic Versioning is used. `0.x.y` is development, `1.0.0` is the first stable release, patch releases contain compatible fixes, minor releases contain compatible features, and major releases may change behavior incompatibly. Assembly, file, product, About UI, package, and installer versions derive from the central props file.
+
+## Current release blockers
+
+- No original application icon is available. The Windows default icon remains in place; no Minecraft asset or generated placeholder is used.
+- The repository has no owner-selected `LICENSE`. A license grant will not be invented.
+- Production Authenticode credentials are not configured.
+- Clean-machine validation remains Phase 5.1 work.
+
+These blockers prevent a stable public release. The unsigned CI artifact is for verification only.
+
+## Phase 5.1 validation
+
+Validate clean-machine install, first launch, Copy, Replace, capacity failure, recovery/rollback, report, upgrade, uninstall, signature, and checksums before creating `v1.0.0`.

@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 4.6 の ModPackTransfer compatibility closure は完了し、`main` へマージ済みです。次は Phase 5.0 Release Hardening です。**
+**Phase 5.0 release hardening は現在の feature branch に実装済みです。正式リリースには、オリジナルアイコン、repository license、production signing、Hosted dry-run、Phase 5.1 検証がまだ必要です。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -23,6 +23,10 @@ capacity の安全性を強化した後継実装です。
 
 Phase 4.6 の検証基準は **通常テスト 429 passed + FlaUI UI smoke 6 passed**、
 build は警告0 / エラー0、Hosted `verify` / `ui-smoke` は merge 前に green です。
+
+Phase 5.0 では開発versionを `0.9.0` に固定し、Windows 11 x64向けself-contained folder publish、
+portable ZIP、per-user Inno Setup installer、SHA-256 checksum、assembly metadata由来のAbout表示、
+least-privilege release workflowを準備します。`v1.0.0` tagや公開releaseは作成しません。
 
 ## 現在の実装範囲
 
@@ -385,6 +389,20 @@ BCL と明示的な port / adapter を中心に構成しています。
 
 詳細は [architecture](docs/architecture.md) を参照してください。
 
+## インストール準備状況
+
+pipelineは次の固定artifact名を生成します。
+
+- `MinecraftInstanceMigrationTool-0.9.0-win-x64.zip`
+- `MinecraftInstanceMigrationTool-0.9.0-win-x64-setup.exe`
+- `SHA256SUMS.txt`
+
+安定版downloadはまだありません。Phase 5.1でartifactを検証してから`v1.0.0`へ進みます。
+installerはper-user、ZIPはportableで、どちらもself-containedです。checksum、署名、upgrade、
+support範囲は [install](docs/install.md) と [release process](docs/release.md) を参照してください。
+
+このアプリは非公式のcommunity toolで、Mojang StudiosまたはMicrosoftとの提携はありません。
+
 ## 現在未実装のもの
 
 以下はまだ完成扱いではありません。
@@ -394,7 +412,9 @@ BCL と明示的な port / adapter を中心に構成しています。
 - Merge conflict semantics
 - Minecraft / mod / loader compatibility 判定
 - exact NTFS clone semantics
-- release packaging / signing / installer
+- production Authenticode signingとstable release公開
+- original application iconとowner-selected repository license
+- clean-machine install / upgrade / migration検証
 
 特に、**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
 現在の実装は compatibility を保証しません。
@@ -468,7 +488,7 @@ warnings は build failure として扱います。
 
 次の大きな領域:
 
-22. **Phase 5.0 — Release hardening**
+22. **Phase 5.0 — Release hardening（実装済み、release blockerとHosted evidence待ち）**
 23. Phase 5.1 — v1.0 release validation
 
 調査した旧版機能と回帰証拠は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md)、

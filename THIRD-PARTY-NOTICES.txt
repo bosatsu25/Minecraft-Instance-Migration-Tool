@@ -1,0 +1,20 @@
+THIRD-PARTY NOTICES
+
+Minecraft Instance Migration Tool is built with the Microsoft .NET runtime.
+.NET is licensed under the MIT License and includes third-party components with
+their own notices. See:
+
+https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT
+
+The installer is compiled with Inno Setup. The Inno Setup compiler itself is not
+redistributed with this application. Its license and commercial-use terms are at:
+
+https://jrsoftware.org/files/is6-license.txt
+https://jrsoftware.org/isorder.php
+
+FlaUI, xUnit, and Microsoft.NET.Test.Sdk are development/test dependencies and
+are not included in the release package.
+
+Minecraft is a trademark of Microsoft. This is an unofficial community tool and
+is not affiliated with Mojang Studios or Microsoft.
