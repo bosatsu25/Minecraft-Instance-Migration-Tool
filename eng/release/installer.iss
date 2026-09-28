@@ -7,6 +7,9 @@
 #ifndef PackageDir
   #error PackageDir must be defined by the release build.
 #endif
+#ifndef AppIconPath
+  #error AppIconPath must be defined by the release build.
+#endif
 
 #define ProductName "Minecraft Instance Migration Tool"
 #define ExecutableName "MinecraftInstanceMigrationTool.exe"
@@ -28,6 +31,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#ExecutableName}
+SetupIconFile={#AppIconPath}
 CloseApplications=yes
 RestartApplications=no
 VersionInfoVersion={#FileVersion}
@@ -45,8 +49,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#ProductName}"; Filename: "{app}\{#ExecutableName}"
-Name: "{autodesktop}\{#ProductName}"; Filename: "{app}\{#ExecutableName}"; Tasks: desktopicon
+Name: "{group}\{#ProductName}"; Filename: "{app}\{#ExecutableName}"; IconFilename: "{app}\{#ExecutableName}"
+Name: "{autodesktop}\{#ProductName}"; Filename: "{app}\{#ExecutableName}"; IconFilename: "{app}\{#ExecutableName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#ExecutableName}"; Description: "Launch {#ProductName}"; Flags: nowait postinstall skipifsilent

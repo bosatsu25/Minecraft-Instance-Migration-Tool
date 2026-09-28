@@ -35,10 +35,21 @@ if ($installer.ExitCode -ne 0) {
 $installedExecutable = Join-Path $installDirectory "MinecraftInstanceMigrationTool.exe"
 $uninstaller = Join-Path $installDirectory "unins000.exe"
 $installedLicense = Join-Path $installDirectory "LICENSE"
+$startMenuShortcut = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)) `
+    "Minecraft Instance Migration Tool\Minecraft Instance Migration Tool.lnk"
 if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf) -or
     -not (Test-Path -LiteralPath $uninstaller -PathType Leaf) -or
-    -not (Test-Path -LiteralPath $installedLicense -PathType Leaf)) {
-    throw "Installer did not create the expected application, license, and uninstaller files."
+    -not (Test-Path -LiteralPath $installedLicense -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $startMenuShortcut -PathType Leaf)) {
+    throw "Installer did not create the expected application, license, uninstaller, and Start Menu shortcut."
+}
+
+$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($startMenuShortcut)
+$uninstallEntry = Get-ItemProperty -LiteralPath $uninstallKey
+if (-not [string]::Equals($shortcut.TargetPath, $installedExecutable, [StringComparison]::OrdinalIgnoreCase) -or
+    -not [string]::Equals($shortcut.IconLocation, "$installedExecutable,0", [StringComparison]::OrdinalIgnoreCase) -or
+    -not [string]::Equals([string]$uninstallEntry.DisplayIcon, $installedExecutable, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Installed shortcut or uninstall entry does not use the application icon."
 }
 
 $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @(
@@ -53,6 +64,9 @@ while ((Test-Path -LiteralPath $installDirectory) -and [DateTime]::UtcNow -lt $d
 }
 if (Test-Path -LiteralPath $installedExecutable) {
     throw "Uninstall left the application executable behind."
+}
+if ((Test-Path -LiteralPath $startMenuShortcut) -or (Test-Path -LiteralPath $uninstallKey)) {
+    throw "Uninstall left its shortcut or registration behind."
 }
 
 if (((Get-Item -LiteralPath $root -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {

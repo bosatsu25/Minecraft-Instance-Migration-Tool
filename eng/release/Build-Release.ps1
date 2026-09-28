@@ -18,6 +18,7 @@ $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."
 $projectPath = Join-Path $repositoryRoot "src\MinecraftInstanceMigration.App\MinecraftInstanceMigration.App.csproj"
 $profilePath = Join-Path $repositoryRoot "src\MinecraftInstanceMigration.App\Properties\PublishProfiles\WinX64.pubxml"
 $installerScript = Join-Path $repositoryRoot "eng\release\installer.iss"
+$iconPath = Join-Path $repositoryRoot "src\MinecraftInstanceMigration.App\Assets\AppIcon.ico"
 $artifactsRoot = Join-Path $repositoryRoot "artifacts"
 $publishDirectory = Join-Path $artifactsRoot "publish\win-x64"
 $packageDirectory = Join-Path $artifactsRoot "release"
@@ -154,6 +155,9 @@ if (-not (Test-Path -LiteralPath $DotNetPath -PathType Leaf) -and -not (Get-Comm
 if (-not (Test-Path -LiteralPath $IsccPath -PathType Leaf)) {
     throw "The configured Inno Setup compiler was not found."
 }
+if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
+    throw "The application icon was not found."
+}
 
 Assert-OwnedOutputPath $publishDirectory
 Assert-OwnedOutputPath $packageDirectory
@@ -186,7 +190,7 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
 
 $forbidden = Get-ChildItem -LiteralPath $publishDirectory -Recurse -File | Where-Object {
     $_.Extension -in @(".pdb", ".cs", ".xaml") -or
-    $_.Name -match '(?i)(testhost|\.tests\.|xunit|flaui|fixture)'
+    $_.Name -match '(?i)(testhost|\.tests\.|xunit|flaui|fixture|^AppIcon\.(png|ico)$)'
 }
 if ($forbidden) {
     throw "The publish directory contains test, source, fixture, or debug files."
@@ -220,6 +224,7 @@ Invoke-Checked $IsccPath @(
     "/DFileVersion=$fileVersion",
     "/DPublishDir=$publishDirectory",
     "/DPackageDir=$packageDirectory",
+    "/DAppIconPath=$iconPath",
     $installerScript)
 
 $installerName = "MinecraftInstanceMigrationTool-$version-win-x64-setup.exe"

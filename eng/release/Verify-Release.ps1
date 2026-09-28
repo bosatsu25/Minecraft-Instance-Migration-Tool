@@ -45,7 +45,7 @@ try {
     if (-not ($entryNames -contains "LICENSE")) {
         throw "Portable ZIP does not contain the repository license."
     }
-    if ($entryNames | Where-Object { $_ -match '(?i)(\.pdb$|\.cs$|\.xaml$|testhost|\.tests\.|xunit|flaui|fixture)' }) {
+    if ($entryNames | Where-Object { $_ -match '(?i)(\.pdb$|\.cs$|\.xaml$|testhost|\.tests\.|xunit|flaui|fixture|AppIcon\.(png|ico)$)' }) {
         throw "Portable ZIP contains a forbidden source, test, fixture, or debug file."
     }
 }
