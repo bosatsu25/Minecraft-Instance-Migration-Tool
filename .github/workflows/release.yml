@@ -7,6 +7,8 @@ on:
       - 'README.ja.md'
   workflow_dispatch:
   push:
+    branches:
+      - 'feature/phase-5.0-release-hardening'
     tags:
       - 'v*'
 
