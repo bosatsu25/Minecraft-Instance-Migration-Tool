@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 5.0 release hardening は現在の feature branch に実装済みです。正式リリースには、オリジナルアイコン、repository license、production signing、Hosted dry-run、Phase 5.1 検証がまだ必要です。**
+**Phase 5.0 release hardening は実装済みで、Hosted dry-run も成功しています。正式な出荷準備には、最終アイコンとproduction signing設定が必要です。clean-machine検証はPhase 5.1で行います。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -202,6 +202,18 @@ Replaceでは verified Backup、live revalidation、durable journal、独立veri
 guarded rollback、capacity gateを維持します。
 
 詳細は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) を参照してください。
+
+## Phase 5.0 Release Hardening
+
+version `0.9.0`をWindows 11 x64向け.NET 10 self-contained folderとしてpublishします。
+release workflowはportable ZIPとper-user Inno Setup installerを生成し、version metadataと
+SHA-256 checksumを検証し、Hosted Windows runnerでinstall/uninstallを試します。アプリ内の
+Aboutにはassembly metadataのversionを表示します。PR/branch dry-runはunsignedで、production
+signingはtrusted tag contextに限定します。
+
+single-file、trimming、NativeAOTはこのreleaseでは無効です。最終アイコンとproduction signing設定は
+未準備です。Phase 5.1でclean machine上のinstall、起動、migration、Recovery/Rollback、artifact、
+署名、upgrade、uninstallを検証してから`v1.0.0`を出荷判定します。
 
 ## UI で現在できること
 
@@ -413,8 +425,8 @@ support範囲は [install](docs/install.md) と [release process](docs/release.m
 - Minecraft / mod / loader compatibility 判定
 - exact NTFS clone semantics
 - production Authenticode signingとstable release公開
-- original application iconとowner-selected repository license
-- clean-machine install / upgrade / migration検証
+- original application icon
+- clean-machine install / upgrade / migration検証（Phase 5.1）
 
 特に、**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
 現在の実装は compatibility を保証しません。
@@ -488,8 +500,8 @@ warnings は build failure として扱います。
 
 次の大きな領域:
 
-22. **Phase 5.0 — Release hardening（実装済み、release blockerとHosted evidence待ち）**
-23. Phase 5.1 — v1.0 release validation
+22. **Phase 5.0 — Release hardening（実装済み、最終アイコンとproduction signing待ち）**
+23. Phase 5.1 — v1.0 clean-machine release validation
 
 調査した旧版機能と回帰証拠は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md)、
 移行候補と rule は [migration rules](docs/migration-rules.md)、

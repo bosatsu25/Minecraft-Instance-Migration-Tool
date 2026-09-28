@@ -34,9 +34,11 @@ if ($installer.ExitCode -ne 0) {
 
 $installedExecutable = Join-Path $installDirectory "MinecraftInstanceMigrationTool.exe"
 $uninstaller = Join-Path $installDirectory "unins000.exe"
+$installedLicense = Join-Path $installDirectory "LICENSE"
 if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf) -or
-    -not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
-    throw "Installer did not create the expected application and uninstaller files."
+    -not (Test-Path -LiteralPath $uninstaller -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $installedLicense -PathType Leaf)) {
+    throw "Installer did not create the expected application, license, and uninstaller files."
 }
 
 $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @(

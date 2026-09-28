@@ -154,6 +154,7 @@ Invoke-Checked $DotNetPath @(
     "--output", $publishDirectory)
 
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "THIRD-PARTY-NOTICES.txt") -Destination $publishDirectory
+Copy-Item -LiteralPath (Join-Path $repositoryRoot "LICENSE") -Destination $publishDirectory
 
 $executable = Join-Path $publishDirectory "MinecraftInstanceMigrationTool.exe"
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {

@@ -17,8 +17,9 @@ $executable = Join-Path $publishDirectory "MinecraftInstanceMigrationTool.exe"
 $zip = Join-Path $packageDirectory "MinecraftInstanceMigrationTool-$ExpectedVersion-win-x64.zip"
 $installer = Join-Path $packageDirectory "MinecraftInstanceMigrationTool-$ExpectedVersion-win-x64-setup.exe"
 $checksums = Join-Path $packageDirectory "SHA256SUMS.txt"
+$license = Join-Path $publishDirectory "LICENSE"
 
-foreach ($required in @($executable, $zip, $installer, $checksums)) {
+foreach ($required in @($executable, $zip, $installer, $checksums, $license)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required release artifact is missing: $([System.IO.Path]::GetFileName($required))"
     }
@@ -40,6 +41,9 @@ try {
     $entryNames = @($archive.Entries | ForEach-Object FullName)
     if (-not ($entryNames -contains "MinecraftInstanceMigrationTool.exe")) {
         throw "Portable ZIP does not contain the application executable."
+    }
+    if (-not ($entryNames -contains "LICENSE")) {
+        throw "Portable ZIP does not contain the repository license."
     }
     if ($entryNames | Where-Object { $_ -match '(?i)(\.pdb$|\.cs$|\.xaml$|testhost|\.tests\.|xunit|flaui|fixture)' }) {
         throw "Portable ZIP contains a forbidden source, test, fixture, or debug file."

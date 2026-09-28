@@ -16,4 +16,4 @@ Inno Setup was selected over WiX because this utility needs a small file-copy in
 
 ## Consequences
 
-The publish directory contains multiple runtime files and is larger than a framework-dependent package, but startup and native dependency behavior stay explicit. Runtime security updates arrive through application releases. Windows 11 x64 is the only claimed target until broader validation exists. Production distribution remains blocked until an original icon, repository license, signing credentials, and Phase 5.1 clean-machine evidence are available.
+The publish directory contains multiple runtime files and is larger than a framework-dependent package, but startup and native dependency behavior stay explicit. Runtime security updates arrive through application releases. Windows 11 x64 is the only claimed target until broader validation exists. The MIT license is included in each package. Production distribution awaits an original icon and signing credentials; Phase 5.1 handles clean-machine validation.

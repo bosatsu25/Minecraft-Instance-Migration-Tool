@@ -30,11 +30,13 @@ Install the official Inno Setup 6.7.3 compiler, verify its Authenticode signatur
 
 The build restores the `win-x64` runtime, publishes without PDBs, launches the published application, creates both packages, verifies package contents and version metadata, and writes SHA-256 checksums. Output is restricted to ignored `artifacts/` directories.
 
+The workflow downloads the immutable Inno Setup 6.7.3 asset and checks its SHA-256 against the digest published on the [official release](https://github.com/jrsoftware/issrc/releases/tag/is-6_7_3) (`9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732`). It also requires a valid Authenticode signature from Pyrsys B.V. before running the compiler installer.
+
 ## CI modes
 
 `.github/workflows/release.yml` supports:
 
-- pull-request and manual unsigned dry-runs after core and UI verification;
+- pull-request, Phase 5.0 branch, and manual unsigned dry-runs after core and UI verification;
 - trusted `v*` tags, which require valid signing configuration before a draft GitHub release can be created.
 
 Normal jobs have `contents: read`. Only the tag-only draft-release job receives `contents: write`. Pull requests never receive or use production signing material.
@@ -58,11 +60,11 @@ Semantic Versioning is used. `0.x.y` is development, `1.0.0` is the first stable
 ## Current release blockers
 
 - No original application icon is available. The Windows default icon remains in place; no Minecraft asset or generated placeholder is used.
-- The repository has no owner-selected `LICENSE`. A license grant will not be invented.
 - Production Authenticode credentials are not configured.
-- Clean-machine validation remains Phase 5.1 work.
 
 These blockers prevent a stable public release. The unsigned CI artifact is for verification only.
+The repository uses the MIT license in `LICENSE`; it is included in both release packages.
+The hosted release dry-run passes. Clean-machine validation belongs to Phase 5.1.
 
 ## Phase 5.1 validation
 
