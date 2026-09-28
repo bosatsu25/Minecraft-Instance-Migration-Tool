@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 4.6 の ModPackTransfer compatibility closure は完了し、`main` へマージ済みです。次は Phase 5.0 Release Hardening です。**
+**Phase 5.0 release hardening は実装済みで、Hosted dry-run も成功しています。正式な出荷準備には、最終アイコンとproduction signing設定が必要です。clean-machine検証はPhase 5.1で行います。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -23,6 +23,10 @@ capacity の安全性を強化した後継実装です。
 
 Phase 4.6 の検証基準は **通常テスト 429 passed + FlaUI UI smoke 6 passed**、
 build は警告0 / エラー0、Hosted `verify` / `ui-smoke` は merge 前に green です。
+
+Phase 5.0 では開発versionを `0.9.0` に固定し、Windows 11 x64向けself-contained folder publish、
+portable ZIP、per-user Inno Setup installer、SHA-256 checksum、assembly metadata由来のAbout表示、
+least-privilege release workflowを準備します。`v1.0.0` tagや公開releaseは作成しません。
 
 ## 現在の実装範囲
 
@@ -199,29 +203,17 @@ guarded rollback、capacity gateを維持します。
 
 詳細は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) を参照してください。
 
-## Phase 5.0 Release Hardening — 次フェーズ
+## Phase 5.0 Release Hardening
 
-v1.0で予定しているmigration feature setはPhase 4.6まででいったん閉じています。
-次はmigration safety contractを変えずに、現在のcodebaseを一般ユーザーへ配布できるWindows製品へ
-仕上げるRelease Engineeringフェーズです。
+version `0.9.0`をWindows 11 x64向け.NET 10 self-contained folderとしてpublishします。
+release workflowはportable ZIPとper-user Inno Setup installerを生成し、version metadataと
+SHA-256 checksumを検証し、Hosted Windows runnerでinstall/uninstallを試します。アプリ内の
+Aboutにはassembly metadataのversionを表示します。PR/branch dry-runはunsignedで、production
+signingはtrusted tag contextに限定します。
 
-Phase 5.0の予定baseline:
-
-- Windows x64
-- .NET 10 self-contained publish
-- Semantic Versioningを使ったversion情報の一元管理
-- portable ZIP
-- install / uninstall / upgrade方針を持つWindows installer
-- release artifactのSHA-256 checksum
-- PR buildからsigning secretを分離したproduction signing境界
-- package前に既存verificationを通すGitHub Actions release dry-run
-
-single-file publish、trimming、NativeAOT、自動更新、Microsoft Store配布、telemetryは
-v1.0必須要件ではありません。packaging都合だけで追加しません。
-
-Phase 5.0はrelease可能な仕組みを完成させるPhaseであり、正式な `v1.0.0` tag / GitHub Releaseは
-まだ公開しません。Phase 5.1でclean machine上のinstall、起動、migration、Recovery / Rollback、
-artifact、checksum / signature、upgrade、uninstallまで最終検証してから出荷判定します。
+single-file、trimming、NativeAOTはこのreleaseでは無効です。最終アイコンとproduction signing設定は
+未準備です。Phase 5.1でclean machine上のinstall、起動、migration、Recovery/Rollback、artifact、
+署名、upgrade、uninstallを検証してから`v1.0.0`を出荷判定します。
 
 ## UI で現在できること
 
@@ -409,6 +401,20 @@ BCL と明示的な port / adapter を中心に構成しています。
 
 詳細は [architecture](docs/architecture.md) を参照してください。
 
+## インストール準備状況
+
+pipelineは次の固定artifact名を生成します。
+
+- `MinecraftInstanceMigrationTool-0.9.0-win-x64.zip`
+- `MinecraftInstanceMigrationTool-0.9.0-win-x64-setup.exe`
+- `SHA256SUMS.txt`
+
+安定版downloadはまだありません。Phase 5.1でartifactを検証してから`v1.0.0`へ進みます。
+installerはper-user、ZIPはportableで、どちらもself-containedです。checksum、署名、upgrade、
+support範囲は [install](docs/install.md) と [release process](docs/release.md) を参照してください。
+
+このアプリは非公式のcommunity toolで、Mojang StudiosまたはMicrosoftとの提携はありません。
+
 ## 現在未実装のもの
 
 以下はまだ完成扱いではありません。
@@ -418,7 +424,9 @@ BCL と明示的な port / adapter を中心に構成しています。
 - Merge conflict semantics
 - Minecraft / mod / loader compatibility 判定
 - exact NTFS clone semantics
-- Phase 5.0 Release Hardening: versioning、win-x64 self-contained publish、portable ZIP、installer、checksum、signing pipeline、release workflow
+- production Authenticode signingとstable release公開
+- original application icon
+- clean-machine install / upgrade / migration検証（Phase 5.1）
 
 特に、**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
 現在の実装は compatibility を保証しません。
@@ -492,8 +500,8 @@ warnings は build failure として扱います。
 
 次の大きな領域:
 
-22. **Phase 5.0 — Release hardening**
-23. Phase 5.1 — v1.0 release validation
+22. **Phase 5.0 — Release hardening（実装済み、最終アイコンとproduction signing待ち）**
+23. Phase 5.1 — v1.0 clean-machine release validation
 
 調査した旧版機能と回帰証拠は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md)、
 移行候補と rule は [migration rules](docs/migration-rules.md)、

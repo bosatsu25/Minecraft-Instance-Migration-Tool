@@ -3,6 +3,9 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
+    <AssemblyName>MinecraftInstanceMigrationTool</AssemblyName>
+    <AssemblyTitle>Minecraft Instance Migration Tool</AssemblyTitle>
+    <Description>Safely migrates selected user data between Minecraft instances.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../MinecraftInstanceMigration.Application/MinecraftInstanceMigration.Application.csproj" />

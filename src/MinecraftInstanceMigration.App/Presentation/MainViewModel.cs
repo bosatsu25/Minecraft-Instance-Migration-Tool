@@ -5,6 +5,8 @@ public sealed class MainViewModel(
     MigrationPreviewViewModel preview,
     MigrationReportViewModel report)
 {
+    public ApplicationInformation ApplicationInformation { get; } = ApplicationInformation.Current;
+
     public InspectorViewModel Inspector { get; } = inspector ?? throw new ArgumentNullException(nameof(inspector));
 
     public MigrationPreviewViewModel Preview { get; } = preview ?? throw new ArgumentNullException(nameof(preview));

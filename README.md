@@ -5,7 +5,7 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.6 ModPackTransfer compatibility closure is complete and merged into `main`. Phase 5.0 Release Hardening is next.**
+**Status: Phase 5.0 release hardening is implemented and its hosted dry-run passes. Formal release readiness awaits the final application icon and production signing configuration. Phase 5.1 covers clean-machine validation.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
@@ -23,6 +23,10 @@ backup, verification, rollback, error-redaction, and capacity behavior.
 
 The Phase 4.6 verification baseline is **429 unit/integration tests + 6 FlaUI UI smoke tests**, with
 0 build warnings/errors and hosted `verify` / `ui-smoke` checks green before merge.
+
+Phase 5.0 fixes development version `0.9.0` and prepares a Windows 11 x64 self-contained folder publish,
+portable ZIP, per-user Inno Setup installer, SHA-256 checksums, assembly-derived About display, and a
+least-privilege release workflow. It does not create a `v1.0.0` tag or public release.
 
 ## Current implementation
 
@@ -202,28 +206,16 @@ journaling, independent verification, guarded rollback, and capacity gating.
 See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the full
 18-item inventory, reference locations, automated regression evidence, and intentional safer differences.
 
-## Phase 5.0 release hardening — next
+## Phase 5.0 release hardening
 
-The migration feature set is now closed for the planned v1.0 scope. The next phase focuses on turning the
-current codebase into a distributable Windows product without changing the migration safety contract.
+Version `0.9.0` is published for Windows 11 x64 as a .NET 10 self-contained folder. The release workflow
+builds a portable ZIP and per-user Inno Setup installer, verifies version metadata and SHA-256 checksums,
+and exercises install/uninstall on a hosted Windows runner. The application shows its assembly version in
+About. Pull-request and branch dry-runs are unsigned; production signing requires a trusted tag context.
 
-The planned Phase 5.0 release baseline is:
-
-- Windows x64
-- .NET 10 self-contained publish
-- centralized semantic version metadata
-- portable ZIP package
-- Windows installer with uninstall / upgrade behavior
-- SHA-256 checksums for release artifacts
-- production-signing boundary that keeps signing secrets out of pull-request builds
-- GitHub Actions release dry-run that verifies before packaging
-
-Single-file publish, trimming, NativeAOT, automatic updating, Microsoft Store packaging, and telemetry are
-not requirements for v1.0. They must not be introduced merely for packaging convenience.
-
-Phase 5.0 prepares the release pipeline; it does **not** publish the stable `v1.0.0` tag or GitHub Release.
-That decision is reserved for Phase 5.1 after clean-machine install, launch, migration, recovery/rollback,
-artifact, checksum/signature, upgrade, and uninstall validation.
+Single-file, trimming, and NativeAOT remain disabled for this release. The final application icon and
+production signing configuration are pending. Phase 5.1 will validate a clean-machine install, launch,
+migration, recovery/rollback, artifact, signature, upgrade, and uninstall before a `v1.0.0` release.
 
 ## What the current UI can do
 
@@ -412,6 +404,20 @@ The design primarily uses the BCL and explicit ports/adapters.
 
 See [architecture](docs/architecture.md) for details.
 
+## Installation status
+
+The pipeline prepares these fixed artifact names:
+
+- `MinecraftInstanceMigrationTool-0.9.0-win-x64.zip`
+- `MinecraftInstanceMigrationTool-0.9.0-win-x64-setup.exe`
+- `SHA256SUMS.txt`
+
+There is no stable download yet. Phase 5.1 must validate the artifacts before `v1.0.0`. The installer is
+per-user; the ZIP is portable; both are self-contained. See [install](docs/install.md) and
+[release process](docs/release.md) for checksum, signing, upgrade, and support details.
+
+This is an unofficial community tool and is not affiliated with Mojang Studios or Microsoft.
+
 ## Not implemented yet
 
 The following are not complete:
@@ -421,7 +427,9 @@ The following are not complete:
 - Merge conflict semantics
 - Minecraft / mod / loader compatibility analysis
 - exact NTFS clone semantics
-- Phase 5.0 release hardening: versioning, win-x64 self-contained publish, portable ZIP, installer, checksums, signing pipeline, and release workflow
+- production Authenticode signing and stable release publication
+- original application icon
+- clean-machine install / upgrade / migration validation (Phase 5.1)
 
 In particular, **being safe to copy is not the same as being compatible with the target instance**.
 The current implementation does not claim compatibility.
@@ -495,8 +503,8 @@ Implemented:
 
 Next major areas:
 
-22. **Phase 5.0 — Release hardening**
-23. Phase 5.1 — v1.0 release validation
+22. **Phase 5.0 — Release hardening (implementation complete; icon and production signing pending)**
+23. Phase 5.1 — v1.0 clean-machine release validation
 
 See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the inspected
 reference inventory and regression evidence, [migration rules](docs/migration-rules.md) for candidate rules,
