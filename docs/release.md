@@ -29,6 +29,7 @@ Install the official Inno Setup 6.7.3 compiler, verify its Authenticode signatur
 ```
 
 The build restores the `win-x64` runtime, publishes without PDBs, launches the published application, creates both packages, verifies package contents and version metadata, and writes SHA-256 checksums. Output is restricted to ignored `artifacts/` directories.
+Before clearing output, the build rejects reparse points in the repository-to-output path. The current packaging script accepts numeric `major.minor.patch` versions only; prerelease labels require a separate numeric Windows file-version policy before use.
 
 The workflow downloads the immutable Inno Setup 6.7.3 asset and checks its SHA-256 against the digest published on the [official release](https://github.com/jrsoftware/issrc/releases/tag/is-6_7_3) (`9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732`). It also requires a valid Authenticode signature from Pyrsys B.V. before running the compiler installer.
 

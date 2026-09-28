@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory)]
     [string]$InstallerPath,
-    [string]$TestRoot = (Join-Path $env:TEMP "mim-installer-validation")
+    [string]$TestRoot = (Join-Path $env:TEMP ("mim-installer-validation-" + [Guid]::NewGuid().ToString("N")))
 )
 
 Set-StrictMode -Version Latest
@@ -16,14 +16,14 @@ if (Test-Path -LiteralPath $uninstallKey) {
 $root = [System.IO.Path]::GetFullPath($TestRoot)
 $tempRoot = [System.IO.Path]::GetFullPath($env:TEMP) + [System.IO.Path]::DirectorySeparatorChar
 if (-not $root.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
-    [System.IO.Path]::GetFileName($root) -ne "mim-installer-validation") {
-    throw "Installer validation root must be the owned temporary directory."
+    [System.IO.Path]::GetFileName($root) -notmatch '^mim-installer-validation-[0-9a-f]{32}$') {
+    throw "Installer validation root must be a unique temporary directory."
 }
 
 if (Test-Path -LiteralPath $root) {
-    Remove-Item -LiteralPath $root -Recurse -Force
+    throw "Installer validation refused to use an existing temporary directory."
 }
-[void](New-Item -ItemType Directory -Path $root)
+[void](New-Item -ItemType Directory -Path $root -ErrorAction Stop)
 
 $installDirectory = Join-Path $root "app"
 $installer = Start-Process -FilePath $resolvedInstaller -ArgumentList @(
@@ -55,5 +55,8 @@ if (Test-Path -LiteralPath $installedExecutable) {
     throw "Uninstall left the application executable behind."
 }
 
+if (((Get-Item -LiteralPath $root -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw "Installer validation root became a reparse point."
+}
 Remove-Item -LiteralPath $root -Recurse -Force
 Write-Host "Per-user install and uninstall validation passed."

@@ -29,6 +29,29 @@ function Assert-OwnedOutputPath([string]$Path) {
     if (-not $fullPath.StartsWith($ownedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing to modify an output path outside the repository artifacts directory."
     }
+
+    $candidate = $fullPath
+    while ($true) {
+        try {
+            $attributes = [System.IO.File]::GetAttributes($candidate)
+            if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Refusing to modify release output through a reparse point."
+            }
+        }
+        catch [System.IO.FileNotFoundException] { }
+        catch [System.IO.DirectoryNotFoundException] { }
+
+        if ($candidate.Equals($repositoryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            break
+        }
+        $candidate = [System.IO.Path]::GetDirectoryName($candidate)
+        if (-not $candidate -or
+            (-not $candidate.Equals($repositoryRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
+             -not $candidate.StartsWith($repositoryRoot + [System.IO.Path]::DirectorySeparatorChar,
+                 [System.StringComparison]::OrdinalIgnoreCase))) {
+            throw "Release output path left the repository before reaching its root."
+        }
+    }
 }
 
 function Invoke-Checked([string]$FilePath, [string[]]$Arguments) {
@@ -46,8 +69,8 @@ function Get-ReleaseVersion {
     }
 
     $value = [string]$nodes[0].InnerText
-    if ($value -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
-        throw "The central Version is not a supported semantic version."
+    if ($value -notmatch '^\d+\.\d+\.\d+$') {
+        throw "The central Version must be a numeric major.minor.patch value for Windows release packaging."
     }
 
     return $value

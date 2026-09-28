@@ -634,8 +634,9 @@ per-user x64 installer. Existing layer and migration tests remain unchanged.
 `Build-Release.ps1` performs a real RID restore/publish, rejects source/test/fixture/debug files, checks
 Windows version metadata, launches the published executable, creates the portable ZIP and installer,
 checks signature state, writes checksums last, and reopens the ZIP for content verification.
-`Test-Installer.ps1` silently installs into one owned temporary directory, verifies the executable and
-uninstaller, then uninstalls it. Phase 5.1 still owns clean-machine and real upgrade validation.
+`Test-Installer.ps1` silently installs into a new per-run temporary directory, verifies the executable,
+license, and uninstaller, then uninstalls it. It refuses an existing test directory instead of clearing it.
+Phase 5.1 still owns clean-machine and real upgrade validation.
 
 Hosted completion requires the ordinary `verify` and `ui-smoke` gates plus the release workflow's
 `release-package` job. The package job depends on its own core/UI verification and cannot upload artifacts
