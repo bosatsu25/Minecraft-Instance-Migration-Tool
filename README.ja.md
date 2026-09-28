@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 4.6 の ModPackTransfer compatibility closure を実装済みです。**
+**Phase 4.6 の ModPackTransfer compatibility closure は完了し、`main` へマージ済みです。次は Phase 5.0 Release Hardening です。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -16,8 +16,13 @@ WPF UI から Inspector、Migration Preview、selection / conflict 編集、明�
 読み取り専用 Migration Report まで操作できます。
 選択中の safety workspace に対する最新の容量確認も、実行前の必須条件です。
 ModPackTransfer の既存 migration feature set は、追跡可能な compatibility matrix と回帰テストで
-確認しています。11候補を維持しつつ、overwrite、path、backup、verification、rollback、
-error redaction、capacity の安全性を強化した後継実装です。
+確認しています。参照元 commit `e174cdac8229f3e061175a36121d55db01961452` に対して、
+migration に関係する behavior を18件棚卸しし、compatibility matrix の **Missing は0件**です。
+11候補を維持しつつ、overwrite、path、backup、verification、rollback、error redaction、
+capacity の安全性を強化した後継実装です。
+
+Phase 4.6 の検証基準は **通常テスト 429 passed + FlaUI UI smoke 6 passed**、
+build は警告0 / エラー0、Hosted `verify` / `ui-smoke` は merge 前に green です。
 
 ## 現在の実装範囲
 
@@ -174,6 +179,25 @@ safety workspace を変更すると古い結果を破棄し、現在の Preview 
 なければ Execute は無効です。これは明白な容量不足を事前検出するもので、実行時の live validation や
 disk-full を含む IO failure 処理は引き続き必要です。詳細は
 [capacity preflight](docs/capacity-preflight.md) を参照してください。
+
+## Phase 4.6 ModPackTransfer compatibility closure
+
+Phase 4.6 では参照元 `TaichiServer/ModPackTransfer` の
+commit `e174cdac8229f3e061175a36121d55db01961452` を実コードから監査し、
+ユーザー操作・migration に関係する behavior 18件を追跡可能な compatibility matrix に整理しました。
+`Missing` は0件です。
+
+旧版の `hanemod-client.json` 除外は、Domain が所有する明示的な migration-content rule として実装しました。
+directory candidate 配下の全階層で basename を大文字小文字を区別せず判定し、Copy、Replace時の保持、
+Backup、Rollback restore、独立 verification / fingerprint、Capacity 計測、Preview、Report で同じruleを
+一貫して利用します。似た名前のfileまで誤って除外しません。
+
+安全性を弱める旧版behaviorはそのまま再現せず、より安全なequivalentへ置き換えています。
+無条件overwriteは明示的な Skip / Replace、単純なrecursive copyはhandle-relative no-follow traversalとなり、
+Replaceでは verified Backup、live revalidation、durable journal、独立verification、
+guarded rollback、capacity gateを維持します。
+
+詳細は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) を参照してください。
 
 ## UI で現在できること
 
