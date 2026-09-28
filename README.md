@@ -202,6 +202,29 @@ journaling, independent verification, guarded rollback, and capacity gating.
 See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the full
 18-item inventory, reference locations, automated regression evidence, and intentional safer differences.
 
+## Phase 5.0 release hardening — next
+
+The migration feature set is now closed for the planned v1.0 scope. The next phase focuses on turning the
+current codebase into a distributable Windows product without changing the migration safety contract.
+
+The planned Phase 5.0 release baseline is:
+
+- Windows x64
+- .NET 10 self-contained publish
+- centralized semantic version metadata
+- portable ZIP package
+- Windows installer with uninstall / upgrade behavior
+- SHA-256 checksums for release artifacts
+- production-signing boundary that keeps signing secrets out of pull-request builds
+- GitHub Actions release dry-run that verifies before packaging
+
+Single-file publish, trimming, NativeAOT, automatic updating, Microsoft Store packaging, and telemetry are
+not requirements for v1.0. They must not be introduced merely for packaging convenience.
+
+Phase 5.0 prepares the release pipeline; it does **not** publish the stable `v1.0.0` tag or GitHub Release.
+That decision is reserved for Phase 5.1 after clean-machine install, launch, migration, recovery/rollback,
+artifact, checksum/signature, upgrade, and uninstall validation.
+
 ## What the current UI can do
 
 ### Inspector
@@ -398,7 +421,7 @@ The following are not complete:
 - Merge conflict semantics
 - Minecraft / mod / loader compatibility analysis
 - exact NTFS clone semantics
-- release packaging / signing / installer
+- Phase 5.0 release hardening: versioning, win-x64 self-contained publish, portable ZIP, installer, checksums, signing pipeline, and release workflow
 
 In particular, **being safe to copy is not the same as being compatible with the target instance**.
 The current implementation does not claim compatibility.
