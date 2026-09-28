@@ -199,6 +199,30 @@ guarded rollback、capacity gateを維持します。
 
 詳細は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) を参照してください。
 
+## Phase 5.0 Release Hardening — 次フェーズ
+
+v1.0で予定しているmigration feature setはPhase 4.6まででいったん閉じています。
+次はmigration safety contractを変えずに、現在のcodebaseを一般ユーザーへ配布できるWindows製品へ
+仕上げるRelease Engineeringフェーズです。
+
+Phase 5.0の予定baseline:
+
+- Windows x64
+- .NET 10 self-contained publish
+- Semantic Versioningを使ったversion情報の一元管理
+- portable ZIP
+- install / uninstall / upgrade方針を持つWindows installer
+- release artifactのSHA-256 checksum
+- PR buildからsigning secretを分離したproduction signing境界
+- package前に既存verificationを通すGitHub Actions release dry-run
+
+single-file publish、trimming、NativeAOT、自動更新、Microsoft Store配布、telemetryは
+v1.0必須要件ではありません。packaging都合だけで追加しません。
+
+Phase 5.0はrelease可能な仕組みを完成させるPhaseであり、正式な `v1.0.0` tag / GitHub Releaseは
+まだ公開しません。Phase 5.1でclean machine上のinstall、起動、migration、Recovery / Rollback、
+artifact、checksum / signature、upgrade、uninstallまで最終検証してから出荷判定します。
+
 ## UI で現在できること
 
 ### Inspector
@@ -394,7 +418,7 @@ BCL と明示的な port / adapter を中心に構成しています。
 - Merge conflict semantics
 - Minecraft / mod / loader compatibility 判定
 - exact NTFS clone semantics
-- release packaging / signing / installer
+- Phase 5.0 Release Hardening: versioning、win-x64 self-contained publish、portable ZIP、installer、checksum、signing pipeline、release workflow
 
 特に、**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
 現在の実装は compatibility を保証しません。
