@@ -67,8 +67,11 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
             else if (step.Operation == ExecutionOperationKind.Replace)
             {
                 EnsureReplaceDestination(destination.Root, step);
-                RemoveDestination(destination.Root, step.Name, cancellationToken);
-                CopyFromSource(sourceNode, destination.Root, step.Name, cancellationToken);
+                ReplaceFromSource(
+                    sourceNode,
+                    destination.Root,
+                    step.Name,
+                    cancellationToken);
             }
             else
             {
@@ -223,21 +226,37 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         }
     }
 
-    private static void RemoveDestination(
+    private static void ReplaceFromSource(
+        WindowsExecutionTree.OpenedNode source,
         SafeFileHandle destinationRoot,
         string name,
         CancellationToken cancellationToken)
     {
         try
         {
-            WindowsExecutionTree.DeleteNode(destinationRoot, name, cancellationToken);
+            using (WindowsExecutionTree.HeldNodeTree destination =
+                WindowsExecutionTree.OpenHeldTree(
+                    destinationRoot,
+                    name,
+                    forDelete: true))
+            {
+                WindowsExecutionTree.DeleteHeldTree(destination, () => { });
+            }
+
+            WindowsExecutionTree.CopyNode(
+                source,
+                destinationRoot,
+                name,
+                cancellationToken,
+                allowExistingDirectories: source.IsDirectory);
         }
         catch (ExecutionTreeException error) when (
             error.Kind is ExecutionTreeFailureKind.Missing or
                 ExecutionTreeFailureKind.Changed or
                 ExecutionTreeFailureKind.Collision)
         {
-            throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
+            throw new ExecutionMutationException(
+                ExecutionMutationFailureKind.DestinationChanged);
         }
     }
 

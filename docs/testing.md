@@ -192,10 +192,8 @@ Coverage includes:
 - source safety blockers still win even if the caller supplied Replace intent;
 - Application exposes both custom planning and the Domain-owned Recommended preset.
 
-The policy deliberately does not define Merge or the `hanemod-client.json` exclusion scope.
-Those require separate acceptance criteria before implementation. Replace is intent only:
-no backup or write code exists, and future execution must not perform it until backup,
-containment, stale-plan revalidation, and rollback requirements are implemented and tested.
+At Phase 2.1 this policy deliberately did not define Merge or the `hanemod-client.json` exclusion scope.
+Phase 4.6 resolves the exclusion from inspected reference code; Merge remains outside the product contract.
 
 
 ## Phase 2.2: Preview / Dry Run
@@ -611,3 +609,18 @@ App tests cover human-readable summaries, Ready/insufficient/unavailable command
 workspace invalidation, private-message redaction, and OneWay read-only bindings. Hosted FlaUI extends the
 confirmed Copy-only path with an explicit Check Capacity step and observes `Ready` before Execute using
 bounded retry. Disk-full is not manufactured in UI automation; insufficient cases use deterministic ports.
+
+## Phase 4.6: ModPackTransfer compatibility closure
+
+Domain tests pin the ordered eleven-entry All preset, the nine-entry Recommended preset, exact basename
+matching, similar-name non-matches, and case-insensitive Windows semantics. Application/App tests verify
+that Preview and Report expose the rule summary and that Select All/None do not reinspect roots.
+
+Windows integration tests use owned temporary fixtures to prove that root and nested
+`hanemod-client.json` files are omitted while siblings are copied, fingerprints verify the same filtered
+payload, backups omit the file, capacity omits its bytes, and Replace plus guarded rollback preserve an
+existing destination copy without backing it up or restoring it. Existing reparse, overlap, stale-evidence,
+conflict, privacy, and UI smoke suites remain regression gates.
+
+The traceability matrix names the inspected reference commit and links every original behavior to the new
+implementation and deterministic tests. A `Missing` row blocks the Phase 4.6 completion assessment.

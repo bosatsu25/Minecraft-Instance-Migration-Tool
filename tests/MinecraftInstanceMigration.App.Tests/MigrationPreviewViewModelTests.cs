@@ -641,6 +641,8 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal(MigrationPreviewAction.Excluded, Entry(model, "saves").Action);
         Assert.False(Entry(model, "saves").Selected);
         Assert.False(Entry(model, "screenshots").Selected);
+        Assert.Equal(11, model.Entries.Count);
+        Assert.Contains("hanemod-client.json", model.ContentRuleSummary, StringComparison.Ordinal);
         Assert.Contains("No files were changed", model.Status);
         Assert.False(model.HasPendingChoices);
     }
@@ -868,6 +870,50 @@ public sealed class MigrationPreviewViewModelTests
         Assert.True(Entry(model, "config").Selected);
         Assert.False(Entry(model, "saves").Selected);
         Assert.Equal(MigrationPreviewAction.Excluded, Entry(model, "saves").Action);
+        Assert.False(model.HasPendingChoices);
+    }
+
+    [Fact]
+    public async Task SelectAllIncludesEveryKnownCandidateWithoutReinspection()
+    {
+        int inspections = 0;
+        var model = CreateModel(new StubInspector((_, _) =>
+        {
+            inspections++;
+            return Task.FromResult(Inspection());
+        }));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        await model.GeneratePreviewAsync();
+
+        Assert.True(model.SelectAllCommand.CanExecute(null));
+        model.SelectAllCommand.Execute(null);
+
+        Assert.Equal(2, inspections);
+        Assert.Equal(11, model.Entries.Count);
+        Assert.All(model.Entries, entry => Assert.True(entry.Selected));
+        Assert.False(model.HasPendingChoices);
+    }
+
+    [Fact]
+    public async Task SelectNoneExcludesEveryKnownCandidateWithoutReinspection()
+    {
+        int inspections = 0;
+        var model = CreateModel(new StubInspector((_, _) =>
+        {
+            inspections++;
+            return Task.FromResult(Inspection());
+        }));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        await model.GeneratePreviewAsync();
+
+        Assert.True(model.SelectNoneCommand.CanExecute(null));
+        model.SelectNoneCommand.Execute(null);
+
+        Assert.Equal(2, inspections);
+        Assert.Equal(11, model.Entries.Count);
+        Assert.All(model.Entries, entry => Assert.False(entry.Selected));
         Assert.False(model.HasPendingChoices);
     }
 

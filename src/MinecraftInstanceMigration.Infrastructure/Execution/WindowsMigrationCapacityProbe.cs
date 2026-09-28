@@ -36,7 +36,10 @@ public sealed class WindowsMigrationCapacityProbe : ILogicalSizeProbe, IVolumeCa
             using WindowsExecutionTree.HeldDirectory heldRoot = WindowsExecutionTree.OpenDirectoryChain(normalized, writableFinal: false);
             using WindowsExecutionTree.OpenedNode node = WindowsExecutionTree.OpenExistingNode(heldRoot.Root, entryName);
             WindowsExecutionTree.EnsureExpectedKind(node, expectedKind);
-            long bytes = WindowsExecutionTree.MeasureLogicalBytes(node, cancellationToken);
+            long bytes = WindowsExecutionTree.MeasureLogicalBytes(
+                node,
+                entryName,
+                cancellationToken);
             return new LogicalSizeProbeResult(LogicalSizeProbeStatus.Available, bytes);
         }
         catch (OperationCanceledException)

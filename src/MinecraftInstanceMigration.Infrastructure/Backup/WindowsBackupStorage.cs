@@ -8,6 +8,7 @@ using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Backup;
 using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Inspection;
+using MinecraftInstanceMigration.Domain.Rules;
 
 namespace MinecraftInstanceMigration.Infrastructure.Backup;
 
@@ -516,6 +517,12 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (!source.IsDirectory &&
+            KnownMigrationContentRules.IsExcludedFileName(name))
+        {
+            return;
+        }
+
         if (source.IsDirectory)
         {
             using SafeFileHandle destination = CreateDirectory(backupParent, name);
@@ -615,6 +622,12 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
                 cancellationToken.ThrowIfCancellationRequested();
                 ValidateSingleName(childName);
                 using OpenedNode child = OpenExistingNode(node.Handle, childName);
+                if (!child.IsDirectory &&
+                    KnownMigrationContentRules.IsExcludedFileName(childName))
+                {
+                    continue;
+                }
+
                 AppendNodeFingerprint(
                     child,
                     relativePath + "/" + childName,

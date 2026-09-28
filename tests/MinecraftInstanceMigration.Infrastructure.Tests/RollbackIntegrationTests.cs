@@ -391,6 +391,12 @@ public sealed class RollbackIntegrationTests
         Directory.CreateDirectory(journals);
         File.WriteAllText(Path.Combine(source, "config", "new.json"), "new-value");
         File.WriteAllText(Path.Combine(destination, "config", "old.json"), "old-value");
+        File.WriteAllText(
+            Path.Combine(source, "config", "hanemod-client.json"),
+            "source-excluded");
+        File.WriteAllText(
+            Path.Combine(destination, "config", "HANEMOD-CLIENT.JSON"),
+            "destination-preserved");
 
         MigrationPlan migrationPlan = ReplacePlan();
         var backupPlanner = new BackupPlanner();
@@ -407,6 +413,8 @@ public sealed class RollbackIntegrationTests
 
         Assert.Equal(BackupExecutionStatus.Completed, backup.Status);
         Assert.NotNull(backup.BackupRootPath);
+        Assert.False(File.Exists(Path.Combine(
+            backup.BackupRootPath!, "config", "HANEMOD-CLIENT.JSON")));
 
         var step = new ExecutionJournalEntry(
             0,
@@ -419,6 +427,10 @@ public sealed class RollbackIntegrationTests
             destination,
             step,
             TestContext.Current.CancellationToken)).IsApplied);
+        Assert.Equal(
+            "destination-preserved",
+            File.ReadAllText(Path.Combine(
+                destination, "config", "HANEMOD-CLIENT.JSON")));
 
         ExecutionPostWriteVerificationResult verification =
             await new WindowsExecutionPostWriteVerifier().VerifyAsync(
@@ -494,6 +506,12 @@ public sealed class RollbackIntegrationTests
                 backup.BackupRootPath!,
                 "config",
                 "old.json")));
+        Assert.Equal(
+            "destination-preserved",
+            File.ReadAllText(Path.Combine(
+                destination,
+                "config",
+                "HANEMOD-CLIENT.JSON")));
     }
 
     [Fact]

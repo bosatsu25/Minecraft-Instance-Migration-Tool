@@ -130,7 +130,7 @@
           </Grid>
 
           <StackPanel Grid.Row="4" Margin="0,12">
-            <StackPanel Orientation="Horizontal">
+            <WrapPanel>
               <Button Content="Generate Preview" Padding="20,6" Command="{Binding GeneratePreviewCommand}"
                       AutomationProperties.AutomationId="GeneratePreview" />
               <Button Content="Apply choices" Padding="20,6" Margin="8,0,0,0"
@@ -139,6 +139,12 @@
               <Button Content="Reset Recommended" Padding="20,6" Margin="8,0,0,0"
                       Command="{Binding ResetRecommendedCommand}"
                       AutomationProperties.AutomationId="ResetRecommendedChoices" />
+              <Button Content="Select All" Padding="20,6" Margin="8,0,0,0"
+                      Command="{Binding SelectAllCommand}"
+                      AutomationProperties.AutomationId="SelectAllChoices" />
+              <Button Content="Select None" Padding="20,6" Margin="8,0,0,0"
+                      Command="{Binding SelectNoneCommand}"
+                      AutomationProperties.AutomationId="SelectNoChoices" />
               <Button Content="Cancel" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
                       AutomationProperties.AutomationId="PreviewCancel" />
               <Button Content="Check capacity" Padding="20,6" Margin="8,0,0,0"
@@ -147,7 +153,7 @@
               <Button Content="Execute migration" Padding="20,6" Margin="8,0,0,0"
                       Command="{Binding ExecuteMigrationCommand}"
                       AutomationProperties.AutomationId="ExecuteMigration" />
-            </StackPanel>
+            </WrapPanel>
             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
               <TextBlock VerticalAlignment="Center" Margin="0,0,8,0"
                          Text="Selected row:" FontWeight="SemiBold" />
@@ -179,6 +185,8 @@
                        FontWeight="SemiBold" AutomationProperties.AutomationId="PreviewPlanStatus" />
             <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"
                        AutomationProperties.AutomationId="PreviewSummary" />
+            <TextBlock Text="{Binding ContentRuleSummary, Mode=OneWay}" TextWrapping="Wrap"
+                       AutomationProperties.AutomationId="PreviewContentRules" />
             <TextBlock Text="{Binding WorkflowState, Mode=OneWay, StringFormat=Workflow state: {0}}"
                        FontWeight="SemiBold" AutomationProperties.AutomationId="ExecutionState" />
           </StackPanel>

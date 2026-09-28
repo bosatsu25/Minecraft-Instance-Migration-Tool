@@ -48,6 +48,34 @@ public sealed class BackupIoTests
     }
 
     [Fact]
+    public async Task BackupExcludesHanemodClientFilesAtEveryDepth()
+    {
+        using var fixture = new InspectionFixture();
+        string destination = fixture.At("destination");
+        string backupParent = fixture.At("backups");
+        Directory.CreateDirectory(Path.Combine(destination, "config", "nested"));
+        Directory.CreateDirectory(backupParent);
+        File.WriteAllText(Path.Combine(destination, "config", "normal.json"), "normal");
+        File.WriteAllText(Path.Combine(destination, "config", "hanemod-client.json"), "excluded");
+        File.WriteAllText(Path.Combine(destination, "config", "nested", "HANEMOD-CLIENT.JSON"), "excluded-nested");
+
+        BackupExecutionResult result = await Execute(
+            destination,
+            backupParent,
+            ReadyPlan(new BackupPlanEntry(
+                "config", ExpectedEntryKind.Directory, EntryState.Directory)));
+
+        Assert.Equal(BackupExecutionStatus.Completed, result.Status);
+        Assert.Equal("normal", File.ReadAllText(Path.Combine(
+            result.BackupRootPath!, "config", "normal.json")));
+        Assert.False(File.Exists(Path.Combine(
+            result.BackupRootPath!, "config", "hanemod-client.json")));
+        Assert.False(File.Exists(Path.Combine(
+            result.BackupRootPath!, "config", "nested", "HANEMOD-CLIENT.JSON")));
+        Assert.Equal(1, result.Verification!.FileCount);
+    }
+
+    [Fact]
     public async Task NestedJunctionFailsClosedAndNeverCopiesTargetPayload()
     {
         using var fixture = new InspectionFixture();

@@ -107,11 +107,17 @@ public sealed class InspectorSmokeTests
         Assert.Contains("DestinationConflict", config);
         Assert.NotNull(session.Find("ApplyPreviewChoices"));
         Assert.NotNull(session.Find("ResetRecommendedChoices"));
+        Assert.NotNull(session.Find("SelectAllChoices"));
+        Assert.NotNull(session.Find("SelectNoChoices"));
         Assert.NotNull(session.Find("IncludeSelectedEntry"));
         Assert.NotNull(session.Find("ExcludeSelectedEntry"));
         Assert.NotNull(session.Find("SkipSelectedConflict"));
         Assert.NotNull(session.Find("ReplaceSelectedConflict"));
         Assert.NotNull(session.Find("ClearSelectedConflict"));
+        Assert.Contains(
+            "hanemod-client.json",
+            session.Find("PreviewContentRules").Name,
+            StringComparison.Ordinal);
 
         Assert.Equal(sourceBefore, source.Snapshot());
         Assert.Equal(destinationBefore, destination.Snapshot());

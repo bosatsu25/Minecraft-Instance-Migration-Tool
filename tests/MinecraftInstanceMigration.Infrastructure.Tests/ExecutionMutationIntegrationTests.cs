@@ -55,6 +55,87 @@ public sealed class ExecutionMutationIntegrationTests
     }
 
     [Fact]
+    public async Task CopyDirectoryExcludesHanemodClientAtEveryDepthAndVerifierUsesSameRule()
+    {
+        using var fixture = new InspectionFixture();
+        string source = fixture.At("source");
+        string destination = fixture.At("destination");
+        Directory.CreateDirectory(Path.Combine(source, "config", "nested"));
+        Directory.CreateDirectory(Path.Combine(
+            source, "config", "directory-case", "hanemod-client.json"));
+        Directory.CreateDirectory(destination);
+        File.WriteAllText(Path.Combine(source, "config", "normal.json"), "normal");
+        File.WriteAllText(Path.Combine(source, "config", "hanemod-client.json"), "excluded-root");
+        File.WriteAllText(Path.Combine(source, "config", "nested", "HANEMOD-CLIENT.JSON"), "excluded-nested");
+        File.WriteAllText(Path.Combine(source, "config", "nested", "hanemod-client.json.bak"), "included-similar");
+        File.WriteAllText(Path.Combine(
+            source,
+            "config",
+            "directory-case",
+            "hanemod-client.json",
+            "inside.txt"), "directory-is-included");
+
+        var step = new ExecutionJournalEntry(
+            0, "config", ExpectedEntryKind.Directory, ExecutionOperationKind.Copy);
+
+        ExecutionMutationResult mutation = await new WindowsExecutionMutationPort().ApplyAsync(
+            source, destination, step, TestContext.Current.CancellationToken);
+        ExecutionPostWriteVerificationResult verification =
+            await new WindowsExecutionPostWriteVerifier().VerifyAsync(
+                source, destination, step, TestContext.Current.CancellationToken);
+
+        Assert.True(mutation.IsApplied, $"{mutation.Status}/{mutation.FailureKind}");
+        Assert.True(verification.IsVerified, $"{verification.Status}/{verification.FailureKind}");
+        Assert.Equal("normal", File.ReadAllText(Path.Combine(destination, "config", "normal.json")));
+        Assert.Equal("included-similar", File.ReadAllText(Path.Combine(
+            destination, "config", "nested", "hanemod-client.json.bak")));
+        Assert.Equal("directory-is-included", File.ReadAllText(Path.Combine(
+            destination,
+            "config",
+            "directory-case",
+            "hanemod-client.json",
+            "inside.txt")));
+        Assert.False(File.Exists(Path.Combine(destination, "config", "hanemod-client.json")));
+        Assert.False(File.Exists(Path.Combine(destination, "config", "nested", "HANEMOD-CLIENT.JSON")));
+    }
+
+    [Fact]
+    public async Task ReplacePreservesExistingExcludedFilesWhileReplacingOtherContent()
+    {
+        using var fixture = new InspectionFixture();
+        string source = fixture.At("source");
+        string destination = fixture.At("destination");
+        Directory.CreateDirectory(Path.Combine(source, "config", "nested"));
+        Directory.CreateDirectory(Path.Combine(destination, "config", "nested"));
+        Directory.CreateDirectory(Path.Combine(destination, "config", "destination-only"));
+        File.WriteAllText(Path.Combine(source, "config", "new.json"), "new");
+        File.WriteAllText(Path.Combine(source, "config", "nested", "hanemod-client.json"), "source-excluded");
+        File.WriteAllText(Path.Combine(destination, "config", "old.json"), "old");
+        File.WriteAllText(Path.Combine(destination, "config", "nested", "HANEMOD-CLIENT.JSON"), "destination-preserved");
+        File.WriteAllText(
+            Path.Combine(destination, "config", "destination-only", "hanemod-client.json"),
+            "destination-only-preserved");
+
+        var step = new ExecutionJournalEntry(
+            0, "config", ExpectedEntryKind.Directory, ExecutionOperationKind.Replace);
+
+        ExecutionMutationResult mutation = await new WindowsExecutionMutationPort().ApplyAsync(
+            source, destination, step, TestContext.Current.CancellationToken);
+        ExecutionPostWriteVerificationResult verification =
+            await new WindowsExecutionPostWriteVerifier().VerifyAsync(
+                source, destination, step, TestContext.Current.CancellationToken);
+
+        Assert.True(mutation.IsApplied, $"{mutation.Status}/{mutation.FailureKind}");
+        Assert.True(verification.IsVerified, $"{verification.Status}/{verification.FailureKind}");
+        Assert.Equal("new", File.ReadAllText(Path.Combine(destination, "config", "new.json")));
+        Assert.False(File.Exists(Path.Combine(destination, "config", "old.json")));
+        Assert.Equal("destination-preserved", File.ReadAllText(Path.Combine(
+            destination, "config", "nested", "HANEMOD-CLIENT.JSON")));
+        Assert.Equal("destination-only-preserved", File.ReadAllText(Path.Combine(
+            destination, "config", "destination-only", "hanemod-client.json")));
+    }
+
+    [Fact]
     public async Task CopyRefusesExistingDestinationWithoutOverwrite()
     {
         using var fixture = new InspectionFixture();

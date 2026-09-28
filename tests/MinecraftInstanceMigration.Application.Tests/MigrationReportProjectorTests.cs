@@ -31,6 +31,9 @@ public sealed class MigrationReportProjectorTests
         Assert.Equal(1, report.Migration.ExcludedCount);
         Assert.Equal(1, report.Migration.SourceMissingCount);
         Assert.Equal(1, report.Migration.BlockedCount);
+        Assert.Contains(
+            report.Migration.ContentRuleSummaries,
+            summary => summary.Contains("hanemod-client.json", StringComparison.Ordinal));
         Assert.Equal(2, report.Execution.PlannedWriteCount);
         Assert.Equal(2, report.Execution.AppliedCount);
         Assert.Equal(MigrationReportVerificationOutcome.Succeeded, report.Execution.VerificationOutcome);

@@ -6,6 +6,15 @@ namespace MinecraftInstanceMigration.Domain.Tests;
 public sealed class MigrationSelectionAndConflictPolicyTests
 {
     [Fact]
+    public void AllPresetContainsEveryKnownCandidateInCatalogOrder()
+    {
+        Assert.Equal(11, MigrationSelectionPresets.All.Count);
+        Assert.Equal(
+            KnownEntryCatalog.All.Select(entry => entry.Name),
+            MigrationSelectionPresets.All);
+    }
+
+    [Fact]
     public void RecommendedPresetMatchesLegacyDirectionAndKeepsWorldsAndScreenshotsOptIn()
     {
         Assert.Equal(

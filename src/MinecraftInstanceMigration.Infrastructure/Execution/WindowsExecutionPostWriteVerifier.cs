@@ -68,7 +68,12 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
                 return Failed(ExecutionPostWriteVerificationFailureKind.SourceChanged);
             }
 
-            if (!sourceAfter.Equals(destinationFingerprint))
+            if (!sourceAfter.Equals(destinationFingerprint) &&
+                !PayloadMatches(
+                    source.Root,
+                    destination.Root,
+                    step,
+                    cancellationToken))
             {
                 return Failed(ExecutionPostWriteVerificationFailureKind.VerificationMismatch);
             }
@@ -158,6 +163,70 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
         {
             throw new ExecutionVerificationException(
                 ExecutionPostWriteVerificationFailureKind.SourceChanged);
+        }
+    }
+
+    private static bool PayloadMatches(
+        SafeFileHandle sourceRoot,
+        SafeFileHandle destinationRoot,
+        ExecutionJournalEntry step,
+        CancellationToken cancellationToken)
+    {
+        WindowsExecutionTree.OpenedNode source;
+        try
+        {
+            source = WindowsExecutionTree.OpenExistingNode(sourceRoot, step.Name);
+            try
+            {
+                WindowsExecutionTree.EnsureExpectedKind(source, step.ExpectedKind);
+            }
+            catch
+            {
+                source.Dispose();
+                throw;
+            }
+        }
+        catch (ExecutionTreeException error) when (
+            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        {
+            throw new ExecutionVerificationException(
+                ExecutionPostWriteVerificationFailureKind.SourceChanged);
+        }
+
+        using (source)
+        {
+            WindowsExecutionTree.OpenedNode destination;
+            try
+            {
+                destination = WindowsExecutionTree.OpenExistingNode(
+                    destinationRoot,
+                    step.Name);
+                try
+                {
+                    WindowsExecutionTree.EnsureExpectedKind(
+                        destination,
+                        step.ExpectedKind);
+                }
+                catch
+                {
+                    destination.Dispose();
+                    throw;
+                }
+            }
+            catch (ExecutionTreeException error) when (
+                error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+            {
+                throw new ExecutionVerificationException(
+                    ExecutionPostWriteVerificationFailureKind.DestinationMissing);
+            }
+
+            using (destination)
+            {
+                return WindowsExecutionTree.MigrationPayloadMatches(
+                    source,
+                    destination,
+                    cancellationToken);
+            }
         }
     }
 

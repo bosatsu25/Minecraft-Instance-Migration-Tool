@@ -5,7 +5,7 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 4.5 Capacity / Free-space Preflight is implemented.**
+**Status: Phase 4.6 ModPackTransfer compatibility closure is implemented.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
@@ -15,6 +15,9 @@ The WPF UI exposes Inspector, Migration Preview, selection/conflict editing, exp
 confirmation, Backup when required, verified Copy / Replace execution, Recovery diagnosis,
 explicitly confirmed guarded rollback, and a read-only Migration Report.
 Execution also requires a current capacity preflight result for the selected safety workspace.
+The inspected ModPackTransfer migration feature set is covered by a traceable compatibility matrix
+and regression tests. The successor keeps the same eleven migration candidates while strengthening
+overwrite, path, backup, verification, rollback, error-redaction, and capacity behavior.
 
 ## Current implementation
 
@@ -368,7 +371,6 @@ The following are not complete:
 
 - report persistence / user-initiated export
 - automatic rollback resume
-- legacy `hanemod-client.json` exclusion
 - Merge conflict semantics
 - Minecraft / mod / loader compatibility analysis
 - exact NTFS clone semantics
@@ -442,14 +444,15 @@ Implemented:
 18. Phase 4.3 — Recovery Diagnosis / Guarded Rollback UI
 19. Phase 4.4 — read-only Migration Report
 20. Phase 4.5 — capacity / free-space preflight
+21. Phase 4.6 — ModPackTransfer compatibility closure
 
 Next major areas:
 
-21. **Phase 4.6 — ModPackTransfer compatibility closure**
-22. Phase 5.0 — Release hardening
+22. **Phase 5.0 — Release hardening**
 23. Phase 5.1 — v1.0 release validation
 
-See [migration rules](docs/migration-rules.md) for legacy candidates and unresolved rules,
+See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the inspected
+reference inventory and regression evidence, [migration rules](docs/migration-rules.md) for candidate rules,
 [rollback](docs/rollback.md) for rollback guarantees,
 and [execution journal](docs/execution-journal.md) for execution evidence.
 Report projection and its persistence boundary are documented in [report](docs/report.md).

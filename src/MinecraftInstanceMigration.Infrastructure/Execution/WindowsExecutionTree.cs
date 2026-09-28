@@ -7,6 +7,7 @@ using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Execution;
 using MinecraftInstanceMigration.Domain.Inspection;
+using MinecraftInstanceMigration.Domain.Rules;
 using MinecraftInstanceMigration.Infrastructure.Backup;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
@@ -303,20 +304,34 @@ internal static class WindowsExecutionTree
         OpenedNode source,
         SafeFileHandle destinationParent,
         string name,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowExistingDirectories = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (!source.IsDirectory &&
+            KnownMigrationContentRules.IsExcludedFileName(name))
+        {
+            return;
+        }
+
         if (source.IsDirectory)
         {
-            using SafeFileHandle destination = CreateDirectory(destinationParent, name);
+            using SafeFileHandle destination = allowExistingDirectories
+                ? CreateOrOpenDirectory(destinationParent, name)
+                : CreateDirectory(destinationParent, name);
 
             foreach (string childName in BackupNativeMethods.EnumerateNames(source.Handle))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ValidateSingleName(childName);
                 using OpenedNode child = OpenExistingNode(source.Handle, childName);
-                CopyNode(child, destination, childName, cancellationToken);
+                CopyNode(
+                    child,
+                    destination,
+                    childName,
+                    cancellationToken,
+                    allowExistingDirectories);
             }
 
             return;
@@ -437,6 +452,12 @@ internal static class WindowsExecutionTree
             directories++;
             foreach (HeldNodeTree child in tree.Children)
             {
+                if (!child.Node.IsDirectory &&
+                    KnownMigrationContentRules.IsExcludedFileName(child.Name))
+                {
+                    continue;
+                }
+
                 AppendHeldFingerprint(child, relativePath + "/" + child.Name,
                     hash, ref files, ref directories, ref totalBytes,
                     cancellationToken);
@@ -454,14 +475,34 @@ internal static class WindowsExecutionTree
         HeldNodeTree tree,
         Action deleted)
     {
+        DeleteHeldTreeCore(tree, deleted);
+    }
+
+    private static bool DeleteHeldTreeCore(
+        HeldNodeTree tree,
+        Action deleted)
+    {
+        if (!tree.Node.IsDirectory &&
+            KnownMigrationContentRules.IsExcludedFileName(tree.Name))
+        {
+            return false;
+        }
+
+        bool canDelete = true;
         foreach (HeldNodeTree child in tree.Children)
         {
-            DeleteHeldTree(child, deleted);
+            canDelete &= DeleteHeldTreeCore(child, deleted);
             child.Dispose();
+        }
+
+        if (!canDelete)
+        {
+            return false;
         }
 
         ExecutionNativeMethods.DeleteByHandle(tree.Node.Handle);
         deleted();
+        return true;
     }
 
     internal static void CopyHeldTree(
@@ -473,9 +514,15 @@ internal static class WindowsExecutionTree
         if (source.Node.IsDirectory)
         {
             using SafeFileHandle destination =
-                CreateDirectory(destinationParent, source.Name);
+                CreateOrOpenDirectory(destinationParent, source.Name);
             foreach (HeldNodeTree child in source.Children)
             {
+                if (!child.Node.IsDirectory &&
+                    KnownMigrationContentRules.IsExcludedFileName(child.Name))
+                {
+                    continue;
+                }
+
                 CopyHeldTree(child, destination, cancellationToken);
             }
 
@@ -558,11 +605,170 @@ internal static class WindowsExecutionTree
             Convert.ToHexString(hash.GetHashAndReset()));
     }
 
-    internal static long MeasureLogicalBytes(
-        OpenedNode node,
+    internal static bool MigrationPayloadMatches(
+        OpenedNode source,
+        OpenedNode destination,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (source.IsDirectory != destination.IsDirectory)
+        {
+            return false;
+        }
+
+        if (!source.IsDirectory)
+        {
+            return FileContentMatches(
+                source.Handle,
+                destination.Handle,
+                cancellationToken);
+        }
+
+        IReadOnlyList<string> destinationNames =
+            BackupNativeMethods.EnumerateNames(destination.Handle);
+        var remainingDestinationNames = new HashSet<string>(
+            destinationNames,
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (string sourceName in BackupNativeMethods.EnumerateNames(source.Handle))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateSingleName(sourceName);
+            using OpenedNode sourceChild = OpenExistingNode(source.Handle, sourceName);
+            if (!sourceChild.IsDirectory &&
+                KnownMigrationContentRules.IsExcludedFileName(sourceName))
+            {
+                continue;
+            }
+
+            string? destinationName = destinationNames.FirstOrDefault(name =>
+                string.Equals(name, sourceName, StringComparison.OrdinalIgnoreCase));
+            if (destinationName is null)
+            {
+                return false;
+            }
+
+            ValidateSingleName(destinationName);
+            using OpenedNode destinationChild =
+                OpenExistingNode(destination.Handle, destinationName);
+            if (!MigrationPayloadMatches(
+                    sourceChild,
+                    destinationChild,
+                    cancellationToken))
+            {
+                return false;
+            }
+
+            remainingDestinationNames.Remove(destinationName);
+        }
+
+        foreach (string destinationName in remainingDestinationNames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateSingleName(destinationName);
+            using OpenedNode destinationChild =
+                OpenExistingNode(destination.Handle, destinationName);
+            if (!ContainsOnlyExcludedContent(
+                    destinationChild,
+                    destinationName,
+                    cancellationToken))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ContainsOnlyExcludedContent(
+        OpenedNode node,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!node.IsDirectory)
+        {
+            return KnownMigrationContentRules.IsExcludedFileName(name);
+        }
+
+        bool foundExcludedFile = false;
+        foreach (string childName in BackupNativeMethods.EnumerateNames(node.Handle))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateSingleName(childName);
+            using OpenedNode child = OpenExistingNode(node.Handle, childName);
+            if (!ContainsOnlyExcludedContent(child, childName, cancellationToken))
+            {
+                return false;
+            }
+
+            foundExcludedFile = true;
+        }
+
+        return foundExcludedFile;
+    }
+
+    private static bool FileContentMatches(
+        SafeFileHandle source,
+        SafeFileHandle destination,
+        CancellationToken cancellationToken)
+    {
+        long sourceLength = RandomAccess.GetLength(source);
+        long destinationLength = RandomAccess.GetLength(destination);
+        if (sourceLength != destinationLength)
+        {
+            return false;
+        }
+
+        byte[] sourceBuffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+        byte[] destinationBuffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+        try
+        {
+            long offset = 0;
+            while (offset < sourceLength)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int sourceRead = RandomAccess.Read(
+                    source,
+                    sourceBuffer.AsSpan(0, BufferSize),
+                    offset);
+                int destinationRead = RandomAccess.Read(
+                    destination,
+                    destinationBuffer.AsSpan(0, BufferSize),
+                    offset);
+                if (sourceRead == 0 ||
+                    sourceRead != destinationRead ||
+                    !sourceBuffer.AsSpan(0, sourceRead).SequenceEqual(
+                        destinationBuffer.AsSpan(0, destinationRead)))
+                {
+                    return false;
+                }
+
+                offset += sourceRead;
+            }
+
+            return RandomAccess.GetLength(source) == sourceLength &&
+                RandomAccess.GetLength(destination) == destinationLength;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(sourceBuffer, clearArray: false);
+            ArrayPool<byte>.Shared.Return(destinationBuffer, clearArray: false);
+        }
+    }
+
+    internal static long MeasureLogicalBytes(
+        OpenedNode node,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!node.IsDirectory &&
+            KnownMigrationContentRules.IsExcludedFileName(name))
+        {
+            return 0;
+        }
+
         if (!node.IsDirectory)
         {
             return RandomAccess.GetLength(node.Handle);
@@ -574,7 +780,10 @@ internal static class WindowsExecutionTree
             cancellationToken.ThrowIfCancellationRequested();
             ValidateSingleName(childName);
             using OpenedNode child = OpenExistingNode(node.Handle, childName);
-            totalBytes = checked(totalBytes + MeasureLogicalBytes(child, cancellationToken));
+            totalBytes = checked(totalBytes + MeasureLogicalBytes(
+                child,
+                childName,
+                cancellationToken));
         }
 
         return totalBytes;
@@ -600,6 +809,12 @@ internal static class WindowsExecutionTree
                 cancellationToken.ThrowIfCancellationRequested();
                 ValidateSingleName(childName);
                 using OpenedNode child = OpenExistingNode(node.Handle, childName);
+                if (!child.IsDirectory &&
+                    KnownMigrationContentRules.IsExcludedFileName(childName))
+                {
+                    continue;
+                }
+
                 AppendFingerprint(
                     child,
                     relativePath + "/" + childName,
@@ -744,6 +959,55 @@ internal static class WindowsExecutionTree
         }
 
         return handle;
+    }
+
+    private static SafeFileHandle CreateOrOpenDirectory(
+        SafeFileHandle parent,
+        string name)
+    {
+        try
+        {
+            return CreateDirectory(parent, name);
+        }
+        catch (ExecutionTreeException error) when (
+            error.Kind == ExecutionTreeFailureKind.Collision)
+        {
+            ValidateSingleName(name);
+            (SafeFileHandle handle, int status) = BackupNativeMethods.OpenRelative(
+                parent,
+                name,
+                BackupNativeMethods.FileListDirectory |
+                BackupNativeMethods.FileAddFile |
+                BackupNativeMethods.FileAddSubdirectory |
+                BackupNativeMethods.FileTraverse |
+                BackupNativeMethods.FileReadAttributes |
+                BackupNativeMethods.FileWriteAttributes |
+                BackupNativeMethods.Synchronize,
+                BackupNativeMethods.ShareRead,
+                BackupNativeMethods.FileOpen,
+                BackupNativeMethods.FileOpenReparsePoint |
+                BackupNativeMethods.FileOpenNoRecall |
+                BackupNativeMethods.FileSynchronousIoNonAlert);
+
+            if (status != 0)
+            {
+                handle.Dispose();
+                throw MapNativeFailure(status);
+            }
+
+            FileAttributes attributes = BackupNativeMethods.ReadAttributes(handle);
+            if (attributes.HasFlag(FileAttributes.ReparsePoint) ||
+                !attributes.HasFlag(FileAttributes.Directory))
+            {
+                handle.Dispose();
+                throw new ExecutionTreeException(
+                    attributes.HasFlag(FileAttributes.ReparsePoint)
+                        ? ExecutionTreeFailureKind.ReparsePoint
+                        : ExecutionTreeFailureKind.Collision);
+            }
+
+            return handle;
+        }
     }
 
     private static SafeFileHandle CreateFile(
