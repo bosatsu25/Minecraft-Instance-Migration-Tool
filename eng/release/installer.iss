@@ -31,6 +31,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#ExecutableName}
+UninstallDisplayName={#ProductName}
 SetupIconFile={#AppIconPath}
 CloseApplications=yes
 RestartApplications=no

@@ -1,6 +1,6 @@
 # Install and upgrade
 
-No stable download exists yet. The release pipeline currently produces unsigned Phase 5.0 verification artifacts; the first supported public artifact is pending Phase 5.1.
+No stable download exists yet. The release pipeline currently produces unsigned `1.0.0` Phase 5.1 candidate artifacts; the first supported public artifact remains blocked by the release-validation checklist.
 
 ## Installer
 
@@ -21,7 +21,7 @@ The installer is per-user and uses `%LOCALAPPDATA%\Programs\Minecraft Instance M
 Example checksum verification:
 
 ```powershell
-(Get-FileHash .\MinecraftInstanceMigrationTool-0.9.0-win-x64.zip -Algorithm SHA256).Hash
+(Get-FileHash .\MinecraftInstanceMigrationTool-1.0.0-win-x64.zip -Algorithm SHA256).Hash
 Get-Content .\SHA256SUMS.txt
 ```
 

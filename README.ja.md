@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 5.0 release hardening と最終アプリケーションアイコンは実装済みです。正式な出荷準備にはproduction signing設定が必要です。clean-machine検証はPhase 5.1で行います。**
+**Phase 5.1で、tagを付けない`1.0.0` release candidateを検証中です。evidence checklistとproduction signing要件を満たすまで正式な出荷準備はblockedです。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -24,7 +24,7 @@ capacity の安全性を強化した後継実装です。
 Phase 4.6 の検証基準は **通常テスト 429 passed + FlaUI UI smoke 6 passed**、
 build は警告0 / エラー0、Hosted `verify` / `ui-smoke` は merge 前に green です。
 
-Phase 5.0 では開発versionを `0.9.0` に固定し、Windows 11 x64向けself-contained folder publish、
+Phase 5.1ではnumeric version `1.0.0`をtagなしrelease candidateとして使用し、Windows 11 x64向けself-contained folder publish、
 portable ZIP、per-user Inno Setup installer、SHA-256 checksum、assembly metadata由来のAbout表示、
 least-privilege release workflowを準備します。`v1.0.0` tagや公開releaseは作成しません。
 
@@ -205,15 +205,15 @@ guarded rollback、capacity gateを維持します。
 
 ## Phase 5.0 Release Hardening
 
-version `0.9.0`をWindows 11 x64向け.NET 10 self-contained folderとしてpublishします。
+candidate version `1.0.0`をWindows 11 x64向け.NET 10 self-contained folderとしてpublishします。
 release workflowはportable ZIPとper-user Inno Setup installerを生成し、version metadataと
 SHA-256 checksumを検証し、Hosted Windows runnerでinstall/uninstallを試します。アプリ内の
 Aboutにはassembly metadataのversionを表示します。PR/branch dry-runはunsignedで、production
 signingはtrusted tag contextに限定します。
 
 single-file、trimming、NativeAOTはこのreleaseでは無効です。最終アイコンは組み込み済みで、production
-signing設定が未準備です。Phase 5.1でclean machine上のinstall、起動、migration、Recovery/Rollback、artifact、
-署名、upgrade、uninstallを検証してから`v1.0.0`を出荷判定します。
+signing設定が未準備です。Phase 5.1のclean hosted runner、package、install、migration、upgrade、
+uninstallと残るmanual evidenceは[release validation checklist](docs/release-validation.md)へ記録します。
 
 ## UI で現在できること
 
@@ -405,11 +405,11 @@ BCL と明示的な port / adapter を中心に構成しています。
 
 pipelineは次の固定artifact名を生成します。
 
-- `MinecraftInstanceMigrationTool-0.9.0-win-x64.zip`
-- `MinecraftInstanceMigrationTool-0.9.0-win-x64-setup.exe`
+- `MinecraftInstanceMigrationTool-1.0.0-win-x64.zip`
+- `MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`
 - `SHA256SUMS.txt`
 
-安定版downloadはまだありません。Phase 5.1でartifactを検証してから`v1.0.0`へ進みます。
+安定版downloadはまだありません。Phase 5.1のevidence checklistを閉じてからstable `v1.0.0`へ進みます。
 installerはper-user、ZIPはportableで、どちらもself-containedです。checksum、署名、upgrade、
 support範囲は [install](docs/install.md) と [release process](docs/release.md) を参照してください。
 
@@ -425,7 +425,7 @@ support範囲は [install](docs/install.md) と [release process](docs/release.m
 - Minecraft / mod / loader compatibility 判定
 - exact NTFS clone semantics
 - production Authenticode signingとstable release公開
-- clean-machine install / upgrade / migration検証（Phase 5.1）
+- [Phase 5.1](docs/release-validation.md)に残るrelease validation
 
 特に、**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
 現在の実装は compatibility を保証しません。
@@ -500,7 +500,7 @@ warnings は build failure として扱います。
 次の大きな領域:
 
 22. **Phase 5.0 — Release hardening（実装済み、production signing待ち）**
-23. Phase 5.1 — v1.0 clean-machine release validation
+23. **Phase 5.1 — v1.0 release validation（進行中、必要なevidenceが残る間はrelease blocked）**
 
 調査した旧版機能と回帰証拠は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md)、
 移行候補と rule は [migration rules](docs/migration-rules.md)、

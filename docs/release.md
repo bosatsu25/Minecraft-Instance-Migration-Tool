@@ -1,12 +1,13 @@
 # Release process
 
-Phase 5.0 prepares a Windows release candidate. It does not publish `v1.0.0`.
+Phase 5.0 prepares the Windows release pipeline. Phase 5.1 validates an untagged `1.0.0`
+release-candidate build; it does not publish `v1.0.0`.
 
 ## Fixed release configuration
 
 | Setting | Value |
 | --- | --- |
-| Development version | `0.9.0` from `Directory.Build.props` |
+| Release-candidate version | `1.0.0` from `Directory.Build.props` |
 | Supported release target | Windows 11 x64 |
 | Runtime identifier | `win-x64` |
 | Deployment | self-contained folder publish |
@@ -25,7 +26,11 @@ Install the official Inno Setup 6.7.3 compiler, verify its Authenticode signatur
 
 ```powershell
 ./eng/release/Build-Release.ps1 -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-./eng/release/Test-Installer.ps1 -InstallerPath ./artifacts/release/MinecraftInstanceMigrationTool-0.9.0-win-x64-setup.exe
+./eng/release/Test-Installer.ps1 `
+  -InstallerPath ./artifacts/release/MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe `
+  -ExpectedVersion 1.0.0 `
+  -TestReinstall `
+  -CreateDesktopShortcut
 ```
 
 The build restores the `win-x64` runtime, publishes without PDBs, launches the published application, creates both packages, verifies package contents and version metadata, and writes SHA-256 checksums. Output is restricted to ignored `artifacts/` directories.
@@ -37,7 +42,7 @@ The workflow downloads the immutable Inno Setup 6.7.3 asset and checks its SHA-2
 
 `.github/workflows/release.yml` supports:
 
-- pull-request, Phase 5.0 branch, and manual unsigned dry-runs after core and UI verification;
+- pull-request, Phase 5.0/5.1 branches, and manual unsigned dry-runs after core and UI verification;
 - trusted `v*` tags, which require valid signing configuration before a draft GitHub release can be created.
 
 Normal jobs have `contents: read`. Only the tag-only draft-release job receives `contents: write`. Pull requests never receive or use production signing material.
@@ -65,8 +70,8 @@ Semantic Versioning is used. `0.x.y` is development, `1.0.0` is the first stable
 This blocker prevents a stable public release. The unsigned CI artifact is for verification only.
 The approved original icon is stored as `AppIcon.png` and a multi-resolution `AppIcon.ico` under the App's `Assets/` directory. The executable, window, installer, shortcuts, and uninstall entry use that icon; the source PNG is excluded from publish output.
 The repository uses the MIT license in `LICENSE`; it is included in both release packages.
-The hosted release dry-run passes. Clean-machine validation belongs to Phase 5.1.
+Phase 5.1 evidence and blockers are recorded in [release validation](release-validation.md).
 
 ## Phase 5.1 validation
 
-Validate clean-machine install, first launch, Copy, Replace, capacity failure, recovery/rollback, report, upgrade, uninstall, signature, and checksums before creating `v1.0.0`.
+Validate clean-machine install, first launch, Copy, Replace, capacity failure, recovery/rollback, report, upgrade, uninstall, signature, and checksums before creating a stable tag or public release.

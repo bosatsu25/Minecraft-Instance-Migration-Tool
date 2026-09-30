@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - 'feature/phase-5.0-release-hardening'
+      - 'feature/phase-5.1-v1-release-validation'
     tags:
       - 'v*'
 
@@ -70,6 +71,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - name: Restore packaged-application UI tests
+        run: dotnet restore tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj
       - name: Install verified Inno Setup compiler
         shell: pwsh
         run: |
@@ -132,7 +135,28 @@ jobs:
         run: |
           $props = [xml](Get-Content Directory.Build.props -Raw)
           $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
-          ./eng/release/Test-Installer.ps1 -InstallerPath "artifacts/release/MinecraftInstanceMigrationTool-$version-win-x64-setup.exe"
+          $isTag = $env:GITHUB_REF.StartsWith('refs/tags/v', [StringComparison]::Ordinal)
+          ./eng/release/Test-Installer.ps1 `
+            -InstallerPath "artifacts/release/MinecraftInstanceMigrationTool-$version-win-x64-setup.exe" `
+            -ExpectedVersion $version `
+            -TestReinstall `
+            -CreateDesktopShortcut `
+            -RequireSigning:$isTag `
+            -UseDefaultInstallPath
+      - name: Run migration smoke against extracted portable package
+        shell: pwsh
+        run: |
+          $props = [xml](Get-Content Directory.Build.props -Raw)
+          $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+          $portableRoot = Join-Path $env:RUNNER_TEMP 'mim-release-candidate-portable'
+          if (Test-Path -LiteralPath $portableRoot) { throw 'Portable validation directory already exists.' }
+          Expand-Archive `
+            -LiteralPath "artifacts/release/MinecraftInstanceMigrationTool-$version-win-x64.zip" `
+            -DestinationPath $portableRoot
+          $env:MIM_UI_EXECUTABLE = Join-Path $portableRoot 'MinecraftInstanceMigrationTool.exe'
+          dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj `
+            --configuration Release `
+            --no-restore
       - name: Upload release dry-run artifacts
         uses: actions/upload-artifact@v4
         with:

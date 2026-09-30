@@ -638,7 +638,30 @@ checks signature state, writes checksums last, and reopens the ZIP for content v
 `Test-Installer.ps1` silently installs into a new per-run temporary directory, verifies the executable,
 license, uninstaller, Start Menu shortcut icon, and uninstall display icon, then uninstalls it. It refuses
 an existing test directory instead of clearing it.
-Phase 5.1 still owns clean-machine and real upgrade validation.
+Phase 5.1 owns clean-machine and real upgrade validation.
+
+## Phase 5.1: v1.0 release validation
+
+Phase 5.1 runs the existing release pipeline as the source of truth and adds candidate-specific gates:
+
+- the portable ZIP is extracted into a new temporary directory and its EXE must open a WPF window;
+- the ZIP manifest must exactly match the verified publish directory and contain the self-contained
+  runtime, license, and third-party notices;
+- publish binaries are scanned for the developer repository path, while source, test, debug,
+  credential, log, dump, raw icon, and unexpected executable files are rejected;
+- installer validation covers the default per-user path and registration, direct/Start Menu/optional desktop launches,
+  same-version reinstall, installed metadata and signature state, complete uninstall, and preservation
+  of user-owned data outside the install directory;
+- the UI suite can launch an explicitly supplied packaged executable. The release-package job expands
+  the candidate ZIP and runs all seven FlaUI tests against that EXE, including real owned-fixture Copy
+  and Replace migrations through capacity, verification, backup, and Report;
+- the strict status table in [release validation](release-validation.md) separates local, hosted, and
+  unavailable/manual evidence. A NOT TESTED release-critical item is never treated as PASS.
+
+Local upgrade validation rebuilds the Phase 5.0 baseline commit in an owned temporary directory and
+passes its `0.9.0` installer to the same installer test before applying `1.0.0`. The hosted pull-request
+gate validates current-candidate install/reinstall because CI does not retain an earlier installer as a
+trusted input. Production signing and interactive SmartScreen/shell rendering remain separate evidence.
 
 Hosted completion requires the ordinary `verify` and `ui-smoke` gates plus the release workflow's
 `release-package` job. The package job depends on its own core/UI verification and cannot upload artifacts

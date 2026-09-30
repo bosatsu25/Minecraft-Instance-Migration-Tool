@@ -152,6 +152,36 @@ public sealed class InspectorSmokeTests
         Assert.Equal(unrelatedBefore, unrelated.Snapshot());
     }
 
+    [Fact]
+    public void ExecutesConfirmedReplaceMigrationWithBackup()
+    {
+        using var source = new UiFixture();
+        using var destination = new UiFixture();
+        using var workspace = new UiFixture();
+        Directory.CreateDirectory(source.At("config"));
+        Directory.CreateDirectory(destination.At("config"));
+        File.WriteAllText(source.At(Path.Combine("config", "sample.txt")), "replacement-content");
+        File.WriteAllText(destination.At(Path.Combine("config", "sample.txt")), "original-content");
+        string[] sourceBefore = source.Snapshot();
+
+        using var session = UiSession.Open();
+        session.SelectPreviewTab();
+        session.GeneratePreview(source.Root, destination.Root);
+        session.ReplaceConflictAndApply("config");
+        session.ExecuteMigration(workspace.Root);
+
+        Assert.Contains("Completed", session.Find("ExecutionState").Name);
+        session.SelectReportTab();
+        Assert.Contains("Completed", session.Find("ReportOverallOutcome").Name);
+        Assert.Contains("Replace: 1", session.Find("ReportMigrationSummary").Name);
+        Assert.Contains("Completed", session.Find("ReportBackupSummary").Name);
+        Assert.Equal("replacement-content", File.ReadAllText(destination.At(Path.Combine("config", "sample.txt"))));
+        Assert.Equal(sourceBefore, source.Snapshot());
+        Assert.Contains(
+            Directory.EnumerateFiles(workspace.Root, "sample.txt", SearchOption.AllDirectories),
+            path => File.ReadAllText(path) == "original-content");
+    }
+
     private sealed class UiSession : IDisposable
     {
         private readonly FlaUI.Core.Application application;
@@ -169,7 +199,7 @@ public sealed class InspectorSmokeTests
 
         public static UiSession Open()
         {
-            var start = new ProcessStartInfo(Path.ChangeExtension(typeof(MainWindow).Assembly.Location, ".exe"))
+            var start = new ProcessStartInfo(ResolveApplicationExecutable())
             {
                 UseShellExecute = false,
             };
@@ -190,6 +220,25 @@ public sealed class InspectorSmokeTests
                 application.Dispose();
                 throw;
             }
+        }
+
+        private static string ResolveApplicationExecutable()
+        {
+            string? packagedExecutable = Environment.GetEnvironmentVariable("MIM_UI_EXECUTABLE");
+            if (string.IsNullOrWhiteSpace(packagedExecutable))
+            {
+                return Path.ChangeExtension(typeof(MainWindow).Assembly.Location, ".exe");
+            }
+
+            string fullPath = Path.GetFullPath(packagedExecutable);
+            if (!string.Equals(Path.GetExtension(fullPath), ".exe", StringComparison.OrdinalIgnoreCase) ||
+                !File.Exists(fullPath))
+            {
+                throw new InvalidOperationException(
+                    "MIM_UI_EXECUTABLE must identify an existing packaged application executable.");
+            }
+
+            return fullPath;
         }
 
         public AutomationElement Find(string id) =>
@@ -309,7 +358,57 @@ public sealed class InspectorSmokeTests
                 timeout: TimeSpan.FromSeconds(20),
                 throwOnTimeout: false,
                 ignoreException: true);
-            Assert.True(completed.Success, "Confirmed migration did not reach Completed in twenty seconds.");
+            Assert.True(
+                completed.Success,
+                $"Confirmed migration did not reach Completed in twenty seconds. " +
+                $"State='{Find("ExecutionState").Name}', status='{Find("PreviewStatus").Name}', " +
+                $"evidence='{ReadJournalEvidence(workspacePath)}'.");
+        }
+
+        private static string ReadJournalEvidence(string workspacePath)
+        {
+            string[] lines = Directory.EnumerateFiles(workspacePath, "*.jsonl", SearchOption.AllDirectories)
+                .SelectMany(File.ReadAllLines)
+                .ToArray();
+            return lines.Length == 0 ? "none" : string.Join(" | ", lines);
+        }
+
+        public void ReplaceConflictAndApply(string name)
+        {
+            AutomationElement row = Assert.Single(
+                Find("PreviewEntries")
+                    .FindAllDescendants(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.DataItem)),
+                candidate => candidate
+                    .FindAllDescendants(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Text))
+                    .Any(cell => cell.Name == name));
+            row.Patterns.SelectionItem.Pattern.Select();
+
+            Button replace = Find("ReplaceSelectedConflict").AsButton();
+            Assert.True(replace.IsEnabled, "Replace was not enabled for the selected conflict.");
+            replace.Invoke();
+
+            Button apply = Find("ApplyPreviewChoices").AsButton();
+            Assert.True(apply.IsEnabled, "Apply choices was not enabled after selecting Replace.");
+            apply.Invoke();
+
+            var applied = Retry.WhileFalse(
+                () =>
+                {
+                    try
+                    {
+                        string[] cells = RenderedEntryCells("PreviewEntries", name);
+                        return cells.Contains("Replace", StringComparer.Ordinal) &&
+                            cells.Contains("ReadyToReplace", StringComparer.Ordinal);
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                },
+                timeout: TimeSpan.FromSeconds(15),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(applied.Success, "Replace choice did not produce a ready preview in fifteen seconds.");
         }
 
         public string[] RenderedEntryCells(string gridId, string name)
