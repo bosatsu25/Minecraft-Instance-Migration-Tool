@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Xml.Linq;
 
 namespace MinecraftInstanceMigration.App.Tests;
@@ -44,6 +45,70 @@ public sealed class ReleaseConfigurationTests
         Assert.Contains("ArchitecturesAllowed=x64compatible", installer, StringComparison.Ordinal);
         Assert.Contains("ArchitecturesInstallIn64BitMode=x64compatible", installer, StringComparison.Ordinal);
         Assert.DoesNotContain("[UninstallDelete]", installer, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ApplicationAndInstallerUseTheSameMultiResolutionIcon()
+    {
+        string projectPath = FindRepositoryFile(
+            "src", "MinecraftInstanceMigration.App", "MinecraftInstanceMigration.App.csproj");
+        XDocument project = XDocument.Load(projectPath);
+        Assert.Equal("Assets\\AppIcon.ico", SingleValue(project, "ApplicationIcon"));
+        Assert.Contains(project.Descendants("Resource"), element =>
+            (string?)element.Attribute("Include") == "Assets\\AppIcon.ico");
+        Assert.Contains(project.Descendants("None"), element =>
+            (string?)element.Attribute("Update") == "Assets\\AppIcon.png" &&
+            (string?)element.Attribute("CopyToPublishDirectory") == "Never");
+
+        string iconPath = FindRepositoryFile("src", "MinecraftInstanceMigration.App", "Assets", "AppIcon.ico");
+        Assert.True(new FileInfo(iconPath).Length > 0);
+        Assert.True(File.Exists(FindRepositoryFile("src", "MinecraftInstanceMigration.App", "Assets", "AppIcon.png")));
+
+        string window = File.ReadAllText(FindRepositoryFile("src", "MinecraftInstanceMigration.App", "MainWindow.xaml"));
+        Assert.Contains("Icon=\"Assets/AppIcon.ico\"", window, StringComparison.Ordinal);
+
+        string build = File.ReadAllText(FindRepositoryFile("eng", "release", "Build-Release.ps1"));
+        string installer = File.ReadAllText(FindRepositoryFile("eng", "release", "installer.iss"));
+        Assert.Contains("/DAppIconPath=$iconPath", build, StringComparison.Ordinal);
+        Assert.Contains("SetupIconFile={#AppIconPath}", installer, StringComparison.Ordinal);
+        Assert.Contains("UninstallDisplayIcon={app}\\{#ExecutableName}", installer, StringComparison.Ordinal);
+        Assert.Equal(2, installer.Split("IconFilename: \"{app}\\{#ExecutableName}\"", StringSplitOptions.None).Length - 1);
+
+        using FileStream stream = File.OpenRead(iconPath);
+        using BinaryReader reader = new(stream);
+        Assert.Equal(0, reader.ReadUInt16());
+        Assert.Equal(1, reader.ReadUInt16());
+        int count = reader.ReadUInt16();
+        Assert.Equal(7, count);
+
+        List<int> sizes = [];
+        for (int index = 0; index < count; index++)
+        {
+            int width = reader.ReadByte();
+            int height = reader.ReadByte();
+            Assert.Equal(0, reader.ReadByte());
+            Assert.Equal(0, reader.ReadByte());
+            Assert.Equal(1, reader.ReadUInt16());
+            Assert.Equal(32, reader.ReadUInt16());
+            uint length = reader.ReadUInt32();
+            uint offset = reader.ReadUInt32();
+
+            int size = width == 0 ? 256 : width;
+            sizes.Add(size);
+            Assert.Equal(size, height == 0 ? 256 : height);
+            Assert.True(length > 24);
+            Assert.True((long)offset + length <= stream.Length);
+
+            long nextEntry = stream.Position;
+            stream.Position = offset;
+            Assert.Equal([137, 80, 78, 71, 13, 10, 26, 10], reader.ReadBytes(8));
+            stream.Position = offset + 16;
+            Assert.Equal(size, BinaryPrimitives.ReadInt32BigEndian(reader.ReadBytes(4)));
+            Assert.Equal(size, BinaryPrimitives.ReadInt32BigEndian(reader.ReadBytes(4)));
+            stream.Position = nextEntry;
+        }
+
+        Assert.Equal([16, 24, 32, 48, 64, 128, 256], sizes);
     }
 
     [Fact]

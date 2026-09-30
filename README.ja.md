@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 5.0 release hardening は実装済みで、Hosted dry-run も成功しています。正式な出荷準備には、最終アイコンとproduction signing設定が必要です。clean-machine検証はPhase 5.1で行います。**
+**Phase 5.0 release hardening と最終アプリケーションアイコンは実装済みです。正式な出荷準備にはproduction signing設定が必要です。clean-machine検証はPhase 5.1で行います。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -211,8 +211,8 @@ SHA-256 checksumを検証し、Hosted Windows runnerでinstall/uninstallを試�
 Aboutにはassembly metadataのversionを表示します。PR/branch dry-runはunsignedで、production
 signingはtrusted tag contextに限定します。
 
-single-file、trimming、NativeAOTはこのreleaseでは無効です。最終アイコンとproduction signing設定は
-未準備です。Phase 5.1でclean machine上のinstall、起動、migration、Recovery/Rollback、artifact、
+single-file、trimming、NativeAOTはこのreleaseでは無効です。最終アイコンは組み込み済みで、production
+signing設定が未準備です。Phase 5.1でclean machine上のinstall、起動、migration、Recovery/Rollback、artifact、
 署名、upgrade、uninstallを検証してから`v1.0.0`を出荷判定します。
 
 ## UI で現在できること
@@ -425,7 +425,6 @@ support範囲は [install](docs/install.md) と [release process](docs/release.m
 - Minecraft / mod / loader compatibility 判定
 - exact NTFS clone semantics
 - production Authenticode signingとstable release公開
-- original application icon
 - clean-machine install / upgrade / migration検証（Phase 5.1）
 
 特に、**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
@@ -500,7 +499,7 @@ warnings は build failure として扱います。
 
 次の大きな領域:
 
-22. **Phase 5.0 — Release hardening（実装済み、最終アイコンとproduction signing待ち）**
+22. **Phase 5.0 — Release hardening（実装済み、production signing待ち）**
 23. Phase 5.1 — v1.0 clean-machine release validation
 
 調査した旧版機能と回帰証拠は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md)、

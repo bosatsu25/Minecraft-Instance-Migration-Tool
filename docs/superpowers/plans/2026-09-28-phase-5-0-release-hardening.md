@@ -9,7 +9,7 @@ The approved Phase 5.0 brief turns the existing Windows application into a repro
 - Packaging: portable ZIP plus a per-user Inno Setup installer.
 - Single-file, trimming, ReadyToRun, and Native AOT stay disabled for predictable WPF and native interop behavior.
 - Pull requests and manual runs produce explicitly unsigned artifacts. Production signing is allowed only for trusted version tags and must fail closed when signing secrets are unavailable.
-- An original application icon remains a release blocker. The owner has supplied an MIT `LICENSE`; packages must include it.
+- The original application icon was supplied after the Phase 5.0 plan and integrated separately. The owner has supplied an MIT `LICENSE`; packages must include it.
 
 ## Tasks
 

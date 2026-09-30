@@ -4,9 +4,15 @@
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
     <AssemblyName>MinecraftInstanceMigrationTool</AssemblyName>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <AssemblyTitle>Minecraft Instance Migration Tool</AssemblyTitle>
     <Description>Safely migrates selected user data between Minecraft instances.</Description>
   </PropertyGroup>
+  <ItemGroup>
+    <None Remove="Assets\AppIcon.ico" />
+    <Resource Include="Assets\AppIcon.ico" />
+    <None Update="Assets\AppIcon.png" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../MinecraftInstanceMigration.Application/MinecraftInstanceMigration.Application.csproj" />
     <ProjectReference Include="../MinecraftInstanceMigration.Infrastructure/MinecraftInstanceMigration.Infrastructure.csproj" />

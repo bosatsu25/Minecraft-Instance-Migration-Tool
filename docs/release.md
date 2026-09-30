@@ -60,10 +60,10 @@ Semantic Versioning is used. `0.x.y` is development, `1.0.0` is the first stable
 
 ## Current release blockers
 
-- No original application icon is available. The Windows default icon remains in place; no Minecraft asset or generated placeholder is used.
 - Production Authenticode credentials are not configured.
 
-These blockers prevent a stable public release. The unsigned CI artifact is for verification only.
+This blocker prevents a stable public release. The unsigned CI artifact is for verification only.
+The approved original icon is stored as `AppIcon.png` and a multi-resolution `AppIcon.ico` under the App's `Assets/` directory. The executable, window, installer, shortcuts, and uninstall entry use that icon; the source PNG is excluded from publish output.
 The repository uses the MIT license in `LICENSE`; it is included in both release packages.
 The hosted release dry-run passes. Clean-machine validation belongs to Phase 5.1.
 

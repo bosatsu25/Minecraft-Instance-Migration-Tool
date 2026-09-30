@@ -5,7 +5,7 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 5.0 release hardening is implemented and its hosted dry-run passes. Formal release readiness awaits the final application icon and production signing configuration. Phase 5.1 covers clean-machine validation.**
+**Status: Phase 5.0 release hardening and the final application icon are implemented. Formal release readiness awaits production signing configuration. Phase 5.1 covers clean-machine validation.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
@@ -213,8 +213,8 @@ builds a portable ZIP and per-user Inno Setup installer, verifies version metada
 and exercises install/uninstall on a hosted Windows runner. The application shows its assembly version in
 About. Pull-request and branch dry-runs are unsigned; production signing requires a trusted tag context.
 
-Single-file, trimming, and NativeAOT remain disabled for this release. The final application icon and
-production signing configuration are pending. Phase 5.1 will validate a clean-machine install, launch,
+Single-file, trimming, and NativeAOT remain disabled for this release. The application uses the final
+multi-resolution icon; production signing configuration is pending. Phase 5.1 will validate a clean-machine install, launch,
 migration, recovery/rollback, artifact, signature, upgrade, and uninstall before a `v1.0.0` release.
 
 ## What the current UI can do
@@ -428,7 +428,6 @@ The following are not complete:
 - Minecraft / mod / loader compatibility analysis
 - exact NTFS clone semantics
 - production Authenticode signing and stable release publication
-- original application icon
 - clean-machine install / upgrade / migration validation (Phase 5.1)
 
 In particular, **being safe to copy is not the same as being compatible with the target instance**.
@@ -503,7 +502,7 @@ Implemented:
 
 Next major areas:
 
-22. **Phase 5.0 — Release hardening (implementation complete; icon and production signing pending)**
+22. **Phase 5.0 — Release hardening (implementation complete; production signing pending)**
 23. Phase 5.1 — v1.0 clean-machine release validation
 
 See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the inspected
