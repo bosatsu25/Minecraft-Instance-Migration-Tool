@@ -97,3 +97,24 @@ entered the product's safe `RecoveryRequired` state for Copy and Replace. The fa
 already been removed by fixture cleanup, and the issue did not reproduce in the next isolated Copy run,
 the next two complete seven-test packaged runs, or the hosted clean-runner package job. It remains an
 independent-audit observation rather than an unexplained candidate failure.
+
+## Wave 2 — Production signing readiness
+
+The repository signing path is prepared for the production certificate and timestamp settings:
+version-tag runs select a protected `production-signing` Actions environment, then verify the signed executable and installer before
+checksums, upload to a production-signed artifact name, and remove the temporary runner-local PFX.
+The candidate is not launched while the PFX or password environment variable is available. Unsigned
+PR/branch dry-runs use a separately named artifact and cannot feed the draft-release job. This
+repository-side readiness is not evidence that the environment protection rules or production
+credentials have been configured, or that a production signature was produced.
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Repository signing workflow and fail-closed contract | PASS | Release configuration tests check tag gates, protected-environment selection, environment-only secret names, SHA-256 signing arguments, signing/checksum order, signature verification, PFX/password cleanup before candidate execution, cleanup fallback, and artifact separation. Hosted unsigned dry-run validates the non-production path only. |
+| Production signing environment protection | NOT TESTED | GitHub environment reviewer and tag restrictions must be configured and independently confirmed in repository settings; legacy repository/organization signing secrets must be removed. |
+| Production Authenticode signing | FAIL | Production certificate/password and timestamp configuration remain unavailable. No trusted signed-tag run was performed; self-signing is not accepted as evidence. |
+
+Do not change the production-signing FAIL to PASS until the protected environment is configured,
+legacy repository/organization signing secrets are removed, the real production certificate and
+timestamp service are configured, and an approved trusted `v*` tag run verifies the published
+signatures.

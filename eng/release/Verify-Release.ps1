@@ -99,8 +99,8 @@ foreach ($path in @($executable, $installer)) {
     if ($RequireSigning -and $signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
         throw "Signed release artifact failed Authenticode verification."
     }
-    if (-not $RequireSigning -and $signature.Status -eq [System.Management.Automation.SignatureStatus]::Valid) {
-        throw "Unsigned dry-run artifact was mislabeled by its actual signature state."
+    if (-not $RequireSigning -and $signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
+        throw "Unsigned dry-run artifact did not have an unsigned Authenticode state."
     }
 }
 
