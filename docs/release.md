@@ -55,7 +55,30 @@ Unsigned dry-run artifacts are intentionally reported as unsigned. Trusted tag b
 - secret `WINDOWS_SIGNING_CERTIFICATE_PASSWORD`;
 - variable `WINDOWS_SIGNING_TIMESTAMP_URL`.
 
-The tag job signs the application executable before installer creation, signs the installer afterwards, verifies both with `Get-AuthenticodeSignature`, and generates checksums last. Missing or invalid signing configuration fails the tag job. No certificate or credential is stored in the repository.
+Configure these values in the repository's Actions secrets/variables before creating a production
+version tag. The Base64 secret must contain the production code-signing PFX, the password secret
+must unlock it, and the variable must be a usable RFC 3161 timestamp URL. Do not put either secret
+in source, workflow output, or release artifacts.
+
+Only a `v*` tag run receives signing material. It signs the application executable before ZIP and
+installer creation, signs the installer afterwards, verifies both signatures with
+`Get-AuthenticodeSignature`, and generates checksums only after signing succeeds. SignTool uses
+SHA-256 for both the file and timestamp digests (`/fd SHA256 /td SHA256`) and requires the
+timestamp URL (`/tr`). Missing configuration, a failed signing command, or invalid signature fails
+the run closed. The temporary PFX is written under the runner temporary directory and a tag-only
+`always()` cleanup step removes it; cleanup failures fail the workflow instead of being suppressed.
+After both signatures are verified, the build also removes the PFX and clears the password
+environment variable before launching the signed application or running package/installer smoke
+tests. The workflow cleanup remains as a failure-path fallback.
+
+Unsigned artifacts are uploaded as `MinecraftInstanceMigrationTool-unsigned-dry-run-{run_id}`.
+Signed tag artifacts use the separate `MinecraftInstanceMigrationTool-production-signed-{run_id}`
+name, and the draft release consumes only that signed artifact. This prevents unsigned validation
+packages from being mistaken for production release assets.
+
+The repository-side path is ready for these settings, but production signing is not considered
+validated until the real production certificate and timestamp service are configured and a trusted
+tag run verifies the resulting signatures. No certificate or credential is stored in the repository.
 
 The equivalent signing command is `signtool sign /fd SHA256 /td SHA256 /tr <timestamp-url> /f <certificate.pfx> /p <password> <artifact>`. The password is supplied only through the Actions secret environment and is never committed or written to a tracked file.
 

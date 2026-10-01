@@ -139,6 +139,102 @@ public sealed class ReleaseConfigurationTests
     }
 
     [Fact]
+    public void ProductionSigningIsTagGatedAndTemporaryCertificateCleanupIsFailClosed()
+    {
+        string workflow = File.ReadAllText(FindRepositoryFile(".github", "workflows", "release.yml"));
+        int prepareStart = workflow.IndexOf("name: Prepare trusted signing certificate", StringComparison.Ordinal);
+        int unsignedStart = workflow.IndexOf("name: Build and verify unsigned release artifacts", StringComparison.Ordinal);
+        int signedStart = workflow.IndexOf("name: Build and verify signed release artifacts", StringComparison.Ordinal);
+        int cleanupStart = workflow.IndexOf("name: Remove temporary signing certificate", StringComparison.Ordinal);
+        int validationStart = workflow.IndexOf("name: Validate per-user install and uninstall", StringComparison.Ordinal);
+        int uploadUnsignedStart = workflow.IndexOf("name: Upload unsigned dry-run artifacts", StringComparison.Ordinal);
+        int uploadSignedStart = workflow.IndexOf("name: Upload production signed artifacts", StringComparison.Ordinal);
+        int draftStart = workflow.IndexOf("draft-release:", StringComparison.Ordinal);
+
+        Assert.True(prepareStart >= 0);
+        Assert.True(unsignedStart > prepareStart);
+        Assert.True(signedStart > unsignedStart);
+        Assert.True(cleanupStart > signedStart);
+        Assert.True(validationStart > cleanupStart);
+        Assert.True(uploadUnsignedStart > validationStart);
+        Assert.True(uploadSignedStart > uploadUnsignedStart);
+        Assert.True(draftStart > uploadSignedStart);
+
+        string prepare = workflow[prepareStart..unsignedStart];
+        string unsigned = workflow[unsignedStart..signedStart];
+        string signed = workflow[signedStart..cleanupStart];
+        string cleanup = workflow[cleanupStart..validationStart];
+        string uploads = workflow[uploadUnsignedStart..draftStart];
+        string draft = workflow[draftStart..];
+
+        Assert.Contains("if: startsWith(github.ref, 'refs/tags/v')", prepare, StringComparison.Ordinal);
+        Assert.Contains("secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64", prepare, StringComparison.Ordinal);
+        Assert.Contains("secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD", prepare, StringComparison.Ordinal);
+        Assert.Contains("vars.WINDOWS_SIGNING_TIMESTAMP_URL", prepare, StringComparison.Ordinal);
+        Assert.True(prepare.IndexOf("SIGNING_CERTIFICATE_PATH=$certificate", StringComparison.Ordinal) <
+            prepare.IndexOf("[IO.File]::WriteAllBytes($certificate", StringComparison.Ordinal));
+        Assert.DoesNotContain("WINDOWS_SIGNING_CERTIFICATE", unsigned, StringComparison.Ordinal);
+        Assert.Contains("if: startsWith(github.ref, 'refs/tags/v')", signed, StringComparison.Ordinal);
+        Assert.Contains("-RequireSigning", signed, StringComparison.Ordinal);
+        Assert.Contains("if: always() && startsWith(github.ref, 'refs/tags/v')", cleanup, StringComparison.Ordinal);
+        Assert.Contains("Remove-Item -LiteralPath $certificate -Force -ErrorAction Stop", cleanup, StringComparison.Ordinal);
+        Assert.Contains("Temporary signing certificate cleanup failed.", cleanup, StringComparison.Ordinal);
+        Assert.Contains("if: ${{ !startsWith(github.ref, 'refs/tags/v') }}", uploads, StringComparison.Ordinal);
+        Assert.Contains("MinecraftInstanceMigrationTool-unsigned-dry-run-${{ github.run_id }}", uploads, StringComparison.Ordinal);
+        Assert.Contains("MinecraftInstanceMigrationTool-production-signed-${{ github.run_id }}", uploads, StringComparison.Ordinal);
+        Assert.Contains("MinecraftInstanceMigrationTool-production-signed-${{ github.run_id }}", draft, StringComparison.Ordinal);
+        Assert.DoesNotContain("MinecraftInstanceMigrationTool-unsigned-dry-run-${{ github.run_id }}", draft, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SigningAndChecksumOrderUsesSha256AndFailsClosed()
+    {
+        string build = File.ReadAllText(FindRepositoryFile("eng", "release", "Build-Release.ps1"));
+        string verify = File.ReadAllText(FindRepositoryFile("eng", "release", "Verify-Release.ps1"));
+        int appSigning = build.IndexOf("Invoke-AuthenticodeSigning $executable", StringComparison.Ordinal);
+        int portablePackage = build.IndexOf("Compress-Archive", StringComparison.Ordinal);
+        int installerBuild = build.IndexOf("Invoke-Checked $IsccPath", StringComparison.Ordinal);
+        int installerSigning = build.IndexOf("Invoke-AuthenticodeSigning $installerPath", StringComparison.Ordinal);
+        int certificateCleanup = build.IndexOf("Remove-TemporarySigningCertificate", build.IndexOf("Assert-SignatureState $installerPath", StringComparison.Ordinal), StringComparison.Ordinal);
+        int applicationLaunch = build.IndexOf("Test-PublishedApplication $executable", StringComparison.Ordinal);
+        int checksumWrite = build.IndexOf("[System.IO.File]::WriteAllLines($checksumPath", StringComparison.Ordinal);
+
+        Assert.True(appSigning >= 0);
+        Assert.True(portablePackage > appSigning);
+        Assert.True(installerBuild > portablePackage);
+        Assert.True(installerSigning > installerBuild);
+        Assert.True(certificateCleanup > installerSigning);
+        Assert.True(applicationLaunch > certificateCleanup);
+        Assert.True(checksumWrite > applicationLaunch);
+        Assert.Contains("\"/fd\", \"SHA256\", \"/td\", \"SHA256\", \"/tr\", $TimestampUrl", build, StringComparison.Ordinal);
+        Assert.Contains("\"/f\", $SigningCertificatePath, \"/p\", $password", build, StringComparison.Ordinal);
+        Assert.Contains("if ([string]::IsNullOrWhiteSpace($SignToolPath)", build, StringComparison.Ordinal);
+        Assert.Contains("[string]::IsNullOrWhiteSpace($TimestampUrl)", build, StringComparison.Ordinal);
+        Assert.Contains("if ($LASTEXITCODE -ne 0)", build, StringComparison.Ordinal);
+        Assert.Contains("$env:MIM_SIGNING_CERTIFICATE_PASSWORD = $null", build, StringComparison.Ordinal);
+        Assert.Contains("$env:SIGNING_CERTIFICATE_PATH = $null", build, StringComparison.Ordinal);
+        Assert.Contains("Temporary signing certificate cleanup failed.", build, StringComparison.Ordinal);
+        Assert.Contains("Get-AuthenticodeSignature -LiteralPath $Path", build, StringComparison.Ordinal);
+        Assert.Contains("Get-AuthenticodeSignature -LiteralPath $path", verify, StringComparison.Ordinal);
+        Assert.Contains("if ($RequireSigning -and $signature.Status -ne", verify, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReleaseDocumentationKeepsProductionSigningBlockedUntilRealCredentialsExist()
+    {
+        string release = File.ReadAllText(FindRepositoryFile("docs", "release.md"));
+        string validation = File.ReadAllText(FindRepositoryFile("docs", "release-validation.md"));
+
+        Assert.Contains("WINDOWS_SIGNING_CERTIFICATE_BASE64", release, StringComparison.Ordinal);
+        Assert.Contains("WINDOWS_SIGNING_CERTIFICATE_PASSWORD", release, StringComparison.Ordinal);
+        Assert.Contains("WINDOWS_SIGNING_TIMESTAMP_URL", release, StringComparison.Ordinal);
+        Assert.Contains("unsigned-dry-run", release, StringComparison.Ordinal);
+        Assert.Contains("production-signed", release, StringComparison.Ordinal);
+        Assert.Contains("| Production Authenticode signing | FAIL |", validation, StringComparison.Ordinal);
+        Assert.Contains("Self-signing is not accepted as evidence.", validation, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReleaseValidationExercisesPackagedApplicationAndReinstall()
     {
         string workflow = File.ReadAllText(FindRepositoryFile(".github", "workflows", "release.yml"));

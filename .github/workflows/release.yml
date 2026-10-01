@@ -101,9 +101,9 @@ jobs:
             throw 'Trusted tag signing configuration is incomplete.'
           }
           $certificate = Join-Path $env:RUNNER_TEMP 'windows-signing.pfx'
-          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
           "SIGNING_CERTIFICATE_PATH=$certificate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "SIGNING_TIMESTAMP_URL=$env:TIMESTAMP_URL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
       - name: Locate SignTool
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -130,6 +130,23 @@ jobs:
             -SignToolPath $env:SIGNTOOL_PATH `
             -SigningCertificatePath $env:SIGNING_CERTIFICATE_PATH `
             -TimestampUrl $env:SIGNING_TIMESTAMP_URL
+      - name: Remove temporary signing certificate
+        if: always() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:SIGNING_CERTIFICATE_PATH)) {
+            $temporaryRoot = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP) + [System.IO.Path]::DirectorySeparatorChar
+            $certificate = [System.IO.Path]::GetFullPath($env:SIGNING_CERTIFICATE_PATH)
+            if (-not $certificate.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+              throw 'Refusing to remove a signing certificate outside the runner temporary directory.'
+            }
+            if (Test-Path -LiteralPath $certificate -PathType Leaf) {
+              Remove-Item -LiteralPath $certificate -Force -ErrorAction Stop
+            }
+            if (Test-Path -LiteralPath $certificate) {
+              throw 'Temporary signing certificate cleanup failed.'
+            }
+          }
       - name: Validate per-user install and uninstall
         shell: pwsh
         run: |
@@ -167,18 +184,22 @@ jobs:
           dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj `
             --configuration Release `
             --no-restore
-      - name: Upload release dry-run artifacts
+      - name: Upload unsigned dry-run artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
-          name: MinecraftInstanceMigrationTool-release-${{ github.run_id }}
+          name: MinecraftInstanceMigrationTool-unsigned-dry-run-${{ github.run_id }}
           path: artifacts/release/*
           if-no-files-found: error
           retention-days: 14
-      - name: Remove temporary signing certificate
-        if: always() && startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: Remove-Item -LiteralPath $env:SIGNING_CERTIFICATE_PATH -Force -ErrorAction SilentlyContinue
-
+      - name: Upload production signed artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: MinecraftInstanceMigrationTool-production-signed-${{ github.run_id }}
+          path: artifacts/release/*
+          if-no-files-found: error
+          retention-days: 14
   draft-release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: release-package
@@ -191,7 +212,7 @@ jobs:
       - name: Download signed artifacts
         uses: actions/download-artifact@v4
         with:
-          name: MinecraftInstanceMigrationTool-release-${{ github.run_id }}
+          name: MinecraftInstanceMigrationTool-production-signed-${{ github.run_id }}
           path: artifacts/release
       - name: Create draft GitHub release
         shell: pwsh

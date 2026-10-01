@@ -112,6 +112,26 @@ function Assert-SignatureState([string]$Path) {
     }
 }
 
+function Remove-TemporarySigningCertificate {
+    if (-not $RequireSigning) {
+        return
+    }
+
+    $env:MIM_SIGNING_CERTIFICATE_PASSWORD = $null
+    $env:SIGNING_CERTIFICATE_PATH = $null
+    $temporaryRoot = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP) + [System.IO.Path]::DirectorySeparatorChar
+    $certificate = [System.IO.Path]::GetFullPath($SigningCertificatePath)
+    if (-not $certificate.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to remove a signing certificate outside the runner temporary directory."
+    }
+    if (Test-Path -LiteralPath $certificate -PathType Leaf) {
+        Remove-Item -LiteralPath $certificate -Force -ErrorAction Stop
+    }
+    if (Test-Path -LiteralPath $certificate) {
+        throw "Temporary signing certificate cleanup failed."
+    }
+}
+
 function Test-PublishedApplication([string]$ExecutablePath) {
     if ($SkipLaunchSmoke) {
         return
@@ -217,7 +237,6 @@ if ($versionInfo.FileVersion -ne "$version.0") {
 
 Invoke-AuthenticodeSigning $executable
 Assert-SignatureState $executable
-Test-PublishedApplication $executable
 
 $zipName = "MinecraftInstanceMigrationTool-$version-win-x64.zip"
 $zipPath = Join-Path $packageDirectory $zipName
@@ -241,6 +260,8 @@ if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
 
 Invoke-AuthenticodeSigning $installerPath
 Assert-SignatureState $installerPath
+Remove-TemporarySigningCertificate
+Test-PublishedApplication $executable
 
 $checksumPath = Join-Path $packageDirectory "SHA256SUMS.txt"
 $checksumLines = foreach ($artifact in @($zipPath, $installerPath)) {
