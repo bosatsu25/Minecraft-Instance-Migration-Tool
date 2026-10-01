@@ -14,7 +14,7 @@ NOT TESTED has no adequate evidence, and NOT APPLICABLE does not apply to this r
 | --- | --- | --- |
 | Source baseline contains final icon merge `3f25f652ce1de312ba395a11ac590930164e2054` | PASS | Phase 5.1 branch starts at that `main` commit. |
 | Candidate version is consistent | PASS | Local EXE, installer, package names, installed registration, and About source metadata resolve to `1.0.0`. Hosted confirmation remains below. |
-| Candidate commit is the hosted run head | NOT TESTED | Pending pull-request run. |
+| Candidate implementation commit is the hosted run head | PASS | Commit `c1caa6a0acfd27205813e65b11b8e85f2865ece0` is the head of the recorded CI and release dry-run. |
 
 ## Portable ZIP
 
@@ -67,7 +67,7 @@ NOT TESTED has no adequate evidence, and NOT APPLICABLE does not apply to this r
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Clean GitHub-hosted Windows runner | NOT TESTED | Pending candidate run. This does not claim full fresh-user-machine equivalence. |
+| Clean GitHub-hosted Windows runner | PASS | GitHub-hosted `windows-latest` completed package build, ZIP launch/migration smoke, default-path install/reinstall, and uninstall. This does not claim full fresh-user-machine equivalence. |
 | Fresh Windows 11 VM or physical clean machine | NOT TESTED | No dedicated VM or physical clean machine is available in this phase environment. |
 | Production Authenticode signing | FAIL | Production certificate and timestamp configuration are not available. Self-signing is not accepted as evidence. |
 | SmartScreen and Unknown Publisher UX | NOT TESTED | SmartScreen reputation is not reproducible in CI and needs clean interactive Windows validation. |
@@ -76,11 +76,11 @@ NOT TESTED has no adequate evidence, and NOT APPLICABLE does not apply to this r
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| CI `verify` | NOT TESTED | Pending pull-request head run. |
-| CI `ui-smoke` | NOT TESTED | Pending pull-request head run. |
-| Release dry-run `verify` | NOT TESTED | Pending pull-request head run. |
-| Release dry-run `ui-smoke` | NOT TESTED | Pending pull-request head run. |
-| Release dry-run `release-package` | NOT TESTED | Pending pull-request head run. |
+| CI `verify` | PASS | [Run 36793799110 / verify](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793799110/job/110152491032). |
+| CI `ui-smoke` | PASS | [Run 36793799110 / ui-smoke](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793799110/job/110152491252). |
+| Release dry-run `verify` | PASS | [Run 36793798539 / verify](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793798539/job/110152489165). |
+| Release dry-run `ui-smoke` | PASS | [Run 36793798539 / ui-smoke](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793798539/job/110152489430). |
+| Release dry-run `release-package` | PASS | [Run 36793798539 / release-package](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793798539/job/110152865824). |
 
 ## Current decision
 
@@ -94,6 +94,6 @@ stable tag or public release. No PASS may be inferred from an older commit's run
 The local environment was Windows 11 x64 build `10.0.26300` with .NET SDK `10.0.401`; it was a
 developer machine and is not treated as clean-machine evidence. One first full packaged-suite run
 entered the product's safe `RecoveryRequired` state for Copy and Replace. The failure evidence had
-already been removed by fixture cleanup, and the issue did not reproduce in the next isolated Copy run
-or the next complete seven-test packaged run. Hosted clean-runner evidence is required before changing
-that observation's release assessment.
+already been removed by fixture cleanup, and the issue did not reproduce in the next isolated Copy run,
+the next two complete seven-test packaged runs, or the hosted clean-runner package job. It remains an
+independent-audit observation rather than an unexplained candidate failure.
