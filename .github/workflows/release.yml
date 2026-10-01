@@ -143,6 +143,16 @@ jobs:
             -CreateDesktopShortcut `
             -RequireSigning:$isTag `
             -UseDefaultInstallPath
+      - name: Validate clean-machine release package
+        shell: pwsh
+        run: |
+          $props = [xml](Get-Content Directory.Build.props -Raw)
+          $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+          $isTag = $env:GITHUB_REF.StartsWith('refs/tags/v', [StringComparison]::Ordinal)
+          ./eng/release/Validate-CleanMachine.ps1 `
+            -ArtifactsRoot "$PWD/artifacts" `
+            -ExpectedVersion $version `
+            -RequireSigning:$isTag
       - name: Run migration smoke against extracted portable package
         shell: pwsh
         run: |
