@@ -189,11 +189,17 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
 }
 
 $forbidden = Get-ChildItem -LiteralPath $publishDirectory -Recurse -File | Where-Object {
-    $_.Extension -in @(".pdb", ".cs", ".xaml") -or
-    $_.Name -match '(?i)(testhost|\.tests\.|xunit|flaui|fixture|^AppIcon\.(png|ico)$)'
+    $_.Extension -in @(".pdb", ".cs", ".xaml", ".csproj", ".sln", ".slnx", ".props", ".targets",
+        ".pfx", ".p12", ".key", ".pem", ".log", ".dmp", ".tmp", ".user") -or
+    $_.Name -match '(?i)(testhost|\.tests\.|xunit|flaui|microsoft\.net\.test|fixture|^AppIcon\.(png|ico)$)'
 }
 if ($forbidden) {
     throw "The publish directory contains test, source, fixture, or debug files."
+}
+$unexpectedExecutables = @(Get-ChildItem -LiteralPath $publishDirectory -Recurse -File -Filter "*.exe" |
+    Where-Object Name -notin @("MinecraftInstanceMigrationTool.exe", "createdump.exe"))
+if ($unexpectedExecutables.Count -ne 0) {
+    throw "The publish directory contains an unexpected executable."
 }
 
 $versionInfo = (Get-Item -LiteralPath $executable).VersionInfo

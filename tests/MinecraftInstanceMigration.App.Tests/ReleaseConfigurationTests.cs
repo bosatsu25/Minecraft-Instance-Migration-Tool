@@ -6,17 +6,18 @@ namespace MinecraftInstanceMigration.App.Tests;
 public sealed class ReleaseConfigurationTests
 {
     [Fact]
-    public void CentralMetadataDefinesTheDevelopmentVersionOnce()
+    public void CentralMetadataDefinesTheReleaseCandidateVersionOnce()
     {
         XDocument props = XDocument.Load(FindRepositoryFile("Directory.Build.props"));
 
-        Assert.Equal("0.9.0", SingleValue(props, "Version"));
-        Assert.Equal("0.9.0.0", SingleValue(props, "AssemblyVersion"));
-        Assert.Equal("0.9.0.0", SingleValue(props, "FileVersion"));
-        Assert.Equal("0.9.0", SingleValue(props, "InformationalVersion"));
+        Assert.Equal("1.0.0", SingleValue(props, "Version"));
+        Assert.Equal("1.0.0.0", SingleValue(props, "AssemblyVersion"));
+        Assert.Equal("1.0.0.0", SingleValue(props, "FileVersion"));
+        Assert.Equal("1.0.0", SingleValue(props, "InformationalVersion"));
         Assert.Equal("false", SingleValue(props, "IncludeSourceRevisionInInformationalVersion"));
         Assert.Equal("Minecraft Instance Migration Tool", SingleValue(props, "Product"));
         Assert.Equal("bosatsuKing", SingleValue(props, "Authors"));
+        Assert.Equal("$(MSBuildThisFileDirectory)=/_/", SingleValue(props, "PathMap"));
     }
 
     [Fact]
@@ -44,6 +45,7 @@ public sealed class ReleaseConfigurationTests
         Assert.Contains("DefaultDirName={localappdata}\\Programs", installer, StringComparison.Ordinal);
         Assert.Contains("ArchitecturesAllowed=x64compatible", installer, StringComparison.Ordinal);
         Assert.Contains("ArchitecturesInstallIn64BitMode=x64compatible", installer, StringComparison.Ordinal);
+        Assert.Contains("UninstallDisplayName={#ProductName}", installer, StringComparison.Ordinal);
         Assert.DoesNotContain("[UninstallDelete]", installer, StringComparison.Ordinal);
     }
 
@@ -134,6 +136,26 @@ public sealed class ReleaseConfigurationTests
             "secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD",
             workflow[signedStart..installerValidationStart],
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReleaseValidationExercisesPackagedApplicationAndReinstall()
+    {
+        string workflow = File.ReadAllText(FindRepositoryFile(".github", "workflows", "release.yml"));
+        string installerTest = File.ReadAllText(FindRepositoryFile("eng", "release", "Test-Installer.ps1"));
+        string packageVerification = File.ReadAllText(FindRepositoryFile("eng", "release", "Verify-Release.ps1"));
+
+        Assert.Contains("MIM_UI_EXECUTABLE", workflow, StringComparison.Ordinal);
+        Assert.Contains("MinecraftInstanceMigrationTool-$version-win-x64.zip", workflow, StringComparison.Ordinal);
+        Assert.Contains("-TestReinstall", workflow, StringComparison.Ordinal);
+        Assert.Contains("-CreateDesktopShortcut", workflow, StringComparison.Ordinal);
+        Assert.Contains("-UseDefaultInstallPath", workflow, StringComparison.Ordinal);
+        Assert.Contains("Start Menu shortcut", installerTest, StringComparison.Ordinal);
+        Assert.Contains("Desktop shortcut", installerTest, StringComparison.Ordinal);
+        Assert.Contains("must-survive-uninstall.txt", installerTest, StringComparison.Ordinal);
+        Assert.Contains("coreclr.dll", packageVerification, StringComparison.Ordinal);
+        Assert.Contains("THIRD-PARTY-NOTICES.txt", packageVerification, StringComparison.Ordinal);
+        Assert.Contains("ExtractToDirectory", packageVerification, StringComparison.Ordinal);
     }
 
     private static string SingleValue(XDocument document, string name) =>

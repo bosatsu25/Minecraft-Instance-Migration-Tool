@@ -5,7 +5,7 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 5.0 release hardening and the final application icon are implemented. Formal release readiness awaits production signing configuration. Phase 5.1 covers clean-machine validation.**
+**Status: Phase 5.1 is validating an untagged `1.0.0` release candidate. Formal release readiness remains blocked until the evidence checklist and production signing requirements are satisfied.**
 Application now owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
@@ -24,7 +24,7 @@ backup, verification, rollback, error-redaction, and capacity behavior.
 The Phase 4.6 verification baseline is **429 unit/integration tests + 6 FlaUI UI smoke tests**, with
 0 build warnings/errors and hosted `verify` / `ui-smoke` checks green before merge.
 
-Phase 5.0 fixes development version `0.9.0` and prepares a Windows 11 x64 self-contained folder publish,
+Phase 5.1 uses numeric version `1.0.0` for an untagged Windows 11 x64 self-contained release candidate,
 portable ZIP, per-user Inno Setup installer, SHA-256 checksums, assembly-derived About display, and a
 least-privilege release workflow. It does not create a `v1.0.0` tag or public release.
 
@@ -208,14 +208,15 @@ See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibilit
 
 ## Phase 5.0 release hardening
 
-Version `0.9.0` is published for Windows 11 x64 as a .NET 10 self-contained folder. The release workflow
+Candidate version `1.0.0` is published for Windows 11 x64 as a .NET 10 self-contained folder. The release workflow
 builds a portable ZIP and per-user Inno Setup installer, verifies version metadata and SHA-256 checksums,
 and exercises install/uninstall on a hosted Windows runner. The application shows its assembly version in
 About. Pull-request and branch dry-runs are unsigned; production signing requires a trusted tag context.
 
 Single-file, trimming, and NativeAOT remain disabled for this release. The application uses the final
-multi-resolution icon; production signing configuration is pending. Phase 5.1 will validate a clean-machine install, launch,
-migration, recovery/rollback, artifact, signature, upgrade, and uninstall before a `v1.0.0` release.
+multi-resolution icon; production signing configuration is pending. Phase 5.1 records clean-hosted-runner,
+package, install, migration, upgrade, uninstall, and remaining manual evidence in the
+[release validation checklist](docs/release-validation.md).
 
 ## What the current UI can do
 
@@ -408,11 +409,11 @@ See [architecture](docs/architecture.md) for details.
 
 The pipeline prepares these fixed artifact names:
 
-- `MinecraftInstanceMigrationTool-0.9.0-win-x64.zip`
-- `MinecraftInstanceMigrationTool-0.9.0-win-x64-setup.exe`
+- `MinecraftInstanceMigrationTool-1.0.0-win-x64.zip`
+- `MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`
 - `SHA256SUMS.txt`
 
-There is no stable download yet. Phase 5.1 must validate the artifacts before `v1.0.0`. The installer is
+There is no stable download yet. Phase 5.1 must close its evidence checklist before a stable `v1.0.0` release. The installer is
 per-user; the ZIP is portable; both are self-contained. See [install](docs/install.md) and
 [release process](docs/release.md) for checksum, signing, upgrade, and support details.
 
@@ -428,7 +429,7 @@ The following are not complete:
 - Minecraft / mod / loader compatibility analysis
 - exact NTFS clone semantics
 - production Authenticode signing and stable release publication
-- clean-machine install / upgrade / migration validation (Phase 5.1)
+- remaining release validation listed in [Phase 5.1](docs/release-validation.md)
 
 In particular, **being safe to copy is not the same as being compatible with the target instance**.
 The current implementation does not claim compatibility.
@@ -503,7 +504,7 @@ Implemented:
 Next major areas:
 
 22. **Phase 5.0 — Release hardening (implementation complete; production signing pending)**
-23. Phase 5.1 — v1.0 clean-machine release validation
+23. **Phase 5.1 — v1.0 release validation (in progress; release blocked while required evidence remains open)**
 
 See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the inspected
 reference inventory and regression evidence, [migration rules](docs/migration-rules.md) for candidate rules,
