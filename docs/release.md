@@ -55,12 +55,23 @@ Unsigned dry-run artifacts are intentionally reported as unsigned. Trusted tag b
 - secret `WINDOWS_SIGNING_CERTIFICATE_PASSWORD`;
 - variable `WINDOWS_SIGNING_TIMESTAMP_URL`.
 
-Configure these values in the repository's Actions secrets/variables before creating a production
-version tag. The Base64 secret must contain the production code-signing PFX, the password secret
-must unlock it, and the variable must be a usable RFC 3161 timestamp URL. Do not put either secret
-in source, workflow output, or release artifacts.
+Configure these values as environment-scoped Actions secrets/variable in a protected
+`production-signing` environment before creating a production version tag. Require designated
+reviewer approval for that environment and restrict deployments to the intended version-tag
+pattern. The release-package job selects this environment only for `v*` refs; PRs and branch builds
+select a separate `release-dry-run` environment. The workflow uses the `MIM_PRODUCTION_`-prefixed
+names below rather than the legacy `WINDOWS_SIGNING_` names, so old repository/organization-level
+secrets are not used as a fallback. Remove any legacy signing secrets and do not define the new
+values at repository or organization scope.
 
-Only a `v*` tag run receives signing material. It signs the application executable before ZIP and
+- secret `MIM_PRODUCTION_SIGNING_CERTIFICATE_BASE64`: Base64 production code-signing PFX;
+- secret `MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD`: password that unlocks the PFX;
+- variable `MIM_PRODUCTION_SIGNING_TIMESTAMP_URL`: usable RFC 3161 timestamp URL.
+
+Do not put either secret in source, workflow output, or release artifacts.
+
+Only a `v*` tag run that passes the protected environment approval receives signing material. A tag
+name alone is not treated as proof of trust. It signs the application executable before ZIP and
 installer creation, signs the installer afterwards, verifies both signatures with
 `Get-AuthenticodeSignature`, and generates checksums only after signing succeeds. SignTool uses
 SHA-256 for both the file and timestamp digests (`/fd SHA256 /td SHA256`) and requires the

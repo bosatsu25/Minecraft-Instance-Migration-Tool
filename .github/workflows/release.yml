@@ -63,6 +63,8 @@ jobs:
   release-package:
     needs: [verify, ui-smoke]
     runs-on: windows-latest
+    environment:
+      name: ${{ startsWith(github.ref, 'refs/tags/v') && 'production-signing' || 'release-dry-run' }}
     timeout-minutes: 25
     steps:
       - name: Checkout
@@ -93,9 +95,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
-          TIMESTAMP_URL: ${{ vars.WINDOWS_SIGNING_TIMESTAMP_URL }}
+          CERTIFICATE_BASE64: ${{ secrets.MIM_PRODUCTION_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD }}
+          TIMESTAMP_URL: ${{ vars.MIM_PRODUCTION_SIGNING_TIMESTAMP_URL }}
         run: |
           if (-not $env:CERTIFICATE_BASE64 -or -not $env:CERTIFICATE_PASSWORD -or -not $env:TIMESTAMP_URL) {
             throw 'Trusted tag signing configuration is incomplete.'
@@ -121,7 +123,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
-          MIM_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+          MIM_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD }}
         run: |
           ./eng/release/Build-Release.ps1 `
             -IsccPath $env:ISCC_PATH `
