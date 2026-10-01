@@ -226,6 +226,8 @@ public sealed class ReleaseConfigurationTests
         Assert.Contains("Get-AuthenticodeSignature -LiteralPath $Path", build, StringComparison.Ordinal);
         Assert.Contains("Get-AuthenticodeSignature -LiteralPath $path", verify, StringComparison.Ordinal);
         Assert.Contains("if ($RequireSigning -and $signature.Status -ne", verify, StringComparison.Ordinal);
+        Assert.Contains("elseif ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned)", build, StringComparison.Ordinal);
+        Assert.Contains("if (-not $RequireSigning -and $signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned)", verify, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -85,7 +85,9 @@ tests. The workflow cleanup remains as a failure-path fallback.
 Unsigned artifacts are uploaded as `MinecraftInstanceMigrationTool-unsigned-dry-run-{run_id}`.
 Signed tag artifacts use the separate `MinecraftInstanceMigrationTool-production-signed-{run_id}`
 name, and the draft release consumes only that signed artifact. This prevents unsigned validation
-packages from being mistaken for production release assets.
+packages from being mistaken for production release assets. Unsigned verification accepts only the
+explicit `NotSigned` Authenticode state; invalid, untrusted, or otherwise indeterminate signatures
+fail verification.
 
 The repository-side path is ready for these settings, but production signing is not considered
 validated until the real production certificate and timestamp service are configured and a trusted

@@ -107,8 +107,8 @@ function Assert-SignatureState([string]$Path) {
             throw "Expected a valid Authenticode signature."
         }
     }
-    elseif ($signature.Status -eq [System.Management.Automation.SignatureStatus]::Valid) {
-        throw "Unsigned dry-run unexpectedly produced a signed artifact."
+    elseif ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
+        throw "Unsigned dry-run artifact did not have an unsigned Authenticode state."
     }
 }
 
