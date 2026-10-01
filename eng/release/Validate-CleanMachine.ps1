@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ArtifactsRoot = (Join-Path $PSScriptRoot "..\..\artifacts\release"),
+    [string]$ArtifactsRoot = (Join-Path $PSScriptRoot "..\..\artifacts"),
     [string]$ExpectedVersion,
     [switch]$RequireSigning
 )
@@ -70,14 +70,15 @@ function Invoke-PortableLaunch([string]$ExecutablePath, [string]$Surface) {
 }
 
 $artifactRoot = [System.IO.Path]::GetFullPath($ArtifactsRoot)
+$packageDirectory = Join-Path $artifactRoot "release"
 $expectedVersion = if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) { Get-ReleaseVersion } else { $ExpectedVersion }
 
 $portableName = "MinecraftInstanceMigrationTool-$expectedVersion-win-x64.zip"
 $installerName = "MinecraftInstanceMigrationTool-$expectedVersion-win-x64-setup.exe"
 $checksumsName = "SHA256SUMS.txt"
-$portablePath = Join-Path $artifactRoot $portableName
-$installerPath = Join-Path $artifactRoot $installerName
-$checksumsPath = Join-Path $artifactRoot $checksumsName
+$portablePath = Join-Path $packageDirectory $portableName
+$installerPath = Join-Path $packageDirectory $installerName
+$checksumsPath = Join-Path $packageDirectory $checksumsName
 
 Assert-PathExists $portablePath "Portable ZIP"
 Assert-PathExists $installerPath "Installer"
