@@ -5,6 +5,7 @@ param(
     [string]$IsccPath,
     [string]$SignToolPath,
     [string]$SigningCertificatePath,
+    [string]$CertificateThumbprint,
     [string]$TimestampUrl,
     [string]$ExpectedVersion,
     [switch]$RequireSigning,
@@ -82,17 +83,27 @@ function Invoke-AuthenticodeSigning([string]$Path) {
         return
     }
 
-    $password = $env:MIM_SIGNING_CERTIFICATE_PASSWORD
-    if ([string]::IsNullOrWhiteSpace($SignToolPath) -or
-        [string]::IsNullOrWhiteSpace($SigningCertificatePath) -or
-        [string]::IsNullOrWhiteSpace($TimestampUrl) -or
-        [string]::IsNullOrWhiteSpace($password)) {
-        throw "Trusted release signing was requested, but signing configuration is incomplete."
+    if ([string]::IsNullOrWhiteSpace($SignToolPath) -or [string]::IsNullOrWhiteSpace($TimestampUrl)) {
+        throw "Trusted release signing was requested, but SignTool or TimestampUrl configuration is missing."
     }
 
-    Invoke-Checked $SignToolPath @(
-        "sign", "/fd", "SHA256", "/td", "SHA256", "/tr", $TimestampUrl,
-        "/f", $SigningCertificatePath, "/p", $password, $Path)
+    if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
+        Invoke-Checked $SignToolPath @(
+            "sign", "/fd", "SHA256", "/td", "SHA256", "/tr", $TimestampUrl,
+            "/sha1", $CertificateThumbprint, $Path)
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($SigningCertificatePath)) {
+        $password = $env:MIM_SIGNING_CERTIFICATE_PASSWORD
+        if ([string]::IsNullOrWhiteSpace($password)) {
+            throw "Trusted release signing was requested with a certificate path, but certificate password is missing."
+        }
+        Invoke-Checked $SignToolPath @(
+            "sign", "/fd", "SHA256", "/td", "SHA256", "/tr", $TimestampUrl,
+            "/f", $SigningCertificatePath, "/p", $password, $Path)
+    }
+    else {
+        throw "Trusted release signing was requested, but neither CertificateThumbprint nor SigningCertificatePath was provided."
+    }
 
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
     if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
@@ -119,16 +130,18 @@ function Remove-TemporarySigningCertificate {
 
     $env:MIM_SIGNING_CERTIFICATE_PASSWORD = $null
     $env:SIGNING_CERTIFICATE_PATH = $null
-    $temporaryRoot = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP) + [System.IO.Path]::DirectorySeparatorChar
-    $certificate = [System.IO.Path]::GetFullPath($SigningCertificatePath)
-    if (-not $certificate.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to remove a signing certificate outside the runner temporary directory."
-    }
-    if (Test-Path -LiteralPath $certificate -PathType Leaf) {
-        Remove-Item -LiteralPath $certificate -Force -ErrorAction Stop
-    }
-    if (Test-Path -LiteralPath $certificate) {
-        throw "Temporary signing certificate cleanup failed."
+    if (-not [string]::IsNullOrWhiteSpace($SigningCertificatePath)) {
+        $temporaryRoot = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP) + [System.IO.Path]::DirectorySeparatorChar
+        $certificate = [System.IO.Path]::GetFullPath($SigningCertificatePath)
+        if (-not $certificate.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove a signing certificate outside the runner temporary directory."
+        }
+        if (Test-Path -LiteralPath $certificate -PathType Leaf) {
+            Remove-Item -LiteralPath $certificate -Force -ErrorAction Stop
+        }
+        if (Test-Path -LiteralPath $certificate) {
+            throw "Temporary signing certificate cleanup failed."
+        }
     }
 }
 

@@ -91,21 +91,48 @@ jobs:
           $process = Start-Process $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir") -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
           "ISCC_PATH=$installDir\ISCC.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Prepare trusted signing certificate
+      - name: Setup Cloud HSM signing client (DigiCert KeyLocker)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
-          CERTIFICATE_BASE64: ${{ secrets.MIM_PRODUCTION_SIGNING_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: ${{ vars.SM_HOST }}
+          CERT_THUMBPRINT: ${{ vars.MIM_PRODUCTION_SIGNING_CERT_THUMBPRINT || secrets.MIM_PRODUCTION_SIGNING_CERT_THUMBPRINT }}
           TIMESTAMP_URL: ${{ vars.MIM_PRODUCTION_SIGNING_TIMESTAMP_URL }}
         run: |
-          if (-not $env:CERTIFICATE_BASE64 -or -not $env:CERTIFICATE_PASSWORD -or -not $env:TIMESTAMP_URL) {
-            throw 'Trusted tag signing configuration is incomplete.'
+          if (-not $env:SM_API_KEY -or -not $env:SM_CLIENT_CERT_FILE_B64 -or -not $env:SM_CLIENT_CERT_PASSWORD -or -not $env:CERT_THUMBPRINT -or -not $env:TIMESTAMP_URL) {
+            throw 'Cloud HSM signing configuration is incomplete.'
           }
-          $certificate = Join-Path $env:RUNNER_TEMP 'windows-signing.pfx'
-          "SIGNING_CERTIFICATE_PATH=$certificate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $hostUrl = if ($env:SM_HOST) { $env:SM_HOST } else { 'https://clientauth.one.digicert.com' }
+          $clientCertPath = Join-Path $env:RUNNER_TEMP 'sm_client_cert.p12'
+          [IO.File]::WriteAllBytes($clientCertPath, [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64))
+          "SM_CLIENT_CERT_FILE=$clientCertPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SM_HOST=$hostUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SM_API_KEY=$env:SM_API_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SM_CLIENT_CERT_PASSWORD=$env:SM_CLIENT_CERT_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SIGNING_CERT_THUMBPRINT=$env:CERT_THUMBPRINT" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "SIGNING_TIMESTAMP_URL=$env:TIMESTAMP_URL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+
+          $smToolsInstaller = Join-Path $env:RUNNER_TEMP 'smtools-windows-x64.msi'
+          Invoke-WebRequest "https://one.digicert.com/signingmanager/api-ui/v1/releases/smtools-windows-x64.msi/download" `
+            -Headers @{ 'x-api-key' = $env:SM_API_KEY } `
+            -OutFile $smToolsInstaller
+          $process = Start-Process msiexec.exe -ArgumentList @('/i', $smToolsInstaller, '/quiet', '/qn', '/norestart') -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "DigiCert One tools installation failed: $($process.ExitCode)" }
+
+          $smkspBat = 'C:\Program Files\DigiCert\DigiCert One Signing Manager Tools\smksp_register.bat'
+          if (-not (Test-Path -LiteralPath $smkspBat)) { throw 'DigiCert KSP register script was not found.' }
+          $regProcess = Start-Process $smkspBat -Wait -PassThru
+          if ($regProcess.ExitCode -ne 0) { throw "DigiCert KSP registration failed: $($regProcess.ExitCode)" }
+
+          $smctl = 'C:\Program Files\DigiCert\DigiCert One Signing Manager Tools\smctl.exe'
+          if (-not (Test-Path -LiteralPath $smctl)) { throw 'smctl.exe was not found.' }
+          $env:SM_CLIENT_CERT_FILE = $clientCertPath
+          $env:SM_HOST = $hostUrl
+          & $smctl windows-cert sync
+          if ($LASTEXITCODE -ne 0) { throw "DigiCert certificate sync failed: $LASTEXITCODE" }
       - name: Locate SignTool
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -122,31 +149,29 @@ jobs:
       - name: Build and verify signed release artifacts
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        env:
-          MIM_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD }}
         run: |
           ./eng/release/Build-Release.ps1 `
             -IsccPath $env:ISCC_PATH `
             -ExpectedVersion $env:GITHUB_REF_NAME.Substring(1) `
             -RequireSigning `
             -SignToolPath $env:SIGNTOOL_PATH `
-            -SigningCertificatePath $env:SIGNING_CERTIFICATE_PATH `
+            -CertificateThumbprint $env:SIGNING_CERT_THUMBPRINT `
             -TimestampUrl $env:SIGNING_TIMESTAMP_URL
-      - name: Remove temporary signing certificate
+      - name: Remove temporary cloud signing authentication material
         if: always() && startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          if (-not [string]::IsNullOrWhiteSpace($env:SIGNING_CERTIFICATE_PATH)) {
+          if (-not [string]::IsNullOrWhiteSpace($env:SM_CLIENT_CERT_FILE)) {
             $temporaryRoot = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP) + [System.IO.Path]::DirectorySeparatorChar
-            $certificate = [System.IO.Path]::GetFullPath($env:SIGNING_CERTIFICATE_PATH)
-            if (-not $certificate.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-              throw 'Refusing to remove a signing certificate outside the runner temporary directory.'
+            $clientCert = [System.IO.Path]::GetFullPath($env:SM_CLIENT_CERT_FILE)
+            if (-not $clientCert.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+              throw 'Refusing to remove a client certificate outside the runner temporary directory.'
             }
-            if (Test-Path -LiteralPath $certificate -PathType Leaf) {
-              Remove-Item -LiteralPath $certificate -Force -ErrorAction Stop
+            if (Test-Path -LiteralPath $clientCert -PathType Leaf) {
+              Remove-Item -LiteralPath $clientCert -Force -ErrorAction Stop
             }
-            if (Test-Path -LiteralPath $certificate) {
-              throw 'Temporary signing certificate cleanup failed.'
+            if (Test-Path -LiteralPath $clientCert) {
+              throw 'Temporary client certificate cleanup failed.'
             }
           }
       - name: Validate per-user install and uninstall
