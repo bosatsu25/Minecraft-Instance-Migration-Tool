@@ -209,7 +209,12 @@ public sealed class InspectorSmokeTests
             try
             {
                 automation = new UIA3Automation();
-                var window = application.GetMainWindow(automation, TimeSpan.FromSeconds(10));
+                var window = Retry.WhileNull(
+                    () => application.GetAllTopLevelWindows(automation)
+                        .FirstOrDefault(w => string.Equals(w.Title, "Minecraft Instance Migration", StringComparison.Ordinal)),
+                    timeout: TimeSpan.FromSeconds(15),
+                    throwOnTimeout: false,
+                    ignoreException: true).Result;
                 Assert.NotNull(window);
                 return new UiSession(application, automation, window);
             }
@@ -426,7 +431,21 @@ public sealed class InspectorSmokeTests
 
         public bool CloseGracefully()
         {
+            try
+            {
+                Window.Close();
+            }
+            catch
+            {
+                // Ignored if window closed or unmapped.
+            }
+
             using var process = Process.GetProcessById(processId);
+            if (process.WaitForExit(5000))
+            {
+                return true;
+            }
+
             return process.CloseMainWindow() && process.WaitForExit(5000);
         }
 

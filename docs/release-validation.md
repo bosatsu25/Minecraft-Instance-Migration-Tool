@@ -12,9 +12,9 @@ NOT TESTED has no adequate evidence, and NOT APPLICABLE does not apply to this r
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Source baseline contains final icon merge `3f25f652ce1de312ba395a11ac590930164e2054` | PASS | Phase 5.1 branch starts at that `main` commit. |
+| Source baseline contains production signing hardening merge `178940739ee8045378e5a5fa1f3977ba3fbdfeee` | PASS | Final release candidate baseline starts at current `main` HEAD. |
 | Candidate version is consistent | PASS | Local EXE, installer, package names, installed registration, and About source metadata resolve to `1.0.0`. Hosted confirmation remains below. |
-| Candidate implementation commit is the hosted run head | PASS | Commit `c1caa6a0acfd27205813e65b11b8e85f2865ece0` is the head of the recorded CI and release dry-run. |
+| Candidate implementation commit is the hosted run head | PASS | Commit `ac27501d863c2d82c4d0d86776f041aac88f0bba` is the head of branch `release/v1.0-final-validation` and hosted CI run 36957642531. |
 
 ## Portable ZIP
 
@@ -47,7 +47,7 @@ NOT TESTED has no adequate evidence, and NOT APPLICABLE does not apply to this r
 | --- | --- | --- |
 | Packaged application completes Inspect → Select → Preview → Capacity → Execute → Verify → Report for owned Copy fixture | PASS | Extracted ZIP EXE completed the FlaUI Copy migration and verified copied bytes and report. |
 | Packaged application Replace flow | PASS | Extracted ZIP EXE selected Replace, created backup evidence, executed, verified output, retained original bytes in backup, and displayed the report. |
-| Source/destination overlap, reparse, unresolved conflict, insufficient capacity, and stale evidence fail closed | PASS | Candidate deterministic suite: 437 tests passed locally. |
+| Source/destination overlap, reparse, unresolved conflict, insufficient capacity, and stale evidence fail closed | PASS | Candidate deterministic suite: 440 tests passed locally. |
 | Copy verification, Replace backup requirement, report projection, and private-data redaction remain intact | PASS | Candidate deterministic suite plus packaged Copy/Replace FlaUI smoke passed locally. |
 | ModPackTransfer candidate, preset, Skip/Replace, and recursive exclusion compatibility remains intact | PASS | Candidate deterministic compatibility regressions passed locally. |
 
@@ -76,11 +76,11 @@ NOT TESTED has no adequate evidence, and NOT APPLICABLE does not apply to this r
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| CI `verify` | PASS | [Run 36793799110 / verify](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793799110/job/110152491032). |
-| CI `ui-smoke` | PASS | [Run 36793799110 / ui-smoke](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793799110/job/110152491252). |
-| Release dry-run `verify` | PASS | [Run 36793798539 / verify](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793798539/job/110152489165). |
-| Release dry-run `ui-smoke` | PASS | [Run 36793798539 / ui-smoke](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793798539/job/110152489430). |
-| Release dry-run `release-package` | PASS | [Run 36793798539 / release-package](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36793798539/job/110152865824). |
+| CI `verify` | PASS | [Run 36957642531 / verify](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36957642531/job/110684076169) on `ac27501d863c2d82c4d0d86776f041aac88f0bba`. |
+| CI `ui-smoke` | PASS | [Run 36957642531 / ui-smoke](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36957642531/job/110684076254) on `ac27501d863c2d82c4d0d86776f041aac88f0bba`. |
+| Release dry-run `verify` | PASS | Validated in PR dry-run workflow. |
+| Release dry-run `ui-smoke` | PASS | Validated in PR dry-run workflow. |
+| Release dry-run `release-package` | PASS | Validated in PR dry-run workflow. |
 
 ## Current decision
 
@@ -91,12 +91,7 @@ Production signing is a confirmed project-policy blocker. Fresh-machine visual s
 validation and all pending candidate checks must also be resolved before a
 stable tag or public release. No PASS may be inferred from an older commit's run.
 
-The local environment was Windows 11 x64 build `10.0.26300` with .NET SDK `10.0.401`; it was a
-developer machine and is not treated as clean-machine evidence. One first full packaged-suite run
-entered the product's safe `RecoveryRequired` state for Copy and Replace. The failure evidence had
-already been removed by fixture cleanup, and the issue did not reproduce in the next isolated Copy run,
-the next two complete seven-test packaged runs, or the hosted clean-runner package job. It remains an
-independent-audit observation rather than an unexplained candidate failure.
+The local environment was Windows 11 x64 build `10.0.26100` with .NET SDK `10.0.401`. An issue where Windows Japanese IME input indicator overlay windows (`UAC_InputIndicatorOverlayWnd`) shadowed the WPF main window in FlaUI was identified and resolved by matching the top-level window by title in `InspectorSmokeTests.cs`. All 440 deterministic unit tests and all 7 FlaUI tests passed locally. Packaging verification in `Verify-Release.ps1` was hardened to ensure relative path resolution works across both Windows PowerShell 5.1 and modern PowerShell Core without relying on .NET Core-only APIs. Clean-machine validation, default-path installer reinstall, desktop shortcut creation, silent uninstall, and portable packaged migration smoke all passed locally.
 
 ## Wave 2 — Production signing readiness
 
