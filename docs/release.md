@@ -49,24 +49,20 @@ Normal jobs have `contents: read`. Only the tag-only draft-release job receives 
 
 ## Signing boundary
 
-Unsigned dry-run artifacts are intentionally reported as unsigned. Trusted tag builds require:
-
-- secret `WINDOWS_SIGNING_CERTIFICATE_BASE64`;
-- secret `WINDOWS_SIGNING_CERTIFICATE_PASSWORD`;
-- variable `WINDOWS_SIGNING_TIMESTAMP_URL`.
-
-Configure these values as environment-scoped Actions secrets/variable in a protected
-`production-signing` environment before creating a production version tag. Require designated
-reviewer approval for that environment and restrict deployments to the intended version-tag
-pattern. The release-package job selects this environment only for `v*` refs; PRs and branch builds
-select a separate `release-dry-run` environment. The workflow uses the `MIM_PRODUCTION_`-prefixed
-names below rather than the legacy `WINDOWS_SIGNING_` names, so old repository/organization-level
-secrets are not used as a fallback. Remove any legacy signing secrets and do not define the new
-values at repository or organization scope.
+Unsigned dry-run artifacts are intentionally reported as unsigned. Trusted tag builds require environment-scoped credentials in a protected `production-signing` environment:
 
 - secret `MIM_PRODUCTION_SIGNING_CERTIFICATE_BASE64`: Base64 production code-signing PFX;
 - secret `MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD`: password that unlocks the PFX;
 - variable `MIM_PRODUCTION_SIGNING_TIMESTAMP_URL`: usable RFC 3161 timestamp URL.
+
+Configure these values as environment-scoped Actions secrets/variable in a protected
+`production-signing` environment before creating a production version tag. Require designated
+reviewer approval for that environment and restrict deployments to the intended version-tag
+pattern (`refs/tags/v*`). The release-package job selects this environment only for `v*` refs; PRs and branch builds
+select a separate `release-dry-run` environment. The workflow strictly uses the `MIM_PRODUCTION_`-prefixed
+names rather than the legacy `WINDOWS_SIGNING_` names, so old repository/organization-level
+secrets are not used as a fallback. Remove any legacy signing secrets (`WINDOWS_SIGNING_*`) and do not define the new
+values at repository or organization scope.
 
 Do not put either secret in source, workflow output, or release artifacts.
 
