@@ -64,8 +64,15 @@ try {
         throw "Portable ZIP contains an unexpected executable."
     }
 
+    $publishPrefix = [System.IO.Path]::GetFullPath($publishDirectory).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
     $publishedFiles = @(Get-ChildItem -LiteralPath $publishDirectory -Recurse -File | ForEach-Object {
-        [System.IO.Path]::GetRelativePath($publishDirectory, $_.FullName).Replace('\', '/')
+        $full = [System.IO.Path]::GetFullPath($_.FullName)
+        if ($full.StartsWith($publishPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $full.Substring($publishPrefix.Length).Replace('\', '/')
+        }
+        else {
+            [System.IO.Path]::GetFileName($full)
+        }
     } | Sort-Object)
     $archivedFiles = @($entryNames | Where-Object { -not $_.EndsWith('/') } | Sort-Object)
     if ([string]::Join("`n", $publishedFiles) -ne [string]::Join("`n", $archivedFiles)) {
