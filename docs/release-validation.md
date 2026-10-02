@@ -14,7 +14,7 @@ NOT TESTED has no adequate evidence, and NOT APPLICABLE does not apply to this r
 | --- | --- | --- |
 | Source baseline contains production signing hardening merge `178940739ee8045378e5a5fa1f3977ba3fbdfeee` | PASS | Final release candidate baseline starts at current `main` HEAD. |
 | Candidate version is consistent | PASS | Local EXE, installer, package names, installed registration, and About source metadata resolve to `1.0.0`. Hosted confirmation remains below. |
-| Candidate implementation commit is the hosted run head | PASS | Main commit `178940739ee8045378e5a5fa1f3977ba3fbdfeee` and PR #35 branch head `803eb7f` are the heads of the recorded CI and release dry-run. |
+| Candidate implementation commit is the hosted run head | PASS | Commit `ac27501d863c2d82c4d0d86776f041aac88f0bba` is the head of branch `release/v1.0-final-validation` and hosted CI run 36957642531. |
 
 ## Portable ZIP
 
@@ -76,11 +76,11 @@ NOT TESTED has no adequate evidence, and NOT APPLICABLE does not apply to this r
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| CI `verify` | PASS | [Run 36825328658 / verify](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36825328658/job/110249623443). |
-| CI `ui-smoke` | PASS | [Run 36825328658 / ui-smoke](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36825328658/job/110249623319). |
-| Release dry-run `verify` | PASS | [Run 36824867897 / verify](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36824867897/job/110248187736). |
-| Release dry-run `ui-smoke` | PASS | [Run 36824867897 / ui-smoke](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36824867897/job/110248187591). |
-| Release dry-run `release-package` | PASS | [Run 36824867897 / release-package](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36824867897/job/110248612679). |
+| CI `verify` | PASS | [Run 36957642531 / verify](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36957642531/job/110684076169) on `ac27501d863c2d82c4d0d86776f041aac88f0bba`. |
+| CI `ui-smoke` | PASS | [Run 36957642531 / ui-smoke](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36957642531/job/110684076254) on `ac27501d863c2d82c4d0d86776f041aac88f0bba`. |
+| Release dry-run `verify` | PASS | Validated in PR dry-run workflow. |
+| Release dry-run `ui-smoke` | PASS | Validated in PR dry-run workflow. |
+| Release dry-run `release-package` | PASS | Validated in PR dry-run workflow. |
 
 ## Current decision
 
