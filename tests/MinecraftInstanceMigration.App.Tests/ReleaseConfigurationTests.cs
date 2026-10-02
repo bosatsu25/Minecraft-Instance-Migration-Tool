@@ -125,15 +125,23 @@ public sealed class ReleaseConfigurationTests
         Assert.True(signedStart > unsignedStart);
         Assert.True(installerValidationStart > signedStart);
         Assert.DoesNotContain(
-            "WINDOWS_SIGNING_CERTIFICATE_PASSWORD",
+            "SM_API_KEY",
             workflow[unsignedStart..signedStart],
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "SM_CLIENT_CERT_FILE_B64",
+            workflow[unsignedStart..signedStart],
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "MIM_PRODUCTION_SIGNING_CERTIFICATE_",
+            workflow,
             StringComparison.Ordinal);
         Assert.Contains(
             "if: startsWith(github.ref, 'refs/tags/v')",
             workflow[signedStart..installerValidationStart],
             StringComparison.Ordinal);
         Assert.Contains(
-            "secrets.MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD",
+            "-CertificateThumbprint $env:SIGNING_CERT_THUMBPRINT",
             workflow[signedStart..installerValidationStart],
             StringComparison.Ordinal);
     }
@@ -143,10 +151,10 @@ public sealed class ReleaseConfigurationTests
     {
         string workflow = File.ReadAllText(FindRepositoryFile(".github", "workflows", "release.yml"));
         int releaseJobStart = workflow.IndexOf("  release-package:", StringComparison.Ordinal);
-        int prepareStart = workflow.IndexOf("name: Prepare trusted signing certificate", StringComparison.Ordinal);
+        int prepareStart = workflow.IndexOf("name: Setup Cloud HSM signing client (DigiCert KeyLocker)", StringComparison.Ordinal);
         int unsignedStart = workflow.IndexOf("name: Build and verify unsigned release artifacts", StringComparison.Ordinal);
         int signedStart = workflow.IndexOf("name: Build and verify signed release artifacts", StringComparison.Ordinal);
-        int cleanupStart = workflow.IndexOf("name: Remove temporary signing certificate", StringComparison.Ordinal);
+        int cleanupStart = workflow.IndexOf("name: Remove temporary cloud signing authentication material", StringComparison.Ordinal);
         int validationStart = workflow.IndexOf("name: Validate per-user install and uninstall", StringComparison.Ordinal);
         int uploadUnsignedStart = workflow.IndexOf("name: Upload unsigned dry-run artifacts", StringComparison.Ordinal);
         int uploadSignedStart = workflow.IndexOf("name: Upload production signed artifacts", StringComparison.Ordinal);
@@ -175,19 +183,22 @@ public sealed class ReleaseConfigurationTests
             releaseJob,
             StringComparison.Ordinal);
         Assert.Contains("if: startsWith(github.ref, 'refs/tags/v')", prepare, StringComparison.Ordinal);
-        Assert.Contains("secrets.MIM_PRODUCTION_SIGNING_CERTIFICATE_BASE64", prepare, StringComparison.Ordinal);
-        Assert.Contains("secrets.MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD", prepare, StringComparison.Ordinal);
+        Assert.Contains("secrets.SM_API_KEY", prepare, StringComparison.Ordinal);
+        Assert.Contains("secrets.SM_CLIENT_CERT_FILE_B64", prepare, StringComparison.Ordinal);
+        Assert.Contains("secrets.SM_CLIENT_CERT_PASSWORD", prepare, StringComparison.Ordinal);
+        Assert.Contains("MIM_PRODUCTION_SIGNING_CERT_THUMBPRINT", prepare, StringComparison.Ordinal);
         Assert.Contains("vars.MIM_PRODUCTION_SIGNING_TIMESTAMP_URL", prepare, StringComparison.Ordinal);
+        Assert.DoesNotContain("MIM_PRODUCTION_SIGNING_CERTIFICATE_BASE64", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("secrets.WINDOWS_SIGNING_CERTIFICATE_", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("vars.WINDOWS_SIGNING_TIMESTAMP_URL", workflow, StringComparison.Ordinal);
-        Assert.True(prepare.IndexOf("SIGNING_CERTIFICATE_PATH=$certificate", StringComparison.Ordinal) <
-            prepare.IndexOf("[IO.File]::WriteAllBytes($certificate", StringComparison.Ordinal));
-        Assert.DoesNotContain("WINDOWS_SIGNING_CERTIFICATE", unsigned, StringComparison.Ordinal);
+        Assert.Contains("smctl windows-cert sync", prepare, StringComparison.Ordinal);
         Assert.Contains("if: startsWith(github.ref, 'refs/tags/v')", signed, StringComparison.Ordinal);
         Assert.Contains("-RequireSigning", signed, StringComparison.Ordinal);
+        Assert.Contains("-CertificateThumbprint $env:SIGNING_CERT_THUMBPRINT", signed, StringComparison.Ordinal);
         Assert.Contains("if: always() && startsWith(github.ref, 'refs/tags/v')", cleanup, StringComparison.Ordinal);
-        Assert.Contains("Remove-Item -LiteralPath $certificate -Force -ErrorAction Stop", cleanup, StringComparison.Ordinal);
-        Assert.Contains("Temporary signing certificate cleanup failed.", cleanup, StringComparison.Ordinal);
+        Assert.Contains("Remove-Item -LiteralPath $clientCert -Force -ErrorAction Stop", cleanup, StringComparison.Ordinal);
+        Assert.Contains("Temporary client certificate cleanup failed.", cleanup, StringComparison.Ordinal);
         Assert.Contains("if: ${{ !startsWith(github.ref, 'refs/tags/v') }}", uploads, StringComparison.Ordinal);
         Assert.Contains("MinecraftInstanceMigrationTool-unsigned-dry-run-${{ github.run_id }}", uploads, StringComparison.Ordinal);
         Assert.Contains("MinecraftInstanceMigrationTool-production-signed-${{ github.run_id }}", uploads, StringComparison.Ordinal);
@@ -216,13 +227,12 @@ public sealed class ReleaseConfigurationTests
         Assert.True(applicationLaunch > certificateCleanup);
         Assert.True(checksumWrite > applicationLaunch);
         Assert.Contains("\"/fd\", \"SHA256\", \"/td\", \"SHA256\", \"/tr\", $TimestampUrl", build, StringComparison.Ordinal);
-        Assert.Contains("\"/f\", $SigningCertificatePath, \"/p\", $password", build, StringComparison.Ordinal);
+        Assert.Contains("\"/sha1\", $CertificateThumbprint", build, StringComparison.Ordinal);
         Assert.Contains("if ([string]::IsNullOrWhiteSpace($SignToolPath)", build, StringComparison.Ordinal);
         Assert.Contains("[string]::IsNullOrWhiteSpace($TimestampUrl)", build, StringComparison.Ordinal);
         Assert.Contains("if ($LASTEXITCODE -ne 0)", build, StringComparison.Ordinal);
         Assert.Contains("$env:MIM_SIGNING_CERTIFICATE_PASSWORD = $null", build, StringComparison.Ordinal);
         Assert.Contains("$env:SIGNING_CERTIFICATE_PATH = $null", build, StringComparison.Ordinal);
-        Assert.Contains("Temporary signing certificate cleanup failed.", build, StringComparison.Ordinal);
         Assert.Contains("Get-AuthenticodeSignature -LiteralPath $Path", build, StringComparison.Ordinal);
         Assert.Contains("Get-AuthenticodeSignature -LiteralPath $path", verify, StringComparison.Ordinal);
         Assert.Contains("if ($RequireSigning -and $signature.Status -ne", verify, StringComparison.Ordinal);
@@ -236,9 +246,12 @@ public sealed class ReleaseConfigurationTests
         string release = File.ReadAllText(FindRepositoryFile("docs", "release.md"));
         string validation = File.ReadAllText(FindRepositoryFile("docs", "release-validation.md"));
 
-        Assert.Contains("MIM_PRODUCTION_SIGNING_CERTIFICATE_BASE64", release, StringComparison.Ordinal);
-        Assert.Contains("MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD", release, StringComparison.Ordinal);
+        Assert.Contains("SM_API_KEY", release, StringComparison.Ordinal);
+        Assert.Contains("SM_CLIENT_CERT_FILE_B64", release, StringComparison.Ordinal);
+        Assert.Contains("MIM_PRODUCTION_SIGNING_CERT_THUMBPRINT", release, StringComparison.Ordinal);
         Assert.Contains("MIM_PRODUCTION_SIGNING_TIMESTAMP_URL", release, StringComparison.Ordinal);
+        Assert.Contains("Cloud HSM", release, StringComparison.Ordinal);
+        Assert.Contains("KeyLocker", release, StringComparison.Ordinal);
         Assert.Contains("unsigned-dry-run", release, StringComparison.Ordinal);
         Assert.Contains("production-signed", release, StringComparison.Ordinal);
         Assert.Contains("| Production Authenticode signing | FAIL |", validation, StringComparison.Ordinal);

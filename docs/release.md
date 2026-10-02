@@ -49,33 +49,39 @@ Normal jobs have `contents: read`. Only the tag-only draft-release job receives 
 
 ## Signing boundary
 
-Unsigned dry-run artifacts are intentionally reported as unsigned. Trusted tag builds require environment-scoped credentials in a protected `production-signing` environment:
+Unsigned dry-run artifacts are intentionally reported as unsigned. Under current CA/Browser Forum requirements, trusted public code-signing certificates store private keys on FIPS 140 Level 2+ hardware devices or Cloud HSMs; private keys are non-exportable and cannot be distributed as a PFX file.
 
-- secret `MIM_PRODUCTION_SIGNING_CERTIFICATE_BASE64`: Base64 production code-signing PFX;
-- secret `MIM_PRODUCTION_SIGNING_CERTIFICATE_PASSWORD`: password that unlocks the PFX;
-- variable `MIM_PRODUCTION_SIGNING_TIMESTAMP_URL`: usable RFC 3161 timestamp URL.
+The production release pipeline uses **Cloud HSM signing** via **DigiCert KeyLocker** integrated with the Windows Key Storage Provider (KSP) and SignTool. The code-signing private key remains securely in Cloud HSM and is never exported or transferred to the GitHub runner.
 
-Configure these values as environment-scoped Actions secrets/variable in a protected
+Trusted tag builds require environment-scoped credentials in a protected `production-signing` environment:
+
+- secret `SM_API_KEY`: API key for DigiCert ONE Software Trust Manager / KeyLocker;
+- secret `SM_CLIENT_CERT_FILE_B64`: Base64 client authentication certificate (.p12) for mutual TLS (mTLS) authentication to DigiCert ONE (this is an authentication credential only, distinct from the non-exportable code-signing private key);
+- secret `SM_CLIENT_CERT_PASSWORD`: password unlocking the client authentication certificate;
+- variable `SM_HOST`: DigiCert ONE endpoint (defaults to `https://clientauth.one.digicert.com`);
+- variable/secret `MIM_PRODUCTION_SIGNING_CERT_THUMBPRINT`: SHA-1 certificate thumbprint of the production code-signing certificate hosted in KeyLocker;
+- variable `MIM_PRODUCTION_SIGNING_TIMESTAMP_URL`: usable RFC 3161 timestamp URL (e.g. `http://timestamp.digicert.com`).
+
+Configure these values as environment-scoped Actions secrets/variables in a protected
 `production-signing` environment before creating a production version tag. Require designated
 reviewer approval for that environment and restrict deployments to the intended version-tag
 pattern (`refs/tags/v*`). The release-package job selects this environment only for `v*` refs; PRs and branch builds
-select a separate `release-dry-run` environment. The workflow strictly uses the `MIM_PRODUCTION_`-prefixed
-names rather than the legacy `WINDOWS_SIGNING_` names, so old repository/organization-level
-secrets are not used as a fallback. Remove any legacy signing secrets (`WINDOWS_SIGNING_*`) and do not define the new
+select a separate `release-dry-run` environment. The workflow strictly uses these Cloud HSM credential
+names rather than legacy PFX names (`MIM_PRODUCTION_SIGNING_CERTIFICATE_*` or `WINDOWS_SIGNING_*`). Remove any legacy signing secrets and do not define the new
 values at repository or organization scope.
 
-Do not put either secret in source, workflow output, or release artifacts.
+Do not put any secret in source, workflow output, or release artifacts.
 
 Only a `v*` tag run that passes the protected environment approval receives signing material. A tag
-name alone is not treated as proof of trust. It signs the application executable before ZIP and
+name alone is not treated as proof of trust. The runner configures the DigiCert KSP client, synchronizes
+the certificate into the Windows Certificate Store, signs the application executable with SignTool before ZIP and
 installer creation, signs the installer afterwards, verifies both signatures with
 `Get-AuthenticodeSignature`, and generates checksums only after signing succeeds. SignTool uses
 SHA-256 for both the file and timestamp digests (`/fd SHA256 /td SHA256`) and requires the
-timestamp URL (`/tr`). Missing configuration, a failed signing command, or invalid signature fails
-the run closed. The temporary PFX is written under the runner temporary directory and a tag-only
-`always()` cleanup step removes it; cleanup failures fail the workflow instead of being suppressed.
-After both signatures are verified, the build also removes the PFX and clears the password
-environment variable before launching the signed application or running package/installer smoke
+timestamp URL (`/tr`) and certificate thumbprint (`/sha1`). Missing configuration, a failed signing command, or invalid signature fails
+the run closed. The temporary client authentication certificate is written under the runner temporary directory and a tag-only
+`always()` cleanup step removes it and unsets credentials; cleanup failures fail the workflow instead of being suppressed.
+After both signatures are verified, the build also cleans up temporary files and clears sensitive environment variables before launching the signed application or running package/installer smoke
 tests. The workflow cleanup remains as a failure-path fallback.
 
 Unsigned artifacts are uploaded as `MinecraftInstanceMigrationTool-unsigned-dry-run-{run_id}`.
@@ -86,10 +92,10 @@ explicit `NotSigned` Authenticode state; invalid, untrusted, or otherwise indete
 fail verification.
 
 The repository-side path is ready for these settings, but production signing is not considered
-validated until the real production certificate and timestamp service are configured and a trusted
+validated until the real production Cloud HSM account, certificate, and timestamp service are configured and a trusted
 tag run verifies the resulting signatures. No certificate or credential is stored in the repository.
 
-The equivalent signing command is `signtool sign /fd SHA256 /td SHA256 /tr <timestamp-url> /f <certificate.pfx> /p <password> <artifact>`. The password is supplied only through the Actions secret environment and is never committed or written to a tracked file.
+The equivalent signing command is `signtool sign /sha1 <thumbprint> /fd SHA256 /td SHA256 /tr <timestamp-url> <artifact>`. The client credentials are supplied only through the Actions secret environment and are never committed or written to a tracked file.
 
 ## Versioning
 
@@ -97,7 +103,7 @@ Semantic Versioning is used. `0.x.y` is development, `1.0.0` is the first stable
 
 ## Current release blockers
 
-- Production Authenticode credentials are not configured.
+- Production Cloud HSM Authenticode credentials are not configured.
 
 This blocker prevents a stable public release. The unsigned CI artifact is for verification only.
 The approved original icon is stored as `AppIcon.png` and a multi-resolution `AppIcon.ico` under the App's `Assets/` directory. The executable, window, installer, shortcuts, and uninstall entry use that icon; the source PNG is excluded from publish output.
