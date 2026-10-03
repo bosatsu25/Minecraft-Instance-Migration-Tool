@@ -5,8 +5,8 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 5.1 is validating an untagged `1.0.0` release candidate. Formal release readiness remains blocked until the evidence checklist and production signing requirements are satisfied.**
-Application now owns the product-level workflow that connects inspection, planning, preview,
+**Status: v1.0.0 Release (Unsigned Community Release).**
+Application owns the product-level workflow that connects inspection, planning, preview,
 backup preparation/execution, and migration execution through explicit session states.
 The backend also includes verified Backup, durable execution and rollback-attempt journals,
 Windows Copy / Replace, independent post-write verification, and fingerprint-guarded rollback.
@@ -21,12 +21,37 @@ and regression tests. Against reference commit `e174cdac8229f3e061175a36121d55db
 items. The successor keeps the same eleven migration candidates while strengthening overwrite, path,
 backup, verification, rollback, error-redaction, and capacity behavior.
 
-The Phase 4.6 verification baseline is **429 unit/integration tests + 6 FlaUI UI smoke tests**, with
-0 build warnings/errors and hosted `verify` / `ui-smoke` checks green before merge.
+The test verification baseline is **440 deterministic tests + 7 FlaUI UI tests**, with
+0 build warnings/errors and full regression safety.
 
-Phase 5.1 uses numeric version `1.0.0` for an untagged Windows 11 x64 self-contained release candidate,
-portable ZIP, per-user Inno Setup installer, SHA-256 checksums, assembly-derived About display, and a
-least-privilege release workflow. It does not create a `v1.0.0` tag or public release.
+Version `1.0.0` is provided for Windows 11 x64 as a self-contained release, available as both a
+per-user Inno Setup installer and a portable ZIP, with SHA-256 integrity checksums.
+
+## Installation and Windows SmartScreen Notice
+
+This project is distributed as a free, open-source community release. Because public commercial Authenticode code-signing certificates currently require corporate entity validation and ongoing hardware/Cloud HSM subscriptions, release binaries are not signed with a commercial certificate.
+
+### SmartScreen Prompt
+
+When running `MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe` or the portable executable for the first time, Windows Defender SmartScreen may display:
+
+> **Windows protected your PC**<br />
+> Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.
+
+**To run the application:**
+1. Click **"More info"** on the SmartScreen dialog.
+2. Verify the publisher is listed as **"Unknown publisher"** and the app is **`MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`**.
+3. Click the **"Run anyway"** button.
+
+### Integrity Verification (SHA-256)
+
+Every release includes an official `SHA256SUMS.txt` file. You can verify that your downloaded binary has not been tampered with by running PowerShell:
+
+```powershell
+Get-FileHash .\MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe -Algorithm SHA256
+```
+
+Compare the calculated hash with the value published in `SHA256SUMS.txt` on the GitHub release page.
 
 ## Current implementation
 

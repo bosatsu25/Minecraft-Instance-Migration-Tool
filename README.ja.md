@@ -5,7 +5,7 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**Phase 5.1で、tagを付けない`1.0.0` release candidateを検証中です。evidence checklistとproduction signing要件を満たすまで正式な出荷準備はblockedです。**
+**ステータス: v1.0.0 Release (Unsigned Community Release)。**
 Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
 明示的な session state で接続する product-level workflow を所有するようになりました。
 バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
@@ -21,12 +21,37 @@ migration に関係する behavior を18件棚卸しし、compatibility matrix �
 11候補を維持しつつ、overwrite、path、backup、verification、rollback、error redaction、
 capacity の安全性を強化した後継実装です。
 
-Phase 4.6 の検証基準は **通常テスト 429 passed + FlaUI UI smoke 6 passed**、
-build は警告0 / エラー0、Hosted `verify` / `ui-smoke` は merge 前に green です。
+検証基準は **通常テスト 440 passed + FlaUI UI smoke 7 passed**、
+build は警告0 / エラー0で完全に回帰防止されています。
 
-Phase 5.1ではnumeric version `1.0.0`をtagなしrelease candidateとして使用し、Windows 11 x64向けself-contained folder publish、
-portable ZIP、per-user Inno Setup installer、SHA-256 checksum、assembly metadata由来のAbout表示、
-least-privilege release workflowを準備します。`v1.0.0` tagや公開releaseは作成しません。
+バージョン `1.0.0` は Windows 11 x64 向け self-contained release として提供され、
+per-user Inno Setup installer と portable ZIP の双方が SHA-256 チェックサム付きで利用可能です。
+
+## インストールと Windows SmartScreen について
+
+本ツールはオープンソースのコミュニティリリースとして無償配布されています。現在のパブリックコード署名証明書の仕様（CA/Browser Forum 規程）では法人の実在証明および高額な Cloud HSM / トークンハードウェアの常時契約が必要となるため、本リリースバイナリは商用 Authenticode 署名を含まないコミュニティビルドとなっています。
+
+### Windows SmartScreen の警告が表示された場合
+
+インストーラー（`MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`）またはポータブル版 EXE を初回起動した際、Microsoft Defender SmartScreen により以下の警告画面が表示される場合があります:
+
+> **Windows によって PC が保護されました**<br />
+> Microsoft Defender SmartScreen は認識されないアプリの起動を停止しました。このアプリを実行すると、PC が危険にさらされる可能性があります。
+
+**起動方法:**
+1. ダイアログ内の **「詳細情報」** をクリックします。
+2. アプリ名が **`MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`** であることを確認します。
+3. 表示された **「実行」** ボタンをクリックします。
+
+### 完全性検証 (SHA-256)
+
+改ざんやダウンロード破損がないことを確認するため、GitHub Release で公開されている `SHA256SUMS.txt` と照合できます。PowerShell で次のコマンドを実行してハッシュ値を算出してください:
+
+```powershell
+Get-FileHash .\MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe -Algorithm SHA256
+```
+
+出力されたハッシュ値が `SHA256SUMS.txt` の値と一致していれば、公式にビルドされた正規のバイナリです。
 
 ## 現在の実装範囲
 

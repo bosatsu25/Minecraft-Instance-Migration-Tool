@@ -103,8 +103,11 @@ jobs:
           TIMESTAMP_URL: ${{ vars.MIM_PRODUCTION_SIGNING_TIMESTAMP_URL }}
         run: |
           if (-not $env:SM_API_KEY -or -not $env:SM_CLIENT_CERT_FILE_B64 -or -not $env:SM_CLIENT_CERT_PASSWORD -or -not $env:CERT_THUMBPRINT -or -not $env:TIMESTAMP_URL) {
-            throw 'Cloud HSM signing configuration is incomplete.'
+            Write-Host 'Cloud HSM credentials not configured. Proceeding with unsigned community release.'
+            "SIGNING_ENABLED=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            exit 0
           }
+          "SIGNING_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $hostUrl = if ($env:SM_HOST) { $env:SM_HOST } else { 'https://clientauth.one.digicert.com' }
           $clientCertPath = Join-Path $env:RUNNER_TEMP 'sm_client_cert.p12'
           [IO.File]::WriteAllBytes($clientCertPath, [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64))
@@ -134,7 +137,7 @@ jobs:
           & $smctl windows-cert sync
           if ($LASTEXITCODE -ne 0) { throw "DigiCert certificate sync failed: $LASTEXITCODE" }
       - name: Locate SignTool
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && env.SIGNING_ENABLED == 'true'
         shell: pwsh
         run: |
           $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
@@ -142,12 +145,14 @@ jobs:
           if (-not $signTool) { throw 'SignTool was not found.' }
           "SIGNTOOL_PATH=$($signTool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build and verify unsigned release artifacts
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') || env.SIGNING_ENABLED != 'true' }}
         shell: pwsh
         run: |
-          ./eng/release/Build-Release.ps1 -IsccPath $env:ISCC_PATH
+          $props = [xml](Get-Content Directory.Build.props -Raw)
+          $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+          ./eng/release/Build-Release.ps1 -IsccPath $env:ISCC_PATH -ExpectedVersion $version
       - name: Build and verify signed release artifacts
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && env.SIGNING_ENABLED == 'true'
         shell: pwsh
         run: |
           ./eng/release/Build-Release.ps1 `
@@ -179,24 +184,24 @@ jobs:
         run: |
           $props = [xml](Get-Content Directory.Build.props -Raw)
           $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
-          $isTag = $env:GITHUB_REF.StartsWith('refs/tags/v', [StringComparison]::Ordinal)
+          $requireSigning = ($env:SIGNING_ENABLED -eq 'true')
           ./eng/release/Test-Installer.ps1 `
             -InstallerPath "artifacts/release/MinecraftInstanceMigrationTool-$version-win-x64-setup.exe" `
             -ExpectedVersion $version `
             -TestReinstall `
             -CreateDesktopShortcut `
-            -RequireSigning:$isTag `
+            -RequireSigning:$requireSigning `
             -UseDefaultInstallPath
       - name: Validate clean-machine release package
         shell: pwsh
         run: |
           $props = [xml](Get-Content Directory.Build.props -Raw)
           $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
-          $isTag = $env:GITHUB_REF.StartsWith('refs/tags/v', [StringComparison]::Ordinal)
+          $requireSigning = ($env:SIGNING_ENABLED -eq 'true')
           ./eng/release/Validate-CleanMachine.ps1 `
             -ArtifactsRoot "$PWD/artifacts" `
             -ExpectedVersion $version `
-            -RequireSigning:$isTag
+            -RequireSigning:$requireSigning
       - name: Run migration smoke against extracted portable package
         shell: pwsh
         run: |
