@@ -91,6 +91,10 @@ packages from being mistaken for production release assets. Unsigned verificatio
 explicit `NotSigned` Authenticode state; invalid, untrusted, or otherwise indeterminate signatures
 fail verification.
 
+When Cloud HSM credentials are not configured in the repository environment, the release workflow
+gracefully proceeds with an authorized unsigned community release, packaging and verifying the release
+artifacts under the tag pipeline and publishing them with SHA-256 integrity checksums.
+
 The repository-side path is ready for these settings, but production signing is not considered
 validated until the real production Cloud HSM account, certificate, and timestamp service are configured and a trusted
 tag run verifies the resulting signatures. No certificate or credential is stored in the repository.
