@@ -9,6 +9,7 @@ using MinecraftInstanceMigration.Application.Backup;
 using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Inspection;
 using MinecraftInstanceMigration.Domain.Rules;
+using MinecraftInstanceMigration.Infrastructure.Execution;
 
 namespace MinecraftInstanceMigration.Infrastructure.Backup;
 
@@ -228,6 +229,16 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
 
             using HeldDirectory destination = OpenDirectoryChain(normalizedDestination, writableFinal: false);
             using HeldDirectory backupParentDirectory = OpenDirectoryChain(normalizedBackupParent, writableFinal: true);
+
+            // Drive aliases can differ lexically while naming a destination descendant.
+            if (IsEqualOrDescendant(
+                    ExecutionNativeMethods.GetCanonicalVolumePath(backupParentDirectory.Root),
+                    ExecutionNativeMethods.GetCanonicalVolumePath(destination.Root)))
+            {
+                return new BackupExecutionResult(
+                    BackupExecutionStatus.Failed,
+                    FailureKind: BackupFailureKind.OverlappingRoots);
+            }
 
             string executionId = Guid.NewGuid().ToString("N");
             string backupRootName = $"mim-backup-{executionId}";

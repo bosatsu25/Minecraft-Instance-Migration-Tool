@@ -1,114 +1,98 @@
-# Phase 5.1 release validation
+# Member distribution validation
 
-This checklist records evidence for the untagged `1.0.0` release-candidate build. The packaging
-scripts intentionally accept numeric Windows versions only, so Phase 5.1 validates the exact
-`1.0.0` metadata without creating a tag or public release. A PASS applies only to the candidate
-identified by the pull-request head and its corresponding GitHub Actions run.
+The owner has chosen a free **unsigned community edition** for Windows 11 x64. This supersedes
+the former rule that production signing was a prerequisite for every release. It does not change
+the migration safety contracts or turn an untested item into PASS. Optional paid signing remains
+unvalidated and outside the member-edition acceptance criteria.
 
-Status meanings are strict: PASS has deterministic evidence, FAIL is a confirmed blocker,
-NOT TESTED has no adequate evidence, and NOT APPLICABLE does not apply to this release design.
+## DONE for this scope
 
-## Candidate identity
+The distributable ZIP and installer must be built from the current source, include the runtime
+and a Japanese member guide, pass content/checksum/metadata checks, start without a separate .NET
+installation, complete real Copy and Replace migration with verification, and pass install,
+reinstall, shortcuts, uninstall, and preservation of unrelated data. Core safety and compatibility
+regressions must remain green. Publishing a GitHub Release is a separate human-gated operation.
 
-| Item | Status | Evidence |
-| --- | --- | --- |
-| Source baseline contains production signing hardening merge `178940739ee8045378e5a5fa1f3977ba3fbdfeee` | PASS | Final release candidate baseline starts at current `main` HEAD. |
-| Candidate version is consistent | PASS | Local EXE, installer, package names, installed registration, and About source metadata resolve to `1.0.0`. Hosted confirmation remains below. |
-| Candidate implementation commit is the hosted run head | PASS | Commit `ac27501d863c2d82c4d0d86776f041aac88f0bba` is the head of branch `release/v1.0-final-validation` and hosted CI run 36957642531. |
+## Current-source evidence
 
-## Portable ZIP
+The table below records the earlier local-only member packaging pass. The subsequent bilingual/theme
+release adds pre-backup workspace validation and canonical drive-alias protection. Its acceptance
+requires fresh packaging and hosted checks; the old hashes below do not identify the updated binaries.
 
-| Item | Status | Evidence |
-| --- | --- | --- |
-| ZIP builds from the supported `win-x64` self-contained profile | PASS | Local formal pipeline produced 404 files / 147,175,217 bytes before compression. |
-| ZIP extracts into a new owned temporary directory | PASS | Local verification extracted and removed a unique temporary directory. |
-| Extracted application opens a WPF window | PASS | Local package verifier and FlaUI opened the extracted EXE. |
-| Required runtime, license, and notices are present | PASS | `coreclr.dll`, `hostfxr.dll`, `hostpolicy.dll`, `LICENSE`, and `THIRD-PARTY-NOTICES.txt` verified. |
-| Source, tests, debug files, raw icon assets, and developer repository paths are absent | PASS | Artifact scan includes source/project/debug/credential/log patterns and binary UTF-8/UTF-16 repository-path scanning. |
-| ZIP file list exactly matches the verified publish directory | PASS | Sorted publish and ZIP manifests matched. |
+Local bilingual implementation evidence: Release build has zero warnings/errors; Domain 110,
+Application 136, Infrastructure 131, and App 81 tests passed (458 total). Japanese default, English
+switching, all three themes, preserved paths/selection, confirmed migration and report were exercised
+through FlaUI. A 256 MiB file migration passed the bounded-memory regression. Theme switching 100 times
+kept one palette. A fixed phrase index replaces timing-sensitive regular-expression translation.
 
-## Installer and uninstall
+All ten UI tests also passed against the newly generated ZIP application with external .NET lookup
+disabled. The measured 256 MiB case used 104 MiB private memory before migration, 145 MiB after, and
+180 MiB peak working set on this host; these measurements are not universal limits. Dependency audit
+reported no known vulnerable packages from the configured NuGet source. The bilingual installer
+compiled and package content/checksum/startup verification passed. Local install/uninstall validation
+refused existing application registration and preserved it; the new hosted Windows runner supplies
+the clean install/reinstall/uninstall gate before artifact upload and draft-release creation.
+Hosted evidence belongs to the tag's Actions run; this pre-tag local record does not claim hosted PASS.
 
-| Item | Status | Evidence |
-| --- | --- | --- |
-| Per-user install and HKCU uninstall registration | PASS | Local isolated install used lowest privileges and created no HKLM registration. Hosted confirmation remains below. |
-| Default install path | PASS | Candidate installed and launched from `%LOCALAPPDATA%\Programs\Minecraft Instance Migration Tool`, then uninstalled cleanly. |
-| Direct executable and Start Menu launches | PASS | Both opened the installed WPF window locally. |
-| Desktop shortcut remains opt-in and launches when selected | PASS | Absent on first install; created, validated, and launched when selected on reinstall. |
-| Same-version reinstall remains usable and does not duplicate the Start Menu shortcut | PASS | Local reinstall retained one shortcut and a usable registration. |
-| Display name, publisher, version, install location, and icons are consistent | PASS | Installed binary and HKCU registration were checked against `1.0.0` and `bosatsuKing`; shortcut icon targets matched the app EXE. |
-| Uninstall removes owned binaries, shortcuts, and registration | PASS | Local silent uninstall removed all installer-owned surfaces. |
-| Uninstall preserves user-owned data outside the install directory | PASS | A sentinel outside `{app}` remained byte-identical after uninstall. |
-| Previous-version upgrade | PASS | Rebuilt Phase 5.0 commit `0c47788` as `0.9.0`, installed it, launched it, upgraded in place to `1.0.0`, reinstalled, and uninstalled successfully. |
-
-## Product and safety smoke
-
-| Item | Status | Evidence |
-| --- | --- | --- |
-| Packaged application completes Inspect → Select → Preview → Capacity → Execute → Verify → Report for owned Copy fixture | PASS | Extracted ZIP EXE completed the FlaUI Copy migration and verified copied bytes and report. |
-| Packaged application Replace flow | PASS | Extracted ZIP EXE selected Replace, created backup evidence, executed, verified output, retained original bytes in backup, and displayed the report. |
-| Source/destination overlap, reparse, unresolved conflict, insufficient capacity, and stale evidence fail closed | PASS | Candidate deterministic suite: 440 tests passed locally. |
-| Copy verification, Replace backup requirement, report projection, and private-data redaction remain intact | PASS | Candidate deterministic suite plus packaged Copy/Replace FlaUI smoke passed locally. |
-| ModPackTransfer candidate, preset, Skip/Replace, and recursive exclusion compatibility remains intact | PASS | Candidate deterministic compatibility regressions passed locally. |
-
-## Artifact, metadata, and legal audit
+Security audit: 209 text files reviewed; two binary icon assets excluded. A low-severity backup
+drive-alias overlap finding was reproduced, fixed, and regression-tested. Required backup now also
+validates workspace safety before any backup write; cancelled, invalid and exceptional checks refuse
+the operation. Independent safety and UI diff reviews identified no remaining product blocker within
+their reviewed scope. Optional signed-mode credential inheritance remains a separately reviewed
+hardening area; the chosen unsigned release does not populate signing credentials. No claim of
+universal safety or full fresh-machine validation is made.
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| ZIP and installer SHA-256 values and filenames match `SHA256SUMS.txt` | PASS | Local verification recomputed both SHA-256 values and required exactly two checksum records. |
-| Checksums are generated after the final binary mutation | PASS | Pipeline signs first when required, then writes checksums, then reopens and verifies packages. |
-| EXE, installer, package filenames, About, and installed metadata agree on `1.0.0` | PASS | Local package and install metadata audit passed. |
-| Production package excludes xUnit, FlaUI, Microsoft.NET.Test.Sdk, and testhost | PASS | Local publish/ZIP audit found none of these test dependencies. |
-| Multi-resolution 16/24/32/48/64/128/256 icon resource remains wired to app and installer | PASS | Automated App configuration test passed and release packaging uses the same ICO. |
-| Small-icon rendering has no halo or damaged transparency on Windows shell surfaces | NOT TESTED | Requires visual Windows shell inspection. |
-| MIT `LICENSE`, `THIRD-PARTY-NOTICES.txt`, and unofficial-product disclaimer are present and consistent | PASS | Repository source and package policy inspected; package inclusion still has a separate pending check above. |
+| Release-mode routing without credentials | PASS | Test-ReleaseMode.ps1: default unsigned tag, explicit unsigned/signed tags, branch/PR isolation, invalid configuration, and tag/version mismatch. |
+| Release build, warnings, all deterministic tests, formatting | PASS | SDK 10.0.401: restore/build succeeded, 0 warnings/errors, Domain 110 + Application 132 + Infrastructure 130 + App 68 = 440 passed; format verification and git diff --check passed. |
+| Reference candidate behaviour | PASS | User-supplied ModPackTransfer source ZIP inspected in place; eleven candidates, Recommended, All/None, and recursive exclusion match the existing compatibility matrix. Reference source is not redistributed. |
+| Self-contained ZIP and per-user installer generation | PASS | Existing Build-Release.ps1 generated fresh version 1.0.0 packages from the current working tree. |
+| Packaged runtime, licenses, Japanese member guide, absence of development/private files | PASS | Verify-Release.ps1 checked runtime, licenses, START-HERE.ja.txt, development/private file patterns, repository-path leakage, and ZIP/publish manifests. |
+| Final checksum and version match | PASS | EXE/installer metadata matches 1.0.0; final ZIP and installer SHA-256 match SHA256SUMS.txt; both Authenticode states are NotSigned. |
+| Packaged Copy, Replace, Backup, verification, Report | PASS | Eight FlaUI tests passed against the final extracted ZIP EXE, including confirmed Copy and Replace, original bytes retained in backup, and successful Report verification. |
+| Packaged eleven-candidate All selection and exclusion preservation | PASS | Actual ZIP EXE passed the new All fixture: all eleven items, opt-in saves/screenshots, nested source exclusion, retained destination exclusion, unrelated data, and verified replacement backup. |
+| Install, direct/Start Menu/desktop launch, reinstall, uninstall, external data preservation | PASS | Test-Installer.ps1 completed default-path per-user install, all three launch surfaces, same-version reinstall, uninstall, and sentinel preservation. Japanese guide presence was also checked. |
+| Startup with external .NET lookup disabled | PASS | Validate-CleanMachine.ps1 and all packaged UI processes used nonexistent DOTNET_ROOT/DOTNET_ROOT_X64, multilevel lookup off, and system-only PATH. No separately installed runtime was used by the self-contained app. |
+| Production Authenticode signing | NOT APPLICABLE | The selected edition is explicitly unsigned; no paid certificate, subscription, or protected signing-environment approval is required. |
+| Signed-mode failure and artifact labeling | PASS | Explicit signed mode never falls back after missing credentials; signing mode selects both upload and draft-release download labels. YAML parsing and PowerShell syntax checks also passed; Test-ReleaseMode.ps1 executed nine routing/rejection cases. |
+| Interactive SmartScreen / organisation policy | NOT TESTED | Not reproducible as a universal CI behaviour. Unsigned warning and cancellation guidance are documented; no promise of warning-free startup. |
+| Fresh physical Windows 11 machine / VM | NOT TESTED | This session has no dedicated fresh machine. Developer-machine results are not mislabeled clean-machine results. |
+| Visual small-icon rendering on every shell surface | NOT TESTED | Structural icon and wiring are covered by existing automated tests; exhaustive visual review is not claimed. |
+| Current-change hosted Actions | NOT TESTED | Local changes have not been pushed; previous runs are not evidence for this patch. |
 
-## Environment and trust
+NOT TESTED items for optional signing, reputation, extra platforms, and cosmetic shell validation
+are not member-edition functional blockers. Failed migration, corruption, unresolved core regression,
+missing runtime, checksum mismatch, or broken install/uninstall remain blockers.
 
-| Item | Status | Evidence |
+## Historical evidence and exclusions
+
+The earlier implementation at `ac27501d863c2d82c4d0d86776f041aac88f0bba` passed 440 deterministic
+tests, seven UI smoke tests, and hosted Windows verification. The current patch must take fresh local
+evidence before delivery (now recorded above). Historical hosted success is not a claim of current-patch hosted success.
+
+Windows 10, automatic launcher detection/integration, mod/version compatibility analysis, Merge,
+automatic recovery resume, and report export are outside this edition. Recovery is guarded and
+explicitly confirmed; it is not an atomic filesystem transaction or an automatic retry.
+
+## Earlier local-only decision (superseded by release work)
+
+- **Member package ready: Yes — locally validated unsigned Windows 11 x64 edition**
+- **Public GitHub Release published by this work: No**
+
+Validation date: 2026-10-09 (Asia/Tokyo). Actual local host: Windows 11 Home x64
+`10.0.26300`. This is a developer machine, not a fresh VM. No new commit, push, tag, or public
+release was performed during this member-distribution fix. Base commit: `9436f5c`.
+
+Final package identities:
+
+| File | Bytes | SHA-256 |
 | --- | --- | --- |
-| Clean GitHub-hosted Windows runner | PASS | GitHub-hosted `windows-latest` completed package build, ZIP launch/migration smoke, default-path install/reinstall, and uninstall. This does not claim full fresh-user-machine equivalence. |
-| Fresh Windows 11 VM or physical clean machine | NOT TESTED | No dedicated VM or physical clean machine is available in this phase environment. |
-| Production Authenticode signing | FAIL | Production certificate and timestamp configuration are not available. Self-signing is not accepted as evidence. |
-| SmartScreen and Unknown Publisher UX | NOT TESTED | SmartScreen reputation is not reproducible in CI and needs clean interactive Windows validation. |
+| MinecraftInstanceMigrationTool-1.0.0-win-x64.zip | 65,741,597 | `008bdf39ab3564a16b0933f272997d581f66811484e8a92edff6945ee5372158` |
+| MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe | 46,954,186 | `f1c7a1a0f301556534bd279fe7ff0a8a67bb96daaa6e5233257abfc765349e6a` |
 
-## Hosted gates
-
-| Item | Status | Evidence |
-| --- | --- | --- |
-| CI `verify` | PASS | [Run 36957642531 / verify](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36957642531/job/110684076169) on `ac27501d863c2d82c4d0d86776f041aac88f0bba`. |
-| CI `ui-smoke` | PASS | [Run 36957642531 / ui-smoke](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/36957642531/job/110684076254) on `ac27501d863c2d82c4d0d86776f041aac88f0bba`. |
-| Release dry-run `verify` | PASS | Validated in PR dry-run workflow. |
-| Release dry-run `ui-smoke` | PASS | Validated in PR dry-run workflow. |
-| Release dry-run `release-package` | PASS | Validated in PR dry-run workflow. |
-
-## Current decision
-
-- **Phase 5.1 Complete: No**
-- **v1.0 Release Ready: No**
-
-Production signing is a confirmed project-policy blocker. Fresh-machine visual shell/SmartScreen
-validation and all pending candidate checks must also be resolved before a
-stable tag or public release. No PASS may be inferred from an older commit's run.
-
-The local environment was Windows 11 x64 build `10.0.26100` with .NET SDK `10.0.401`. An issue where Windows Japanese IME input indicator overlay windows (`UAC_InputIndicatorOverlayWnd`) shadowed the WPF main window in FlaUI was identified and resolved by matching the top-level window by title in `InspectorSmokeTests.cs`. All 440 deterministic unit tests and all 7 FlaUI tests passed locally. Packaging verification in `Verify-Release.ps1` was hardened to ensure relative path resolution works across both Windows PowerShell 5.1 and modern PowerShell Core without relying on .NET Core-only APIs. Clean-machine validation, default-path installer reinstall, desktop shortcut creation, silent uninstall, and portable packaged migration smoke all passed locally.
-
-## Wave 2 — Production signing readiness
-
-The repository signing path is prepared for Cloud HSM (DigiCert KeyLocker) certificate and timestamp settings:
-version-tag runs select the protected `production-signing` Actions environment, configure the DigiCert KSP client,
-synchronize certificates to the Windows Certificate Store, verify the signed executable and installer before
-checksums, upload to a production-signed artifact name, and remove temporary client authentication materials.
-The production code-signing private key remains in non-exportable FIPS 140 Level 2+ Cloud HSM and is never exported to the runner.
-Unsigned PR/branch dry-runs use a separately named artifact and cannot feed the draft-release job. This
-repository-side readiness is not evidence that Cloud HSM account credentials have been configured or that a production signature was produced.
-
-| Item | Status | Evidence |
-| --- | --- | --- |
-| Repository signing workflow and fail-closed contract | PASS | Release configuration tests check tag gates, protected-environment selection, Cloud HSM authentication secret names (`SM_API_KEY`, `SM_CLIENT_CERT_FILE_B64`, `SM_CLIENT_CERT_PASSWORD`, `SM_HOST`, `MIM_PRODUCTION_SIGNING_CERT_THUMBPRINT`, `MIM_PRODUCTION_SIGNING_TIMESTAMP_URL`), SignTool `/sha1` thumbprint signing, signing/checksum order, signature verification, client credential cleanup, cleanup fallback, and artifact separation. Hosted unsigned dry-run validates the non-production path only. |
-| Production signing environment protection | PASS | GitHub environment `production-signing` (ID: 23268615126) configured on canonical repository with required reviewer `bosatsu25` (ID: 272264606) and tag deployment policy `v*` (Policy ID: 61704523). Zero legacy secrets present. |
-| Production Authenticode signing | FAIL | Production Cloud HSM account (KeyLocker), client authentication credentials, and certificate thumbprint remain unavailable. No trusted signed-tag run was performed; self-signing is not accepted as evidence. |
-
-Do not change the production-signing FAIL to PASS until the Cloud HSM credentials are configured
-in the protected environment, and an approved trusted `v*` tag run verifies the published
-signatures.
+The independent diff review found and fixed signed-label leakage, the unwanted paid-environment
+gate, silent signed-mode fallback, stale tag version acceptance, misleading support/atomic-recovery
+claims in release notes, and missing member instructions. Migration policy and storage engines were
+not changed. A new test initially invoked Apply after Select all; the existing Select all command
+already applies immediately. The fixture and guide were corrected to that actual behaviour.

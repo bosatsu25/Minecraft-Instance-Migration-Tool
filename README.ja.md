@@ -5,53 +5,29 @@
 MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
 ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
 
-**ステータス: v1.0.0 Release (Unsigned Community Release)。**
-Application が、Inspect、Plan、Preview、Backup 準備 / 実行、Execute を
-明示的な session state で接続する product-level workflow を所有するようになりました。
-バックエンドには、検証済み Backup、durable execution / rollback-attempt journal、
-Windows Copy / Replace、独立 post-write verification、fingerprint guard 付き rollback まで含まれます。
+**配布方針: 無料の未署名community版（Windows 11 x64）。[配布ファイル](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/latest)。**
+メンバーには自己完結ZIPまたはユーザー単位のインストーラを渡します。
+.NET、Visual Studio、Python、有料署名サービスの導入・契約は不要です。
+操作手順は両方に同梱される `START-HERE.ja.txt`（[メンバー用ガイド](docs/member-guide.ja.txt)）を参照してください。
 
-WPF UI から Inspector、Migration Preview、selection / conflict 編集、明示的な実行確認、
-必要時の Backup、検証付き Copy / Replace 実行、Recovery 診断、確認付き guarded rollback、
-読み取り専用 Migration Report まで操作できます。
-選択中の safety workspace に対する最新の容量確認も、実行前の必須条件です。
-ModPackTransfer の既存 migration feature set は、追跡可能な compatibility matrix と回帰テストで
-確認しています。参照元 commit `e174cdac8229f3e061175a36121d55db01961452` に対して、
-migration に関係する behavior を18件棚卸しし、compatibility matrix の **Missing は0件**です。
-11候補を維持しつつ、overwrite、path、backup、verification、rollback、error redaction、
-capacity の安全性を強化した後継実装です。
+初期表示は日本語です。画面上部で日本語・英語、Windows設定・ライト・ダークを切り替えられます。
+「次にすること」に沿って移行を進められます。言語とテーマは起動中のみ保持します。
+`setup.exe` は導入用で、導入後はスタートメニューから起動します。ZIP版では全体を展開して
+`MinecraftInstanceMigrationTool.exe` を起動してください。
 
-検証基準は **通常テスト 440 passed + FlaUI UI smoke 7 passed**、
-build は警告0 / エラー0で完全に回帰防止されています。
+GUIから旧・新フォルダを選び、11項目のInclude/ExcludeとSkip/Replaceを決め、Preview、
+容量確認、確認付き実行、検証結果Reportまで操作できます。Replace前にはバックアップを
+作成・検証します。復旧は明示的な確認付きguarded rollbackで、自動再開はありません。
+RecommendedではsavesとscreenshotsがOFFです。`hanemod-client.json`は対象フォルダの
+全階層で除外し、Replace時は移行先の既存除外ファイルを保持します。
+[旧版との比較](docs/modpacktransfer-compatibility.md)と[現在の検証結果](docs/release-validation.md)を参照してください。
 
-バージョン `1.0.0` は Windows 11 x64 向け self-contained release として提供され、
-per-user Inno Setup installer と portable ZIP の双方が SHA-256 チェックサム付きで利用可能です。
-
-## インストールと Windows SmartScreen について
-
-本ツールはオープンソースのコミュニティリリースとして無償配布されています。現在のパブリックコード署名証明書の仕様（CA/Browser Forum 規程）では法人の実在証明および高額な Cloud HSM / トークンハードウェアの常時契約が必要となるため、本リリースバイナリは商用 Authenticode 署名を含まないコミュニティビルドとなっています。
-
-### Windows SmartScreen の警告が表示された場合
-
-インストーラー（`MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`）またはポータブル版 EXE を初回起動した際、Microsoft Defender SmartScreen により以下の警告画面が表示される場合があります:
-
-> **Windows によって PC が保護されました**<br />
-> Microsoft Defender SmartScreen は認識されないアプリの起動を停止しました。このアプリを実行すると、PC が危険にさらされる可能性があります。
-
-**起動方法:**
-1. ダイアログ内の **「詳細情報」** をクリックします。
-2. アプリ名が **`MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`** であることを確認します。
-3. 表示された **「実行」** ボタンをクリックします。
-
-### 完全性検証 (SHA-256)
-
-改ざんやダウンロード破損がないことを確認するため、GitHub Release で公開されている `SHA256SUMS.txt` と照合できます。PowerShell で次のコマンドを実行してハッシュ値を算出してください:
-
-```powershell
-Get-FileHash .\MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe -Algorithm SHA256
-```
-
-出力されたハッシュ値が `SHA256SUMS.txt` の値と一致していれば、公式にビルドされた正規のバイナリです。
+未署名版はWindowsに「不明な発行元」やSmartScreen警告が出る場合があります。
+信頼する配布元と `SHA256SUMS.txt` を確認してください。ハッシュ一致は配布内容の一致を
+確認するもので、発行元の署名ではありません。疑わしい場合はキャンセルし配布担当者へ
+確認してください。セキュリティ機能を無効化する必要はありません。
+MOD・ローダー互換性やランチャー自動検出はありません。ゲーム用フォルダを手動で選びます。
+詳細は[導入と操作](docs/install.md)、[配布手順](docs/release.md)を参照してください。
 
 ## 現在の実装範囲
 
@@ -67,6 +43,8 @@ Preview / Dry Run
 Capacity Preflight
   ↓
 Backup Preflight
+  ↓
+Backup Workspace Safety
   ↓
 Backup IO
   ↓
@@ -237,7 +215,7 @@ Aboutにはassembly metadataのversionを表示します。PR/branch dry-runはu
 signingはtrusted tag contextに限定します。
 
 single-file、trimming、NativeAOTはこのreleaseでは無効です。最終アイコンは組み込み済みで、production
-signing設定が未準備です。Phase 5.1のclean hosted runner、package、install、migration、upgrade、
+signingは未署名community版には不要です。Phase 5.1のpackage、install、migration、upgrade、
 uninstallと残るmanual evidenceは[release validation checklist](docs/release-validation.md)へ記録します。
 
 ## UI で現在できること
@@ -434,7 +412,7 @@ pipelineは次の固定artifact名を生成します。
 - `MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`
 - `SHA256SUMS.txt`
 
-安定版downloadはまだありません。Phase 5.1のevidence checklistを閉じてからstable `v1.0.0`へ進みます。
+検証済みメンバー用パッケージを配布担当者から受け取ってください。公開Releaseは別作業です。
 installerはper-user、ZIPはportableで、どちらもself-containedです。checksum、署名、upgrade、
 support範囲は [install](docs/install.md) と [release process](docs/release.md) を参照してください。
 
@@ -525,7 +503,7 @@ warnings は build failure として扱います。
 次の大きな領域:
 
 22. **Phase 5.0 — Release hardening（実装済み、production signing待ち）**
-23. **Phase 5.1 — v1.0 release validation（進行中、必要なevidenceが残る間はrelease blocked）**
+23. **Phase 5.1 — v1.0 member distribution validation（現在の配布検証記録を参照）**
 
 調査した旧版機能と回帰証拠は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md)、
 移行候補と rule は [migration rules](docs/migration-rules.md)、

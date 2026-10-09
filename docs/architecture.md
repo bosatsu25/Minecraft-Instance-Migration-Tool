@@ -733,8 +733,20 @@ transformed without dedicated compatibility evidence. Inno Setup wraps the same 
 a per-user installer; its stable AppId defines upgrade identity and it owns only application files and
 shortcuts. Migration data, backup, and journals remain outside installer ownership.
 
-The release workflow has an explicit trust boundary. Pull requests and manual dry-runs can build unsigned
-packages with read-only repository permission. Only a repository version tag can request production
-signing and the tag path fails when secrets, timestamp configuration, or Authenticode verification are
-missing. See [release](release.md), [install](install.md), and
+The release workflow has an explicit trust boundary. Pull requests and manual dry-runs build unsigned
+packages with read-only repository permission. Matching version tags use unsigned community packaging
+by default. Only an explicitly selected signed version tag requests production signing; that mode fails
+when secrets, timestamp configuration, or Authenticode verification are missing. See [release](release.md), [install](install.md), and
 [ADR 0002](adr/0002-windows-release-packaging.md).
+
+## Member presentation and pre-backup workspace guard
+
+The WPF presentation layer owns Japanese/English labels and bounded session-only language/theme state.
+It translates read-only projections; user paths and item names stay unchanged. One theme palette is
+replaced on switching rather than appended. No settings, telemetry, or external services are added.
+
+Required replacement backup validates both backup and journal parents against the source and
+destination before invoking the backup executor. Windows backup storage independently checks canonical
+volume paths from the held destination/parent handles before creating any artifact. A drive alias cannot
+make a lexically external backup parent point inside the destination. The execution workspace guard
+continues to run immediately before execution as an independent later check.

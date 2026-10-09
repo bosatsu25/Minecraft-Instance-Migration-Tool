@@ -54,7 +54,8 @@ public partial class MainWindow : Window
                 new WindowsExecutionWorkspaceSafetyValidator(),
                 journalPersistence,
                 new WindowsExecutionMutationPort(),
-                new WindowsExecutionPostWriteVerifier()));
+                new WindowsExecutionPostWriteVerifier()),
+            new WindowsExecutionWorkspaceSafetyValidator());
 
         var inspectorModel = new InspectorViewModel(
             inspector,
@@ -76,7 +77,11 @@ public partial class MainWindow : Window
 
     private string? ChooseFolder(string title)
     {
-        var dialog = new OpenFolderDialog { Title = title, Multiselect = false };
+        var dialog = new OpenFolderDialog
+        {
+            Title = UiText.Translate(title, UiPreferences.Current.LanguageIndex == 0),
+            Multiselect = false,
+        };
         return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
     }
 }

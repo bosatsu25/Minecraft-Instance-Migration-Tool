@@ -22,7 +22,7 @@ public sealed class CapacityViewBindingTests
             "SafetyWorkspaceFreeSpace",
         })
         {
-            Assert.Contains($"Binding {property}, Mode=OneWay", xaml, StringComparison.Ordinal);
+            Assert.Contains($"ui:LocalizedBinding Path={property}, Mode=OneWay", xaml, StringComparison.Ordinal);
         }
     }
 

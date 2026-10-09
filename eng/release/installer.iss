@@ -41,10 +41,19 @@ VersionInfoDescription={#ProductName} installer
 VersionInfoCompany=bosatsuKing
 
 [Languages]
+Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+japanese.DesktopShortcut=デスクトップにショートカットを作成する
+japanese.AdditionalShortcuts=追加のショートカット:
+japanese.LaunchApplication={#ProductName} を起動する
+english.DesktopShortcut=Create a desktop shortcut
+english.AdditionalShortcuts=Additional shortcuts:
+english.LaunchApplication=Launch {#ProductName}
+
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:DesktopShortcut}"; GroupDescription: "{cm:AdditionalShortcuts}"; Flags: unchecked
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -54,4 +63,4 @@ Name: "{group}\{#ProductName}"; Filename: "{app}\{#ExecutableName}"; IconFilenam
 Name: "{autodesktop}\{#ProductName}"; Filename: "{app}\{#ExecutableName}"; IconFilename: "{app}\{#ExecutableName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#ExecutableName}"; Description: "Launch {#ProductName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#ExecutableName}"; Description: "{cm:LaunchApplication}"; Flags: nowait postinstall skipifsilent

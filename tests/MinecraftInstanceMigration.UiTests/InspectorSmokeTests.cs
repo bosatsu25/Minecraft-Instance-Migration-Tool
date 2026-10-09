@@ -13,11 +13,76 @@ public sealed class UiSmokeCollection;
 [Collection("UI smoke")]
 public sealed class InspectorSmokeTests
 {
+    private readonly ITestOutputHelper output;
+
+    public InspectorSmokeTests(ITestOutputHelper output) => this.output = output;
+
+    [Fact]
+    public void LargeFileMigrationKeepsMemoryBelowTheFileSize()
+    {
+        using var source = new UiFixture();
+        using var destination = new UiFixture();
+        using var workspace = new UiFixture();
+        Directory.CreateDirectory(source.At("config"));
+        const long fileSize = 256L * 1024 * 1024;
+        byte[] buffer = new byte[64 * 1024];
+        Array.Fill(buffer, (byte)0x5A);
+        using (var file = File.Create(source.At(Path.Combine("config", "large.bin"))))
+        {
+            for (long written = 0; written < fileSize; written += buffer.Length)
+            {
+                file.Write(buffer);
+            }
+        }
+        using var session = UiSession.Open();
+        long baseline = session.PrivateBytes;
+        session.GeneratePreview(source.Root, destination.Root);
+        session.ExecuteMigration(workspace.Root);
+        long after = session.PrivateBytes;
+        output.WriteLine($"256 MiB migration: private memory before={baseline / 1024 / 1024} MiB, after={after / 1024 / 1024} MiB; peak working set={session.PeakWorkingSet / 1024 / 1024} MiB.");
+        Assert.True(after - baseline < fileSize / 2, "Private memory grew by more than half the migrated file size.");
+        Assert.Equal(fileSize, new FileInfo(destination.At(Path.Combine("config", "large.bin"))).Length);
+        Assert.Equal(fileSize, new FileInfo(source.At(Path.Combine("config", "large.bin"))).Length);
+    }
+
+    [Fact]
+    public void JapaneseDefaultSupportsLanguageThemesAndConfirmedMigration()
+    {
+        using var source = new UiFixture();
+        using var destination = new UiFixture();
+        using var workspace = new UiFixture();
+        Directory.CreateDirectory(source.At("config"));
+        File.WriteAllText(source.At(Path.Combine("config", "member.txt")), "member-data");
+        using var session = UiSession.Open(english: false);
+        Assert.Contains("移行内容", session.Find("GeneratePreview").Name);
+        session.GeneratePreview(source.Root, destination.Root);
+        Assert.Contains("コピー", session.RenderedEntryCells("PreviewEntries", "config"));
+        for (int index = 0; index < 3; index++)
+        {
+            session.SelectTheme(index);
+            session.SelectLanguage(1);
+            Assert.Contains("Copy", session.RenderedEntryCells("PreviewEntries", "config"));
+            session.SelectLanguage(0);
+            Assert.Contains("コピー", session.RenderedEntryCells("PreviewEntries", "config"));
+            Assert.Equal(source.Root, session.Find("PreviewSourcePath").AsTextBox().Text);
+            Assert.Equal(destination.Root, session.Find("PreviewDestinationPath").AsTextBox().Text);
+            Assert.False(File.Exists(destination.At(Path.Combine("config", "member.txt"))));
+        }
+        session.ExecuteMigration(workspace.Root);
+        session.SelectReportTab();
+        Assert.Contains("完了", session.Find("ReportOverallOutcome").Name);
+        Assert.Contains("コピー: 1", session.Find("ReportMigrationSummary").Name);
+        Assert.Equal("member-data", File.ReadAllText(destination.At(Path.Combine("config", "member.txt"))));
+        session.SelectLanguage(1);
+        Assert.Contains("Completed", session.Find("ReportOverallOutcome").Name);
+    }
+
     [Fact]
     public void ApplicationStarts()
     {
         using var session = UiSession.Open();
         Assert.Equal("Minecraft Instance Migration", session.Window.Title);
+        session.SelectInspectorTab();
         foreach (string id in new[] { "CandidatePath", "Inspect", "Cancel", "RootState", "Entries", "PreviewTab", "ReportTab" })
         {
             Assert.NotNull(session.Find(id));
@@ -182,12 +247,79 @@ public sealed class InspectorSmokeTests
             path => File.ReadAllText(path) == "original-content");
     }
 
+    [Fact]
+    public void MigratesAllKnownCandidatesAndPreservesExcludedDestinationContent()
+    {
+        using var source = new UiFixture();
+        using var destination = new UiFixture();
+        using var workspace = new UiFixture();
+        string[] directories = ["config", "resourcepacks", "shaderpacks", "schematics", "saves",
+            "screenshots", "XaeroWaypoints", "XaeroWorldMap", "itemscroller", "g4mespeed"];
+        File.WriteAllText(source.At("options.txt"), "fixture-options");
+        foreach (string directory in directories)
+        {
+            Directory.CreateDirectory(source.At(directory));
+            File.WriteAllText(source.At(Path.Combine(directory, "payload.txt")), $"fixture-{directory}");
+        }
+        Directory.CreateDirectory(source.At(Path.Combine("config", "nested")));
+        File.WriteAllText(source.At(Path.Combine("config", "nested", "HANEMOD-CLIENT.JSON")), "excluded-source");
+        Directory.CreateDirectory(destination.At("config"));
+        File.WriteAllText(destination.At(Path.Combine("config", "payload.txt")), "original-destination");
+        File.WriteAllText(destination.At(Path.Combine("config", "hanemod-client.json")), "preserved-destination");
+        File.WriteAllText(destination.At("untouched.txt"), "unselected-content");
+        string[] sourceBefore = source.Snapshot();
+
+        using var session = UiSession.Open();
+        session.SelectPreviewTab();
+        session.GeneratePreview(source.Root, destination.Root);
+        session.Find("SelectAllChoices").AsButton().Invoke();
+        session.WaitForPreviewAction("saves", "Copy");
+        session.ReplaceConflictAndApply("config");
+        session.ExecuteMigration(workspace.Root);
+        session.SelectReportTab();
+
+        Assert.Contains("Completed", session.Find("ReportOverallOutcome").Name);
+        Assert.Contains("Copy: 10", session.Find("ReportMigrationSummary").Name);
+        Assert.Contains("Replace: 1", session.Find("ReportMigrationSummary").Name);
+        Assert.Contains("verification: Succeeded", session.Find("ReportExecutionSummary").Name);
+        Assert.Equal("fixture-options", File.ReadAllText(destination.At("options.txt")));
+        foreach (string directory in directories)
+        {
+            Assert.Equal($"fixture-{directory}", File.ReadAllText(destination.At(Path.Combine(directory, "payload.txt"))));
+        }
+        Assert.False(File.Exists(destination.At(Path.Combine("config", "nested", "HANEMOD-CLIENT.JSON"))));
+        Assert.Equal("preserved-destination", File.ReadAllText(destination.At(Path.Combine("config", "hanemod-client.json"))));
+        Assert.Equal("unselected-content", File.ReadAllText(destination.At("untouched.txt")));
+        Assert.Equal(sourceBefore, source.Snapshot());
+        Assert.Contains(Directory.EnumerateFiles(workspace.Root, "payload.txt", SearchOption.AllDirectories),
+            path => File.ReadAllText(path) == "original-destination");
+        Assert.Empty(Directory.EnumerateFiles(workspace.Root, "hanemod-client.json", SearchOption.AllDirectories));
+    }
+
     private sealed class UiSession : IDisposable
     {
         private readonly FlaUI.Core.Application application;
         private readonly UIA3Automation automation;
         private readonly int processId;
         public Window Window { get; }
+
+        public long PrivateBytes
+        {
+            get
+            {
+                using var process = Process.GetProcessById(processId);
+                return process.PrivateMemorySize64;
+            }
+        }
+
+        public long PeakWorkingSet
+        {
+            get
+            {
+                using var process = Process.GetProcessById(processId);
+                return process.PeakWorkingSet64;
+            }
+        }
 
         private UiSession(FlaUI.Core.Application application, UIA3Automation automation, Window window)
         {
@@ -197,12 +329,20 @@ public sealed class InspectorSmokeTests
             Window = window;
         }
 
-        public static UiSession Open()
+        public static UiSession Open(bool english = true)
         {
             var start = new ProcessStartInfo(ResolveApplicationExecutable())
             {
                 UseShellExecute = false,
             };
+            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MIM_UI_EXECUTABLE")))
+            {
+                string unavailableRuntime = Path.Combine(Path.GetTempPath(), $"mim-unavailable-dotnet-{Guid.NewGuid():N}");
+                start.Environment["DOTNET_ROOT"] = unavailableRuntime;
+                start.Environment["DOTNET_ROOT_X64"] = unavailableRuntime;
+                start.Environment["DOTNET_MULTILEVEL_LOOKUP"] = "0";
+                start.Environment["PATH"] = Environment.GetFolderPath(Environment.SpecialFolder.System);
+            }
             var application = FlaUI.Core.Application.Launch(start);
             int processId = application.ProcessId;
             UIA3Automation? automation = null;
@@ -216,7 +356,12 @@ public sealed class InspectorSmokeTests
                     throwOnTimeout: false,
                     ignoreException: true).Result;
                 Assert.NotNull(window);
-                return new UiSession(application, automation, window);
+                var session = new UiSession(application, automation, window);
+                if (english)
+                {
+                    session.SelectLanguage(1);
+                }
+                return session;
             }
             catch
             {
@@ -252,6 +397,7 @@ public sealed class InspectorSmokeTests
 
         public void Inspect(string path)
         {
+            SelectInspectorTab();
             Find("CandidatePath").AsTextBox().Text = path;
             Find("Inspect").AsButton().Invoke();
             var finished = Retry.WhileFalse(
@@ -259,6 +405,12 @@ public sealed class InspectorSmokeTests
                 timeout: TimeSpan.FromSeconds(10), throwOnTimeout: false, ignoreException: true);
             Assert.True(finished.Success, "Inspector did not finish in ten seconds.");
         }
+
+        public void SelectInspectorTab() => Find("InspectorTab").AsTabItem().Select();
+
+        public void SelectLanguage(int index) => Find("LanguageSelector").AsComboBox().Select(index);
+
+        public void SelectTheme(int index) => Find("ThemeSelector").AsComboBox().Select(index);
 
         public void SelectPreviewTab()
         {
@@ -324,7 +476,8 @@ public sealed class InspectorSmokeTests
 
             checkCapacity.Invoke();
             var capacityReady = Retry.WhileFalse(
-                () => Find("CapacityStatus").Name.Contains("Ready", StringComparison.Ordinal),
+                () => Find("CapacityStatus").Name.Contains("Ready", StringComparison.Ordinal) ||
+                    Find("CapacityStatus").Name.Contains("準備完了", StringComparison.Ordinal),
                 timeout: TimeSpan.FromSeconds(20),
                 throwOnTimeout: false,
                 ignoreException: true);
@@ -344,7 +497,8 @@ public sealed class InspectorSmokeTests
                 () =>
                 {
                     confirmation = Window.ModalWindows
-                        .FirstOrDefault(candidate => candidate.Title == "Confirm migration");
+                        .FirstOrDefault(candidate => candidate.FindFirstDescendant(
+                            cf => cf.ByAutomationId("ConfirmMigrationStart")) is not null);
                     return confirmation is not null;
                 },
                 timeout: TimeSpan.FromSeconds(5),
@@ -359,7 +513,8 @@ public sealed class InspectorSmokeTests
             start.AsButton().Invoke();
 
             var completed = Retry.WhileFalse(
-                () => Find("ExecutionState").Name.Contains("Completed", StringComparison.Ordinal),
+                () => Find("ExecutionState").Name.Contains("Completed", StringComparison.Ordinal) ||
+                    Find("ExecutionState").Name.Contains("完了", StringComparison.Ordinal),
                 timeout: TimeSpan.FromSeconds(20),
                 throwOnTimeout: false,
                 ignoreException: true);
@@ -414,6 +569,16 @@ public sealed class InspectorSmokeTests
                 throwOnTimeout: false,
                 ignoreException: true);
             Assert.True(applied.Success, "Replace choice did not produce a ready preview in fifteen seconds.");
+        }
+
+        public void WaitForPreviewAction(string name, string action)
+        {
+            var ready = Retry.WhileFalse(
+                () => RenderedEntryCells("PreviewEntries", name).Contains(action, StringComparer.Ordinal),
+                timeout: TimeSpan.FromSeconds(15),
+                throwOnTimeout: false,
+                ignoreException: true);
+            Assert.True(ready.Success, "Applied selection did not produce the expected preview action.");
         }
 
         public string[] RenderedEntryCells(string gridId, string name)

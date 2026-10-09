@@ -653,7 +653,7 @@ Phase 5.1 runs the existing release pipeline as the source of truth and adds can
   same-version reinstall, installed metadata and signature state, complete uninstall, and preservation
   of user-owned data outside the install directory;
 - the UI suite can launch an explicitly supplied packaged executable. The release-package job expands
-  the candidate ZIP and runs all seven FlaUI tests against that EXE, including real owned-fixture Copy
+  the candidate ZIP and runs all ten FlaUI tests against that EXE, including real owned-fixture Copy
   and Replace migrations through capacity, verification, backup, and Report;
 - the strict status table in [release validation](release-validation.md) separates local, hosted, and
   unavailable/manual evidence. A NOT TESTED release-critical item is never treated as PASS.
@@ -667,3 +667,17 @@ Hosted completion requires the ordinary `verify` and `ui-smoke` gates plus the r
 `release-package` job. The package job depends on its own core/UI verification and cannot upload artifacts
 after a failed gate. README-only changes remain excluded from these workflows. Trusted tag signing is not
 exercised without production credentials and may never run for pull requests.
+
+Member-distribution validation additionally covers one packaged GUI migration of all eleven
+candidates with All selection, nested exclusion, destination-exclusion preservation, backup,
+unrelated-data preservation, and Report. Packaged UI processes disable external .NET lookup.
+The explicit release-mode contract has nine routing/rejection checks and runs in both CI workflows.
+Unsigned community mode is the default; only deliberately selected signed tags access the protected
+signing environment. Read [current evidence](release-validation.md) for local versus hosted results.
+
+Member presentation tests cover Japanese startup, English switching without changing paths or the
+reviewed plan, all three theme choices, confirmation and translated results. A 256 MiB fixture
+exercises the actual GUI workflow and asserts memory growth stays below half the payload size.
+Unit tests switch themes 100 times and require a single palette. Alias regressions share a
+nonparallel collection because drive mappings are machine-global. Workspace rejection/cancellation
+tests require zero backup calls before any file-changing work.

@@ -41,7 +41,15 @@ function New-TemporaryFixtureRoot([string]$RootName) {
 }
 
 function Invoke-PortableLaunch([string]$ExecutablePath, [string]$Surface) {
-    $process = Start-Process -FilePath $ExecutablePath -PassThru
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $ExecutablePath
+    $start.UseShellExecute = $false
+    $unavailableRuntime = Join-Path $env:TEMP ("mim-unavailable-dotnet-" + [Guid]::NewGuid().ToString("N"))
+    $start.EnvironmentVariables["DOTNET_ROOT"] = $unavailableRuntime
+    $start.EnvironmentVariables["DOTNET_ROOT_X64"] = $unavailableRuntime
+    $start.EnvironmentVariables["DOTNET_MULTILEVEL_LOOKUP"] = "0"
+    $start.EnvironmentVariables["PATH"] = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
+    $process = [System.Diagnostics.Process]::Start($start)
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(15)
         while (-not $process.HasExited -and $process.MainWindowHandle -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $deadline) {
@@ -97,7 +105,7 @@ try {
     # Direct launch validation for the portable package.
     Invoke-PortableLaunch $portableExecutable "portable ZIP direct launch"
 
-    Write-Host "Clean-machine package validation passed for version $expectedVersion; artifact verification and portable ZIP launch completed."
+    Write-Host "Self-contained package validation passed for version $expectedVersion; ZIP launch completed with external .NET lookup disabled. Host environment remains independently identified."
 }
 finally {
     if (Test-Path -LiteralPath $portableValidationRoot) {

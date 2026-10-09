@@ -1,12 +1,37 @@
 <Window x:Class="MinecraftInstanceMigration.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:MinecraftInstanceMigration.App.Presentation"
         Title="Minecraft Instance Migration"
         Icon="Assets/AppIcon.ico"
-        Width="980" Height="760" MinWidth="760" MinHeight="560">
+        Width="1120" Height="860" MinWidth="850" MinHeight="650">
   <Grid Margin="20">
-    <TabControl>
-      <TabItem Header="Inspector">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,16">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <TextBlock Text="{ui:Text Key='Language'}" Margin="0,0,8,0" VerticalAlignment="Center" />
+        <ComboBox Width="115" AutomationProperties.AutomationId="LanguageSelector"
+                  AutomationProperties.Name="{ui:Text Key='Language'}"
+                  SelectedIndex="{Binding LanguageIndex, Source={x:Static ui:UiPreferences.Current}, Mode=TwoWay}">
+          <ComboBoxItem Content="日本語" />
+          <ComboBoxItem Content="English" />
+        </ComboBox>
+        <TextBlock Text="{ui:Text Key='Theme'}" Margin="20,0,8,0" VerticalAlignment="Center" />
+        <ComboBox Width="170" AutomationProperties.AutomationId="ThemeSelector"
+                  AutomationProperties.Name="{ui:Text Key='Theme'}"
+                  SelectedIndex="{Binding ThemeIndex, Source={x:Static ui:UiPreferences.Current}, Mode=TwoWay}">
+          <ComboBoxItem Content="{ui:Text Key='Use Windows setting'}" />
+          <ComboBoxItem Content="{ui:Text Key='Light'}" />
+          <ComboBoxItem Content="{ui:Text Key='Dark'}" />
+        </ComboBox>
+      </StackPanel>
+      <TextBlock Text="Minecraft Instance Migration" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" />
+    </DockPanel>
+    <TabControl Grid.Row="1" SelectedIndex="1">
+      <TabItem Header="{ui:Text Key='Inspector'}" AutomationProperties.AutomationId="InspectorTab">
         <Grid Margin="12" DataContext="{Binding Inspector}">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -17,55 +42,56 @@
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
           <StackPanel>
-            <TextBlock Text="Read-only Instance Inspector" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock Text="{ui:Text Key='Read-only Instance Inspector'}" FontSize="24" FontWeight="SemiBold" />
             <TextBlock Margin="0,8,0,16" TextWrapping="Wrap"
-                       Text="Observes the selected folder and 11 known direct children. No copying, content reads, or changes. Results do not confirm a Minecraft instance or migration compatibility." />
+                       Text="{ui:Text Key='Observes the selected folder and 11 known direct children. No copying, content reads, or changes. Results do not confirm a Minecraft instance or migration compatibility.'}" />
           </StackPanel>
           <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBox Padding="6" AutomationProperties.Name="Candidate folder"
+            <TextBox Padding="6" AutomationProperties.Name="{ui:Text Key='Candidate folder'}"
                      AutomationProperties.AutomationId="CandidatePath"
                      Text="{Binding CandidatePath, UpdateSourceTrigger=PropertyChanged}"
                      IsEnabled="{Binding CanEditPath}" />
-            <Button Grid.Column="1" Margin="8,0,0,0" Padding="16,6" Content="Browse…"
+            <Button Grid.Column="1" Margin="8,0,0,0" Padding="16,6" Content="{ui:Text Key='Browse…'}"
                     Command="{Binding BrowseCommand}" />
           </Grid>
           <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12">
-            <Button Content="Inspect" Padding="20,6" Command="{Binding InspectCommand}"
+            <Button Content="{ui:Text Key='Inspect'}" Padding="20,6" Command="{Binding InspectCommand}"
                     AutomationProperties.AutomationId="Inspect" />
-            <Button Content="Cancel" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
+            <Button Content="{ui:Text Key='Cancel'}" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
                     AutomationProperties.AutomationId="Cancel" />
           </StackPanel>
           <StackPanel Grid.Row="3" Margin="0,0,0,12">
-            <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="Status" />
-            <TextBlock Margin="0,8,0,0" Text="{Binding RootState, StringFormat=Root state: {0}}"
+            <TextBlock Text="{ui:LocalizedBinding Path=Status, Mode=OneWay}" TextWrapping="Wrap" AutomationProperties.AutomationId="Status" />
+            <TextBlock Margin="0,8,0,0" Text="{ui:LocalizedBinding Path=RootState, Mode=OneWay, Format='Root state: {0}'}"
                        FontWeight="SemiBold" AutomationProperties.AutomationId="RootState" />
-            <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+            <TextBlock Text="{ui:LocalizedBinding Path=Summary, Mode=OneWay}" TextWrapping="Wrap" />
           </StackPanel>
           <DataGrid Grid.Row="4" ItemsSource="{Binding Entries}" AutoGenerateColumns="False"
                     IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
-                    HeadersVisibility="Column" AutomationProperties.Name="Observed entries"
+                    HeadersVisibility="Column" AutomationProperties.Name="{ui:Text Key='Observed entries'}"
                     AutomationProperties.AutomationId="Entries">
             <DataGrid.Columns>
-              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
-              <DataGridTextColumn Header="Expected kind" Binding="{Binding ExpectedKind}" Width="130" />
-              <DataGridTextColumn Header="Observed state" Binding="{Binding State}" Width="150" />
-              <DataGridTextColumn Header="Kind matches" Binding="{Binding MatchesExpectedKind, TargetNullValue=Unknown}" Width="120" />
+              <DataGridTextColumn Header="{ui:Text Key='Name'}" Binding="{Binding Name}" Width="*" />
+              <DataGridTextColumn Header="{ui:Text Key='Expected kind'}" Binding="{ui:LocalizedBinding Path=ExpectedKind, Mode=OneWay}" Width="130" />
+              <DataGridTextColumn Header="{ui:Text Key='Observed state'}" Binding="{ui:LocalizedBinding Path=State, Mode=OneWay}" Width="150" />
+              <DataGridTextColumn Header="{ui:Text Key='Kind matches'}" Binding="{ui:LocalizedBinding Path=MatchesExpectedKind, Mode=OneWay, NullText='Unknown'}" Width="120" />
             </DataGrid.Columns>
           </DataGrid>
           <StackPanel Grid.Row="5" Margin="0,12,0,0">
             <TextBlock TextWrapping="Wrap"
-                       Text="Missing = absent. Inaccessible / Unavailable = unknown. A reparse point is recorded without following it; a reparse point in the root path stops inspection." />
+                       Text="{ui:Text Key='Missing = absent. Inaccessible / Unavailable = unknown. A reparse point is recorded without following it; a reparse point in the root path stops inspection.'}" />
             <TextBlock Margin="0,6,0,0" TextWrapping="Wrap"
-                       Text="Use an absolute local drive path. Network and device paths are unsupported. Cancellation takes effect between metadata calls. Observations can become stale." />
+                       Text="{ui:Text Key='Use an absolute local drive path. Network and device paths are unsupported. Cancellation takes effect between metadata calls. Observations can become stale.'}" />
           </StackPanel>
         </Grid>
       </TabItem>
 
-      <TabItem Header="Migration Preview" AutomationProperties.AutomationId="PreviewTab">
+      <TabItem Header="{ui:Text Key='Migration Preview'}" AutomationProperties.AutomationId="PreviewTab">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid Margin="12" DataContext="{Binding Preview}">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -80,9 +106,21 @@
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
           <StackPanel>
-            <TextBlock Text="Migration Preview and Execution" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock Text="{ui:Text Key='Migration Preview and Execution'}" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock Margin="0,8,0,0" Text="{ui:Text Key='Choose folders → Review items → Check space → Confirm migration → Read result'}"
+                       FontWeight="SemiBold" TextWrapping="Wrap" />
             <TextBlock Margin="0,8,0,16" TextWrapping="Wrap"
-                       Text="Preview inspects source and destination without writing. After choices are applied, execution requires a safety workspace and a separate confirmation before Backup or migration writes can begin." />
+                       Text="{ui:Text Key='Preview inspects source and destination without writing. After choices are applied, execution requires a safety workspace and a separate confirmation before Backup or migration writes can begin.'}" />
+            <Border Background="{DynamicResource AlternateBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" Padding="12" Margin="0,0,0,14" CornerRadius="4">
+              <StackPanel>
+                <TextBlock Text="{ui:Text Key='Next step'}" FontWeight="SemiBold" />
+                <TextBlock Margin="0,5,0,0" Text="{ui:LocalizedBinding Path=NextStep, Mode=OneWay}" TextWrapping="Wrap"
+                           AutomationProperties.AutomationId="NextStep" />
+                <ProgressBar Margin="0,8,0,0" Height="4" IsIndeterminate="True"
+                             Visibility="{Binding IsBusy, Converter={StaticResource BusyVisibility}}" />
+              </StackPanel>
+            </Border>
+            <TextBlock Margin="0,0,0,10" TextWrapping="Wrap" Text="{ui:Text Key='Choose the old and new game folders. Close Minecraft and the launcher before migration.'}" />
           </StackPanel>
 
           <Grid Grid.Row="1">
@@ -91,12 +129,13 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="Source" />
+            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{ui:Text Key='Source'}" />
             <TextBox Grid.Column="1" Padding="6"
                      AutomationProperties.AutomationId="PreviewSourcePath"
+                     ToolTip="{ui:Text Key='Use separate folders containing options.txt or config; do not choose the same folder or its parent/child.'}"
                      Text="{Binding SourcePath, UpdateSourceTrigger=PropertyChanged}"
                      IsEnabled="{Binding CanEditPaths}" />
-            <Button Grid.Column="2" Margin="8,0,0,0" Padding="16,6" Content="Browse…"
+            <Button Grid.Column="2" Margin="8,0,0,0" Padding="16,6" Content="{ui:Text Key='Browse…'}"
                     Command="{Binding BrowseSourceCommand}" />
           </Grid>
 
@@ -106,12 +145,13 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="Destination" />
+            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{ui:Text Key='Destination'}" />
             <TextBox Grid.Column="1" Padding="6"
                      AutomationProperties.AutomationId="PreviewDestinationPath"
+                     ToolTip="{ui:Text Key='Use separate folders containing options.txt or config; do not choose the same folder or its parent/child.'}"
                      Text="{Binding DestinationPath, UpdateSourceTrigger=PropertyChanged}"
                      IsEnabled="{Binding CanEditPaths}" />
-            <Button Grid.Column="2" Margin="8,0,0,0" Padding="16,6" Content="Browse…"
+            <Button Grid.Column="2" Margin="8,0,0,0" Padding="16,6" Content="{ui:Text Key='Browse…'}"
                     Command="{Binding BrowseDestinationCommand}" />
           </Grid>
 
@@ -121,78 +161,79 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="Safety workspace" />
+            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="{ui:Text Key='Safety workspace'}" />
             <TextBox Grid.Column="1" Padding="6"
                      AutomationProperties.AutomationId="SafetyWorkspacePath"
+                     ToolTip="{ui:Text Key='Choose an existing separate folder outside both instances. Replacement backups and operation records are saved here.'}"
                      Text="{Binding SafetyWorkspacePath, UpdateSourceTrigger=PropertyChanged}"
                      IsEnabled="{Binding CanEditPaths}" />
-            <Button Grid.Column="2" Margin="8,0,0,0" Padding="16,6" Content="Browse…"
+            <Button Grid.Column="2" Margin="8,0,0,0" Padding="16,6" Content="{ui:Text Key='Browse…'}"
                     Command="{Binding BrowseSafetyWorkspaceCommand}" />
           </Grid>
 
           <StackPanel Grid.Row="4" Margin="0,12">
             <WrapPanel>
-              <Button Content="Generate Preview" Padding="20,6" Command="{Binding GeneratePreviewCommand}"
+              <Button Content="{ui:Text Key='Generate Preview'}" Padding="20,6" Command="{Binding GeneratePreviewCommand}"
                       AutomationProperties.AutomationId="GeneratePreview" />
-              <Button Content="Apply choices" Padding="20,6" Margin="8,0,0,0"
+              <Button Content="{ui:Text Key='Apply choices'}" Padding="20,6" Margin="8,0,0,0"
                       Command="{Binding ApplyChoicesCommand}"
                       AutomationProperties.AutomationId="ApplyPreviewChoices" />
-              <Button Content="Reset Recommended" Padding="20,6" Margin="8,0,0,0"
+              <Button Content="{ui:Text Key='Reset Recommended'}" Padding="20,6" Margin="8,0,0,0"
                       Command="{Binding ResetRecommendedCommand}"
                       AutomationProperties.AutomationId="ResetRecommendedChoices" />
-              <Button Content="Select All" Padding="20,6" Margin="8,0,0,0"
+              <Button Content="{ui:Text Key='Select All'}" Padding="20,6" Margin="8,0,0,0"
                       Command="{Binding SelectAllCommand}"
                       AutomationProperties.AutomationId="SelectAllChoices" />
-              <Button Content="Select None" Padding="20,6" Margin="8,0,0,0"
+              <Button Content="{ui:Text Key='Select None'}" Padding="20,6" Margin="8,0,0,0"
                       Command="{Binding SelectNoneCommand}"
                       AutomationProperties.AutomationId="SelectNoChoices" />
-              <Button Content="Cancel" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
+              <Button Content="{ui:Text Key='Cancel'}" Padding="20,6" Margin="8,0,0,0" Command="{Binding CancelCommand}"
                       AutomationProperties.AutomationId="PreviewCancel" />
-              <Button Content="Check capacity" Padding="20,6" Margin="8,0,0,0"
+              <Button Content="{ui:Text Key='Check capacity'}" Padding="20,6" Margin="8,0,0,0"
                       Command="{Binding CheckCapacityCommand}"
                       AutomationProperties.AutomationId="CheckCapacity" />
-              <Button Content="Execute migration" Padding="20,6" Margin="8,0,0,0"
+              <Button Content="{ui:Text Key='Execute migration'}" Padding="20,6" Margin="8,0,0,0"
                       Command="{Binding ExecuteMigrationCommand}"
                       AutomationProperties.AutomationId="ExecuteMigration" />
             </WrapPanel>
             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
               <TextBlock VerticalAlignment="Center" Margin="0,0,8,0"
-                         Text="Selected row:" FontWeight="SemiBold" />
-              <Button Content="Include" Padding="16,5" Command="{Binding IncludeSelectedCommand}"
+                         Text="{ui:Text Key='Selected row:'}" FontWeight="SemiBold" />
+              <Button Content="{ui:Text Key='Include'}" Padding="16,5" Command="{Binding IncludeSelectedCommand}"
                       AutomationProperties.AutomationId="IncludeSelectedEntry" />
-              <Button Content="Exclude" Padding="16,5" Margin="8,0,0,0"
+              <Button Content="{ui:Text Key='Exclude'}" Padding="16,5" Margin="8,0,0,0"
                       Command="{Binding ExcludeSelectedCommand}"
                       AutomationProperties.AutomationId="ExcludeSelectedEntry" />
               <TextBlock VerticalAlignment="Center" Margin="16,0,8,0"
-                         Text="Conflict:" FontWeight="SemiBold" />
-              <Button Content="Skip" Padding="16,5" Command="{Binding SkipConflictCommand}"
+                         Text="{ui:Text Key='Conflict:'}" FontWeight="SemiBold" />
+              <Button Content="{ui:Text Key='Skip'}" Padding="16,5" Command="{Binding SkipConflictCommand}"
                       AutomationProperties.AutomationId="SkipSelectedConflict" />
-              <Button Content="Replace" Padding="16,5" Margin="8,0,0,0"
+              <Button Content="{ui:Text Key='Replace'}" Padding="16,5" Margin="8,0,0,0"
                       Command="{Binding ReplaceConflictCommand}"
                       AutomationProperties.AutomationId="ReplaceSelectedConflict" />
-              <Button Content="Clear" Padding="16,5" Margin="8,0,0,0"
+              <Button Content="{ui:Text Key='Clear'}" Padding="16,5" Margin="8,0,0,0"
                       Command="{Binding ClearConflictCommand}"
                       AutomationProperties.AutomationId="ClearSelectedConflict" />
               <TextBlock VerticalAlignment="Center" Margin="16,0,0,0"
-                         Text="{Binding SelectedChoiceSummary}"
+                         Text="{ui:LocalizedBinding Path=SelectedChoiceSummary, Mode=OneWay}"
                          AutomationProperties.AutomationId="SelectedChoiceSummary" />
             </StackPanel>
           </StackPanel>
 
           <StackPanel Grid.Row="5" Margin="0,0,0,12">
-            <TextBlock Text="{Binding Status}" TextWrapping="Wrap"
+            <TextBlock Text="{ui:LocalizedBinding Path=Status, Mode=OneWay}" TextWrapping="Wrap"
                        AutomationProperties.AutomationId="PreviewStatus" />
-            <TextBlock Margin="0,8,0,0" Text="{Binding PlanStatus, StringFormat=Plan status: {0}}"
+            <TextBlock Margin="0,8,0,0" Text="{ui:LocalizedBinding Path=PlanStatus, Mode=OneWay, Format='Plan status: {0}'}"
                        FontWeight="SemiBold" AutomationProperties.AutomationId="PreviewPlanStatus" />
-            <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"
+            <TextBlock Text="{ui:LocalizedBinding Path=Summary, Mode=OneWay}" TextWrapping="Wrap"
                        AutomationProperties.AutomationId="PreviewSummary" />
-            <TextBlock Text="{Binding ContentRuleSummary, Mode=OneWay}" TextWrapping="Wrap"
+            <TextBlock Text="{ui:LocalizedBinding Path=ContentRuleSummary, Mode=OneWay}" TextWrapping="Wrap"
                        AutomationProperties.AutomationId="PreviewContentRules" />
-            <TextBlock Text="{Binding WorkflowState, Mode=OneWay, StringFormat=Workflow state: {0}}"
+            <TextBlock Text="{ui:LocalizedBinding Path=WorkflowState, Mode=OneWay, Format='Workflow state: {0}'}"
                        FontWeight="SemiBold" AutomationProperties.AutomationId="ExecutionState" />
           </StackPanel>
 
-          <GroupBox Grid.Row="6" Margin="0,0,0,12" Header="Capacity preflight">
+          <GroupBox Grid.Row="6" Margin="0,0,0,12" Header="{ui:Text Key='Capacity preflight'}">
             <Grid Margin="10">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
@@ -207,50 +248,50 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
-              <TextBlock FontWeight="SemiBold" Text="Copy size" />
-              <TextBlock Grid.Column="1" Margin="8,0,20,0" Text="{Binding CopySize, Mode=OneWay}" />
-              <TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Replace write size" />
-              <TextBlock Grid.Column="3" Margin="8,0,0,0" Text="{Binding ReplaceWriteSize, Mode=OneWay}" />
-              <TextBlock Grid.Row="1" FontWeight="SemiBold" Text="Backup size" />
-              <TextBlock Grid.Row="1" Grid.Column="1" Margin="8,0,20,0" Text="{Binding BackupSize, Mode=OneWay}" />
-              <TextBlock Grid.Row="1" Grid.Column="2" FontWeight="SemiBold" Text="Destination free" />
-              <TextBlock Grid.Row="1" Grid.Column="3" Margin="8,0,0,0" Text="{Binding DestinationFreeSpace, Mode=OneWay}" />
-              <TextBlock Grid.Row="2" FontWeight="SemiBold" Text="Safety workspace free" />
-              <TextBlock Grid.Row="2" Grid.Column="1" Margin="8,0,20,0" Text="{Binding SafetyWorkspaceFreeSpace, Mode=OneWay}" />
-              <TextBlock Grid.Row="2" Grid.Column="2" FontWeight="SemiBold" Text="Status" />
+              <TextBlock FontWeight="SemiBold" Text="{ui:Text Key='Copy size'}" />
+              <TextBlock Grid.Column="1" Margin="8,0,20,0" Text="{ui:LocalizedBinding Path=CopySize, Mode=OneWay}" />
+              <TextBlock Grid.Column="2" FontWeight="SemiBold" Text="{ui:Text Key='Replace write size'}" />
+              <TextBlock Grid.Column="3" Margin="8,0,0,0" Text="{ui:LocalizedBinding Path=ReplaceWriteSize, Mode=OneWay}" />
+              <TextBlock Grid.Row="1" FontWeight="SemiBold" Text="{ui:Text Key='Backup size'}" />
+              <TextBlock Grid.Row="1" Grid.Column="1" Margin="8,0,20,0" Text="{ui:LocalizedBinding Path=BackupSize, Mode=OneWay}" />
+              <TextBlock Grid.Row="1" Grid.Column="2" FontWeight="SemiBold" Text="{ui:Text Key='Destination free'}" />
+              <TextBlock Grid.Row="1" Grid.Column="3" Margin="8,0,0,0" Text="{ui:LocalizedBinding Path=DestinationFreeSpace, Mode=OneWay}" />
+              <TextBlock Grid.Row="2" FontWeight="SemiBold" Text="{ui:Text Key='Safety workspace free'}" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Margin="8,0,20,0" Text="{ui:LocalizedBinding Path=SafetyWorkspaceFreeSpace, Mode=OneWay}" />
+              <TextBlock Grid.Row="2" Grid.Column="2" FontWeight="SemiBold" Text="{ui:Text Key='Status'}" />
               <TextBlock Grid.Row="2" Grid.Column="3" Margin="8,0,0,0"
-                         Text="{Binding CapacityStatus, Mode=OneWay, TargetNullValue=Not checked}"
+                         Text="{ui:LocalizedBinding Path=CapacityStatus, Mode=OneWay, NullText='Not checked'}"
                          AutomationProperties.AutomationId="CapacityStatus" />
               <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Margin="0,6,0,0" TextWrapping="Wrap"
-                         Text="{Binding CapacitySummary, Mode=OneWay}"
+                         Text="{ui:LocalizedBinding Path=CapacitySummary, Mode=OneWay}"
                          AutomationProperties.AutomationId="CapacitySummary" />
               <TextBlock Grid.Row="4" Grid.ColumnSpan="4" Margin="0,4,0,0" TextWrapping="Wrap"
-                         Text="{Binding CapacityVolumeSummary, Mode=OneWay}"
+                         Text="{ui:LocalizedBinding Path=CapacityVolumeSummary, Mode=OneWay}"
                          AutomationProperties.AutomationId="CapacityVolumeSummary" />
             </Grid>
           </GroupBox>
 
-          <DataGrid Grid.Row="7" ItemsSource="{Binding Entries}"
+          <DataGrid Grid.Row="7" Height="260" ItemsSource="{Binding Entries}"
                     SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
                     AutoGenerateColumns="False"
                     EnableRowVirtualization="False" EnableColumnVirtualization="False"
                     IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                     SelectionMode="Single" SelectionUnit="FullRow"
-                    HeadersVisibility="Column" AutomationProperties.Name="Migration preview entries"
+                    HeadersVisibility="Column" AutomationProperties.Name="{ui:Text Key='Migration preview entries'}"
                     AutomationProperties.AutomationId="PreviewEntries">
             <DataGrid.Columns>
-              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
-              <DataGridCheckBoxColumn Header="Selected" Binding="{Binding Selected}" Width="80" />
-              <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="110" />
-              <DataGridTextColumn Header="Plan detail" Binding="{Binding PlanDisposition}" Width="190" />
-              <DataGridTextColumn Header="Source" Binding="{Binding SourceState, TargetNullValue=Unknown}" Width="115" />
-              <DataGridTextColumn Header="Destination" Binding="{Binding DestinationState, TargetNullValue=Unknown}" Width="115" />
-              <DataGridCheckBoxColumn Header="Backup" Binding="{Binding RequiresBackup, Mode=OneWay}" Width="75" />
+              <DataGridTextColumn Header="{ui:Text Key='Name'}" Binding="{Binding Name}" Width="*" />
+              <DataGridCheckBoxColumn Header="{ui:Text Key='Selected'}" Binding="{Binding Selected}" Width="80" />
+              <DataGridTextColumn Header="{ui:Text Key='Action'}" Binding="{ui:LocalizedBinding Path=Action, Mode=OneWay}" Width="110" />
+              <DataGridTextColumn Header="{ui:Text Key='Plan detail'}" Binding="{ui:LocalizedBinding Path=PlanDisposition, Mode=OneWay}" Width="190" />
+              <DataGridTextColumn Header="{ui:Text Key='Source'}" Binding="{ui:LocalizedBinding Path=SourceState, Mode=OneWay, NullText='Unknown'}" Width="115" />
+              <DataGridTextColumn Header="{ui:Text Key='Destination'}" Binding="{ui:LocalizedBinding Path=DestinationState, Mode=OneWay, NullText='Unknown'}" Width="115" />
+              <DataGridCheckBoxColumn Header="{ui:Text Key='Backup'}" Binding="{Binding RequiresBackup, Mode=OneWay}" Width="75" />
             </DataGrid.Columns>
           </DataGrid>
 
           <Border Grid.Row="8" Margin="0,12,0,0" Padding="12" BorderBrush="#B26A00" BorderThickness="1"
-                  Background="#FFF8E8" AutomationProperties.AutomationId="RecoveryPanel">
+                  Background="{DynamicResource WarningBrush}" AutomationProperties.AutomationId="RecoveryPanel">
             <Border.Style>
               <Style TargetType="Border">
                 <Setter Property="Visibility" Value="Collapsed" />
@@ -262,62 +303,63 @@
               </Style>
             </Border.Style>
             <StackPanel>
-              <TextBlock Text="Recovery required" FontSize="18" FontWeight="SemiBold" />
-              <TextBlock Margin="0,6,0,0" Text="Migration did not complete normally. Automatic retry and automatic rollback are disabled."
+              <TextBlock Text="{ui:Text Key='Recovery required'}" FontSize="18" FontWeight="SemiBold" />
+              <TextBlock Margin="0,6,0,0" Text="{ui:Text Key='Migration did not complete normally. Automatic retry and automatic rollback are disabled.'}"
                          TextWrapping="Wrap" />
-              <TextBlock Margin="0,8,0,0" Text="{Binding RecoveryDiagnosisStatus, Mode=OneWay, StringFormat=Diagnosis: {0}}"
+              <TextBlock Margin="0,8,0,0" Text="{ui:LocalizedBinding Path=RecoveryDiagnosisStatus, Mode=OneWay, Format='Diagnosis: {0}'}"
                          FontWeight="SemiBold" AutomationProperties.AutomationId="RecoveryDiagnosisStatus" />
-              <TextBlock Text="{Binding RecoverySummary, Mode=OneWay}" TextWrapping="Wrap"
+              <TextBlock Text="{ui:LocalizedBinding Path=RecoverySummary, Mode=OneWay}" TextWrapping="Wrap"
                          AutomationProperties.AutomationId="RecoverySummary" />
-              <TextBlock Margin="0,6,0,0" Text="{Binding RecoveryStatus, Mode=OneWay}" TextWrapping="Wrap"
+              <TextBlock Margin="0,6,0,0" Text="{ui:LocalizedBinding Path=RecoveryStatus, Mode=OneWay}" TextWrapping="Wrap"
                          AutomationProperties.AutomationId="RecoveryStatus" />
-              <TextBlock Margin="0,6,0,0" Text="{Binding RollbackOutcome, Mode=OneWay, StringFormat=Rollback outcome: {0}}"
+              <TextBlock Margin="0,6,0,0" Text="{ui:LocalizedBinding Path=RollbackOutcome, Mode=OneWay, Format='Rollback outcome: {0}'}"
                          FontWeight="SemiBold" AutomationProperties.AutomationId="RollbackOutcome" />
               <Button Margin="0,10,0,0" Padding="18,7" HorizontalAlignment="Left"
-                      Content="Start guarded rollback" Command="{Binding RollbackMigrationCommand}"
+                      Content="{ui:Text Key='Start guarded rollback'}" Command="{Binding RollbackMigrationCommand}"
                       AutomationProperties.AutomationId="StartGuardedRollback" />
             </StackPanel>
           </Border>
 
           <TextBlock Grid.Row="9" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Recommended leaves saves and screenshots unselected. Resolve choices, apply them, and pass capacity preflight before execution. The safety workspace stores the durable journal and any required replacement backup. Execution still revalidates live state before writing." />
+                     Text="{ui:Text Key='Recommended leaves saves and screenshots unselected. Resolve choices, apply them, and pass capacity preflight before execution. The safety workspace stores the durable journal and any required replacement backup. Execution still revalidates live state before writing.'}" />
         </Grid>
+        </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="Migration Report" AutomationProperties.AutomationId="ReportTab">
+      <TabItem Header="{ui:Text Key='Migration Report'}" AutomationProperties.AutomationId="ReportTab">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="12" DataContext="{Binding Report}">
-            <TextBlock Text="Migration Report" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock Text="{ui:Text Key='Migration Report'}" FontSize="24" FontWeight="SemiBold" />
             <TextBlock Margin="0,8,0,16" TextWrapping="Wrap"
-                       Text="Read-only projection of existing migration, backup, execution, verification, and recovery evidence. This report does not authorize or change workflow operations." />
+                       Text="{ui:Text Key='Read-only projection of existing migration, backup, execution, verification, and recovery evidence. This report does not authorize or change workflow operations.'}" />
 
             <Border Padding="14" BorderBrush="#777" BorderThickness="1">
               <StackPanel>
-                <TextBlock Text="Overall result" FontWeight="SemiBold" />
+                <TextBlock Text="{ui:Text Key='Overall result'}" FontWeight="SemiBold" />
                 <TextBlock Margin="0,4,0,0" FontSize="22" FontWeight="SemiBold"
-                           Text="{Binding OverallOutcome, Mode=OneWay}"
+                           Text="{ui:LocalizedBinding Path=OverallOutcome, Mode=OneWay}"
                            AutomationProperties.AutomationId="ReportOverallOutcome" />
-                <TextBlock Margin="0,6,0,0" Text="{Binding Status, Mode=OneWay}" TextWrapping="Wrap"
+                <TextBlock Margin="0,6,0,0" Text="{ui:LocalizedBinding Path=Status, Mode=OneWay}" TextWrapping="Wrap"
                            AutomationProperties.AutomationId="ReportStatus" />
               </StackPanel>
             </Border>
 
-            <GroupBox Margin="0,14,0,0" Header="Migration actions">
-              <TextBlock Margin="10" Text="{Binding MigrationSummary, Mode=OneWay}" TextWrapping="Wrap"
+            <GroupBox Margin="0,14,0,0" Header="{ui:Text Key='Migration actions'}">
+              <TextBlock Margin="10" Text="{ui:LocalizedBinding Path=MigrationSummary, Mode=OneWay}" TextWrapping="Wrap"
                          AutomationProperties.AutomationId="ReportMigrationSummary" />
             </GroupBox>
 
-            <GroupBox Margin="0,12,0,0" Header="Execution and verification">
-              <TextBlock Margin="10" Text="{Binding ExecutionSummary, Mode=OneWay}" TextWrapping="Wrap"
+            <GroupBox Margin="0,12,0,0" Header="{ui:Text Key='Execution and verification'}">
+              <TextBlock Margin="10" Text="{ui:LocalizedBinding Path=ExecutionSummary, Mode=OneWay}" TextWrapping="Wrap"
                          AutomationProperties.AutomationId="ReportExecutionSummary" />
             </GroupBox>
 
-            <GroupBox Margin="0,12,0,0" Header="Backup">
-              <TextBlock Margin="10" Text="{Binding BackupSummary, Mode=OneWay}" TextWrapping="Wrap"
+            <GroupBox Margin="0,12,0,0" Header="{ui:Text Key='Backup'}">
+              <TextBlock Margin="10" Text="{ui:LocalizedBinding Path=BackupSummary, Mode=OneWay}" TextWrapping="Wrap"
                          AutomationProperties.AutomationId="ReportBackupSummary" />
             </GroupBox>
 
-            <GroupBox Margin="0,12,0,0" Header="Recovery">
+            <GroupBox Margin="0,12,0,0" Header="{ui:Text Key='Recovery'}">
               <GroupBox.Style>
                 <Style TargetType="GroupBox">
                   <Setter Property="Visibility" Value="Collapsed" />
@@ -328,28 +370,30 @@
                   </Style.Triggers>
                 </Style>
               </GroupBox.Style>
-              <TextBlock Margin="10" Text="{Binding RecoverySummary, Mode=OneWay}" TextWrapping="Wrap"
+              <TextBlock Margin="10" Text="{ui:LocalizedBinding Path=RecoverySummary, Mode=OneWay}" TextWrapping="Wrap"
                          AutomationProperties.AutomationId="ReportRecoverySummary" />
             </GroupBox>
 
             <TextBlock Margin="0,16,0,0" TextWrapping="Wrap"
-                       Text="Phase 4.4 keeps reports in memory only. No report file is written automatically, and reports contain no filesystem paths or raw exception messages." />
+                       Text="{ui:Text Key='Phase 4.4 keeps reports in memory only. No report file is written automatically, and reports contain no filesystem paths or raw exception messages.'}" />
           </StackPanel>
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="About" AutomationProperties.AutomationId="AboutTab">
+      <TabItem Header="{ui:Text Key='About'}" AutomationProperties.AutomationId="AboutTab">
         <StackPanel Margin="24" DataContext="{Binding ApplicationInformation}">
           <TextBlock Text="{Binding ProductName, Mode=OneWay}" FontSize="24" FontWeight="SemiBold"
                      AutomationProperties.AutomationId="AboutProductName" />
-          <TextBlock Margin="0,12,0,0" Text="{Binding Version, Mode=OneWay, StringFormat=Version {0}}"
+          <TextBlock Margin="0,12,0,0" Text="{ui:LocalizedBinding Path=Version, Mode=OneWay, Format='Version {0}'}"
                      AutomationProperties.AutomationId="AboutVersion" />
-          <TextBlock Margin="0,4,0,0" Text="{Binding Platform, Mode=OneWay}"
+          <TextBlock Margin="0,4,0,0" Text="{ui:LocalizedBinding Path=Platform, Mode=OneWay}"
                      AutomationProperties.AutomationId="AboutPlatform" />
-          <TextBlock Margin="0,4,0,0" Text="{Binding Author, Mode=OneWay, StringFormat=Author: {0}}"
+          <TextBlock Margin="0,4,0,0" Text="{ui:LocalizedBinding Path=Author, Mode=OneWay, Format='Author: {0}'}"
                      AutomationProperties.AutomationId="AboutAuthor" />
           <TextBlock Margin="0,18,0,0" TextWrapping="Wrap"
-                     Text="Unofficial community tool. Not affiliated with Mojang Studios or Microsoft." />
+                     Text="{ui:Text Key='Unofficial community tool. Not affiliated with Mojang Studios or Microsoft.'}" />
+          <TextBlock Margin="0,18,0,0" TextWrapping="Wrap"
+                     Text="{ui:Text Key='Installer: run setup.exe once, then open the app from Start. Portable: extract the entire ZIP and run MinecraftInstanceMigrationTool.exe.'}" />
         </StackPanel>
       </TabItem>
     </TabControl>

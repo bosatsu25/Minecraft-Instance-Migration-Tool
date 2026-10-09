@@ -19,8 +19,9 @@ $installer = Join-Path $packageDirectory "MinecraftInstanceMigrationTool-$Expect
 $checksums = Join-Path $packageDirectory "SHA256SUMS.txt"
 $license = Join-Path $publishDirectory "LICENSE"
 $notices = Join-Path $publishDirectory "THIRD-PARTY-NOTICES.txt"
+$memberGuide = Join-Path $publishDirectory "START-HERE.ja.txt"
 
-foreach ($required in @($executable, $zip, $installer, $checksums, $license, $notices)) {
+foreach ($required in @($executable, $zip, $installer, $checksums, $license, $notices, $memberGuide)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required release artifact is missing: $([System.IO.Path]::GetFileName($required))"
     }
@@ -48,6 +49,9 @@ try {
     }
     if (-not ($entryNames -contains "THIRD-PARTY-NOTICES.txt")) {
         throw "Portable ZIP does not contain third-party notices."
+    }
+    if (-not ($entryNames -contains "START-HERE.ja.txt")) {
+        throw "Portable ZIP does not contain the member migration guide."
     }
     foreach ($runtimeFile in @("coreclr.dll", "hostfxr.dll", "hostpolicy.dll")) {
         if (-not ($entryNames -contains $runtimeFile)) {
@@ -87,6 +91,9 @@ $expectedChecksums = @{}
 foreach ($line in Get-Content -LiteralPath $checksums) {
     if ($line -notmatch '^([0-9a-f]{64}) \*(.+)$') {
         throw "SHA256SUMS.txt contains an invalid line."
+    }
+    if ($expectedChecksums.ContainsKey($Matches[2])) {
+        throw "SHA256SUMS.txt contains a duplicate filename."
     }
     $expectedChecksums[$Matches[2]] = $Matches[1]
 }

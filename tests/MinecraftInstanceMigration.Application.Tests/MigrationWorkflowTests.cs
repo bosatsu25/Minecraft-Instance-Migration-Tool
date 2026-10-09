@@ -13,6 +13,43 @@ namespace MinecraftInstanceMigration.Application.Tests;
 
 public sealed class MigrationWorkflowTests
 {
+    [Theory]
+    [InlineData(ExecutionWorkspaceSafetyStatus.Invalid, false)]
+    [InlineData(ExecutionWorkspaceSafetyStatus.Cancelled, false)]
+    [InlineData(ExecutionWorkspaceSafetyStatus.Safe, true)]
+    public async Task UnsafeOrUnavailableWorkspaceNeverInvokesBackup(
+        ExecutionWorkspaceSafetyStatus workspaceStatus, bool throws)
+    {
+        var calls = new List<string>();
+        MigrationWorkflow workflow = CreateWorkflow(
+            backupPlanner: new StubBackupPlanner(RequiredBackupPlan()),
+            backupExecutor: new StubBackupExecutor(calls),
+            workspace: new StubWorkspaceValidator(workspaceStatus, throws));
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
+        session = workflow.PrepareBackup(session, "backups", "journals");
+        session = await workflow.ExecuteBackupAsync(session, TestContext.Current.CancellationToken);
+        Assert.Empty(calls);
+        Assert.Equal(workspaceStatus == ExecutionWorkspaceSafetyStatus.Cancelled
+            ? MigrationWorkflowFailureKind.Cancelled
+            : MigrationWorkflowFailureKind.WorkspaceUnsafe, session.FailureKind);
+        Assert.Null(session.BackupResult);
+    }
+
+    [Fact]
+    public async Task BothBackupAndJournalParentsAreValidatedBeforeBackup()
+    {
+        var calls = new List<string>();
+        MigrationWorkflow workflow = CreateWorkflow(
+            backupPlanner: new StubBackupPlanner(RequiredBackupPlan()),
+            backupExecutor: new StubBackupExecutor(calls),
+            workspace: new StubWorkspaceValidator(calls: calls));
+        MigrationWorkflowSession session = await ReadyForBackup(workflow);
+        session = workflow.PrepareBackup(session, "backups", "journals");
+        session = await workflow.ExecuteBackupAsync(session, TestContext.Current.CancellationToken);
+        Assert.Equal(new[] { "workspace:backups", "workspace:journals", "backup" }, calls);
+        Assert.Equal(MigrationWorkflowState.BackupReady, session.State);
+    }
+
     [Fact]
     public void NewSessionRequiresRootSelection()
     {
@@ -373,7 +410,8 @@ public sealed class MigrationWorkflowTests
         IMigrationCapacityPreflight? capacity = null,
         IBackupPlanner? backupPlanner = null,
         IBackupExecutor? backupExecutor = null,
-        IExecutionOrchestrator? execution = null) =>
+        IExecutionOrchestrator? execution = null,
+        IExecutionWorkspaceSafetyValidator? workspace = null) =>
         new(
             inspector ?? new StubInspector(_ => Inspection()),
             planner ?? new StubPlanner(ReadyPlan()),
@@ -382,7 +420,27 @@ public sealed class MigrationWorkflowTests
             capacity ?? new StubCapacityPreflight(),
             backupPlanner ?? new StubBackupPlanner(),
             backupExecutor ?? new StubBackupExecutor([]),
-            execution ?? new StubExecutionOrchestrator([]));
+            execution ?? new StubExecutionOrchestrator([]),
+            workspace ?? new StubWorkspaceValidator());
+
+    private sealed class StubWorkspaceValidator(
+        ExecutionWorkspaceSafetyStatus status = ExecutionWorkspaceSafetyStatus.Safe,
+        bool throws = false,
+        List<string>? calls = null) : IExecutionWorkspaceSafetyValidator
+    {
+        public Task<ExecutionWorkspaceSafetyResult> ValidateAsync(string sourceRoot,
+            string destinationRoot, string journalParent, CancellationToken cancellationToken = default)
+        {
+            Assert.Equal("source", sourceRoot);
+            Assert.Equal("destination", destinationRoot);
+            calls?.Add("workspace:" + journalParent);
+            if (throws)
+            {
+                throw new IOException("Synthetic private details must not be exposed.");
+            }
+            return Task.FromResult(new ExecutionWorkspaceSafetyResult(status));
+        }
+    }
 
     private sealed class StubCapacityPreflight(
         MigrationCapacityEstimate? estimate = null) : IMigrationCapacityPreflight

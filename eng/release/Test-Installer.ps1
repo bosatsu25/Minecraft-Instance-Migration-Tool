@@ -142,10 +142,12 @@ $installedExecutable = Join-Path $installDirectory "MinecraftInstanceMigrationTo
 $uninstaller = Join-Path $installDirectory "unins000.exe"
 $installedLicense = Join-Path $installDirectory "LICENSE"
 $installedNotices = Join-Path $installDirectory "THIRD-PARTY-NOTICES.txt"
+$installedMemberGuide = Join-Path $installDirectory "START-HERE.ja.txt"
 if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf) -or
     -not (Test-Path -LiteralPath $uninstaller -PathType Leaf) -or
     -not (Test-Path -LiteralPath $installedLicense -PathType Leaf) -or
     -not (Test-Path -LiteralPath $installedNotices -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $installedMemberGuide -PathType Leaf) -or
     -not (Test-Path -LiteralPath $startMenuShortcut -PathType Leaf)) {
     throw "Installer did not create the expected application, notices, license, uninstaller, and Start Menu shortcut."
 }
