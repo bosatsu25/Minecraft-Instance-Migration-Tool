@@ -1,33 +1,56 @@
 # Minecraft Instance Migration Tool
 
-[English](README.md)
+[English](README.md) · [リリース一覧](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases) · [導入ガイド](docs/install.md) · [日本語メンバー用ガイド](docs/member-guide.ja.txt)
 
-MOD パックや起動構成を変更するときに、旧 Minecraft インスタンスから新インスタンスへ
-ユーザーデータを選択的かつ安全に移行する Windows デスクトップアプリです。
+MODパックや起動構成を変えるとき、Minecraftの旧インスタンスから新インスタンスへ**必要なユーザーデータを選んで安全に移行する**、無料の非公式Windowsデスクトップアプリです。
 
-**配布方針: 無料の未署名community版（Windows 11 x64）。[配布ファイル](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/latest)。**
-メンバーには自己完結ZIPまたはユーザー単位のインストーラを渡します。
-.NET、Visual Studio、Python、有料署名サービスの導入・契約は不要です。
-操作手順は両方に同梱される `START-HERE.ja.txt`（[メンバー用ガイド](docs/member-guide.ja.txt)）を参照してください。
+**最新公開版：[v1.0.0](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0)（2026年10月9日）。** 配布対象は**Windows 11 x64・未署名コミュニティ版**。インストーラーとZIPには.NETランタイムが同梱されており、利用者が.NET・Visual Studio・Python・有料サービスを別途導入する必要はありません。
 
-初期表示は日本語です。画面上部で日本語・英語、Windows設定・ライト・ダークを切り替えられます。
-「次にすること」に沿って移行を進められます。言語とテーマは起動中のみ保持します。
-`setup.exe` は導入用で、導入後はスタートメニューから起動します。ZIP版では全体を展開して
-`MinecraftInstanceMigrationTool.exe` を起動してください。
+## v1.0.0をダウンロード
 
-GUIから旧・新フォルダを選び、11項目のInclude/ExcludeとSkip/Replaceを決め、Preview、
-容量確認、確認付き実行、検証結果Reportまで操作できます。Replace前にはバックアップを
-作成・検証します。復旧は明示的な確認付きguarded rollbackで、自動再開はありません。
-RecommendedではsavesとscreenshotsがOFFです。`hanemod-client.json`は対象フォルダの
-全階層で除外し、Replace時は移行先の既存除外ファイルを保持します。
-[旧版との比較](docs/modpacktransfer-compatibility.md)と[現在の検証結果](docs/release-validation.md)を参照してください。
+| ファイル | 使いかた | ダウンロード |
+| --- | --- | --- |
+| インストーラー | 初回だけ導入し、以降はスタートメニューから起動 | [Windows x64 setup.exe](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe) |
+| ZIP版 | **ZIP全体を展開**して`MinecraftInstanceMigrationTool.exe`を起動 | [Windows x64 ZIP](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64.zip) |
+| チェックサム | 信頼できる配布元の値と照合 | [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) |
 
-未署名版はWindowsに「不明な発行元」やSmartScreen警告が出る場合があります。
-信頼する配布元と `SHA256SUMS.txt` を確認してください。ハッシュ一致は配布内容の一致を
-確認するもので、発行元の署名ではありません。疑わしい場合はキャンセルし配布担当者へ
-確認してください。セキュリティ機能を無効化する必要はありません。
-MOD・ローダー互換性やランチャー自動検出はありません。ゲーム用フォルダを手動で選びます。
-詳細は[導入と操作](docs/install.md)、[配布手順](docs/release.md)を参照してください。
+両パッケージに`START-HERE.ja.txt`、ライセンス、サードパーティ通知、.NETランタイムを同梱しています。インストールはユーザー単位で、通常は管理者権限が不要です。ZIP内のEXEだけを抜き出しても起動できません。
+
+**未署名版の注意：** 「不明な発行元」やSmartScreenの警告が出る場合があります。信頼できる配布元と`SHA256SUMS.txt`を確認してください。SHA-256一致は**配布されたチェックサムと内容が一致すること**の確認であり、発行元の身元を示す署名ではありません。Windowsのセキュリティ機能を無効化せず、不明なファイルは実行せずに配布元へ確認してください。
+
+## はじめかた
+
+1. Minecraftとランチャーを終了し、重要なデータは別途バックアップします。
+2. インストールするかZIP全体を展開して起動します。上部で日本語・英語とWindows設定・ライト・ダークを選べます（設定は起動中のみ有効）。
+3. **移行元**（旧）と**移行先**（新）を指定します。`options.txt`や`config`を直下に持つ既存のゲーム用フォルダを選び、同じ場所や親子関係の場所は避けます。
+4. **移行内容を調べる／Preview**から必要な項目を選びます。おすすめ設定では`saves`（ワールド）と`screenshots`がOFFなので、必要に応じて含めます。
+5. 移行先と衝突する項目は**Skip（スキップ）**か**Replace（置換）**を指定して選択を確定します。Replaceは**Merge（統合）ではありません**。
+6. 両インスタンスの外に**バックアップ・記録の保存先**を選び、空き容量を確認します。
+7. 内容を確認して**移行を実行**し、**移行結果／Report**で`Completed`と内容検証の成功を確認します。
+8. 新インスタンスの動作確認が済むまでは、別途バックアップと記録を保持してください。
+
+詳細な画面操作は[導入と操作](docs/install.md)と[日本語メンバー用ガイド](docs/member-guide.ja.txt)を参照してください。
+
+## 主な機能と制約
+
+- 移行候補11項目：`options.txt`、`config`、`resourcepacks`、`shaderpacks`、`schematics`、`saves`、`screenshots`、`XaeroWaypoints`、`XaeroWorldMap`、`itemscroller`、`g4mespeed`。
+- 読み取り専用Inspector/Preview、Include/Exclude・おすすめ設定・全選択/全解除、Skip/Replace、容量事前確認、Replace前の検証済みバックアップ、永続的な実行・復旧記録、独立検証、読み取り専用Report。
+- バックエンドが安全と判断した場合だけ、明示的に確認してfingerprint-guarded rollbackを実行できます。**自動rollbackや復旧の自動再開はありません**。
+- `hanemod-client.json`は名前の大小文字を区別せず対象フォルダの全階層で除外。Replace時も移行先の既存除外ファイルを残します。
+- ランチャー自動検出、`mods`移行、MOD・ローダー・Minecraftバージョン互換性判定、Merge、Report出力、NTFS完全クローン、Windows 10対応は保証しません。**安全にコピーできてもゲーム上の互換性は保証されません。**
+
+[ModPackTransferとの互換性比較](docs/modpacktransfer-compatibility.md)、[安全設計](docs/architecture.md)も参照してください。
+
+## v1.0.0の検証結果
+
+公開コミット[`2faebe8`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/commit/2faebe8be3c5fc382b91f046a11eb0eed1f81886)の[2026年10月9日GitHub Actions](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083931)が成功しました。
+
+- **通常テスト458/458件成功**（Domain 110、Application 136、Infrastructure 131、App 81）。
+- **WPF画面テスト10/10件成功**。配布パッケージの画面テストも成功しています。
+- Releaseビルドは**警告0・エラー0**。ZIP・インストーラー、SHA-256照合、.NETランタイム同梱での起動、インストール・再インストール・アンインストールの検証も成功。
+- 公開版は**unsigned-community（未署名コミュニティ版）**です。Authenticode署名は別途設定する任意のモードであり、配布ファイルを署名済みとは扱いません。
+
+[公式リリース](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0)、[配布手順](docs/release.md)、[検証チェックリスト](docs/release-validation.md)（過去の記録と残る手動確認を含む）を参照してください。
 
 ## 現在の実装範囲
 
@@ -208,15 +231,9 @@ guarded rollback、capacity gateを維持します。
 
 ## Phase 5.0 Release Hardening
 
-candidate version `1.0.0`をWindows 11 x64向け.NET 10 self-contained folderとしてpublishします。
-release workflowはportable ZIPとper-user Inno Setup installerを生成し、version metadataと
-SHA-256 checksumを検証し、Hosted Windows runnerでinstall/uninstallを試します。アプリ内の
-Aboutにはassembly metadataのversionを表示します。PR/branch dry-runはunsignedで、production
-signingはtrusted tag contextに限定します。
+**2026年10月9日、未署名コミュニティ版v1.0.0の公開まで完了。** Windows 11 x64向け.NET 10 self-containedアプリをportable ZIPとユーザー単位のInno Setupインストーラーで配布しています。[公開タグのCI](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083931)でversion情報、SHA-256、インストール・起動・再インストール・アンインストール、配布版UIテストを検証済みです。
 
-single-file、trimming、NativeAOTはこのreleaseでは無効です。最終アイコンは組み込み済みで、production
-signingは未署名community版には不要です。Phase 5.1のpackage、install、migration、upgrade、
-uninstallと残るmanual evidenceは[release validation checklist](docs/release-validation.md)へ記録します。
+About画面にバージョンを表示し、最終アイコンを同梱しています。single-file、trimming、NativeAOTは未採用です。Cloud HSMによるAuthenticode署名は任意の別モードであり、公開した**未署名**v1.0.0には適用していません。追加の手動・別環境の確認項目は[配布検証記録](docs/release-validation.md)を参照してください。
 
 ## UI で現在できること
 
@@ -404,34 +421,29 @@ BCL と明示的な port / adapter を中心に構成しています。
 
 詳細は [architecture](docs/architecture.md) を参照してください。
 
-## インストール準備状況
+## 公開済みv1.0.0パッケージ
 
-pipelineは次の固定artifact名を生成します。
+**[GitHub Releasesのv1.0.0](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0)で一般公開済み**です。
 
-- `MinecraftInstanceMigrationTool-1.0.0-win-x64.zip`
-- `MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`
-- `SHA256SUMS.txt`
+- [`MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe) — インストールしてスタートメニューから起動。
+- [`MinecraftInstanceMigrationTool-1.0.0-win-x64.zip`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64.zip) — 全体を展開して起動。
+- [`SHA256SUMS.txt`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) — 公開ファイルの照合用。
 
-検証済みメンバー用パッケージを配布担当者から受け取ってください。公開Releaseは別作業です。
-installerはper-user、ZIPはportableで、どちらもself-containedです。checksum、署名、upgrade、
-support範囲は [install](docs/install.md) と [release process](docs/release.md) を参照してください。
-
-このアプリは非公式のcommunity toolで、Mojang StudiosまたはMicrosoftとの提携はありません。
+検証方法、バージョン更新、未署名版の注意事項は[導入ガイド](docs/install.md)と[配布手順](docs/release.md)を参照。本ツールは非公式コミュニティ製品で、Mojang Studios / Microsoftとは提携していません。
 
 ## 現在未実装のもの
 
-以下はまだ完成扱いではありません。
+公開v1.0.0の機能範囲には次を含めません。
 
-- report persistence / ユーザー操作による export
-- automatic rollback resume
-- Merge conflict semantics
-- Minecraft / mod / loader compatibility 判定
-- exact NTFS clone semantics
-- production Authenticode signingとstable release公開
-- [Phase 5.1](docs/release-validation.md)に残るrelease validation
+- Reportの永続化・ユーザー操作によるエクスポート
+- 自動rollback・復旧処理の自動再開
+- 既存データのMerge（統合）
+- Minecraft / MOD / ローダー互換性判定とランチャー自動検出
+- NTFSの完全クローンとWindows 10サポート
+- 公開済みの署名付きバイナリ（今回のv1.0.0は意図的に未署名）
+- [配布検証記録](docs/release-validation.md)に残る別環境・手動確認項目
 
-特に、**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
-現在の実装は compatibility を保証しません。
+特に**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
 
 ## 開発環境
 
@@ -502,8 +514,8 @@ warnings は build failure として扱います。
 
 次の大きな領域:
 
-22. **Phase 5.0 — Release hardening（実装済み、production signing待ち）**
-23. **Phase 5.1 — v1.0 member distribution validation（現在の配布検証記録を参照）**
+22. **Phase 5.0 — Release hardening（未署名v1.0.0向けに完了）**
+23. **Phase 5.1 — メンバー配布・v1.0.0一般公開（完了。追加の手動検証は別記）**
 
 調査した旧版機能と回帰証拠は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md)、
 移行候補と rule は [migration rules](docs/migration-rules.md)、
