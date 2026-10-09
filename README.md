@@ -1,33 +1,56 @@
 # Minecraft Instance Migration Tool
 
-[日本語](README.ja.md)
+[日本語](README.ja.md) · [Releases](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases) · [Installation](docs/install.md) · [Japanese guide](docs/member-guide.ja.txt)
 
-A Windows desktop application for selectively and safely migrating Minecraft user data
-from an old instance to a new one when changing mod packs or launch configurations.
+A free Windows desktop app for **selectively and safely migrating Minecraft user data** between existing instances when changing mod packs or launch configurations.
 
-**Distribution: free unsigned community edition for Windows 11 x64. [Download packages](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/latest).**
-Members receive a self-contained ZIP or per-user installer and do not need .NET, Visual Studio,
-Python, or a paid signing subscription. Both include `START-HERE.ja.txt`;
-see the [Japanese member guide](docs/member-guide.ja.txt).
+**Latest public release: [v1.0.0](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0), October 9, 2026.** Supported distribution: **Windows 11 x64, unsigned community edition**. The installer and portable ZIP include .NET; users do not need to separately install .NET, Visual Studio, Python, or paid services.
 
-The app starts in Japanese. Switch to English and choose Windows, light, or dark appearance in the
-top toolbar. The next-step panel guides the migration; preferences last for the current session.
-The setup EXE installs the application; launch it from Start afterwards. For the portable edition,
-extract the entire ZIP and run `MinecraftInstanceMigrationTool.exe`.
+## Download v1.0.0
 
-The GUI connects source/destination selection, eleven-item Include/Exclude, explicit Skip/Replace,
-Preview, capacity check, confirmed execution, independent verification, and Report.
-Replace creates and validates backup first. Recovery uses explicitly confirmed guarded rollback;
-there is no automatic resume. Recommended leaves saves/screenshots OFF. The exact basename
-`hanemod-client.json` is excluded at every selected directory depth and retained at the
-destination during Replace. See [reference comparison](docs/modpacktransfer-compatibility.md)
-and [current validation evidence](docs/release-validation.md).
+| Package | How to use | Download |
+| --- | --- | --- |
+| Installer | Install once, then launch from the Start Menu | [Windows x64 setup.exe](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe) |
+| Portable ZIP | Extract **the entire ZIP**, then run `MinecraftInstanceMigrationTool.exe` | [Windows x64 ZIP](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64.zip) |
+| Checksums | Verify downloaded packages against a trusted checksum | [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) |
 
-Unsigned packages may trigger Unknown Publisher or SmartScreen. Verify the trusted distributor and
-`SHA256SUMS.txt`; a matching hash confirms equality with supplied bytes, not publisher identity.
-Cancel and contact the distributor if unsure. No security-setting changes are required.
-There is no mod/loader compatibility analysis or automatic launcher detection: select game folders
-manually. See [installation](docs/install.md) and [distribution process](docs/release.md).
+Both editions include the `START-HERE.ja.txt` member guide, license, third-party notices and runtime. The installer is per-user; the ZIP executable must stay alongside the other extracted files.
+
+**Unsigned packages may show Unknown Publisher / SmartScreen warnings.** Confirm the trusted download source and compare with `SHA256SUMS.txt`. SHA-256 confirms equality with the provided checksum, **not publisher identity**. Do not disable Windows security protections; if uncertain, cancel and contact the distributor.
+
+## Quick start
+
+1. Close Minecraft and its launcher; separately back up important data.
+2. Install or extract the full ZIP. Select Japanese/English and Windows/light/dark appearance in the toolbar (settings last for this session only).
+3. Select the old **Source** and new **Destination** game folders (containing `options.txt` or `config`). Both folders must already exist and must not overlap.
+4. Inspect and generate **Preview**. Include/exclude the data you want. **Recommended excludes `saves` and `screenshots`**; opt in if you need them.
+5. For destination conflicts, explicitly choose **Skip** or **Replace**; apply choices. Replace is not a Merge.
+6. Select a **safety workspace** outside both instances for backups and journals. Run the capacity check.
+7. Confirm **Execute**, then inspect **Report** for `Completed` and successful verification.
+8. Preserve the safety workspace and your original backups until you verify the new instance.
+
+See [full installation and migration instructions](docs/install.md) and the [Japanese step-by-step guide](docs/member-guide.ja.txt).
+
+## Features and limitations
+
+- Eleven selectable entries: `options.txt`, `config`, `resourcepacks`, `shaderpacks`, `schematics`, `saves`, `screenshots`, `XaeroWaypoints`, `XaeroWorldMap`, `itemscroller`, `g4mespeed`.
+- Read-only inspection/Preview, Include/Exclude, Recommended, Select all/none, explicit Skip/Replace, capacity preflight, verified Replace backups, durable execution/recovery evidence and independent post-write verification.
+- Fingerprint-guarded rollback requires explicit confirmation and backend approval. **No automatic rollback or resume.**
+- `hanemod-client.json` is excluded case-insensitively throughout selected directories; existing excluded files at the destination survive Replace.
+- No launcher auto-detection, `mods` transfer, mod/loader/version compatibility checks, Merge, report export, exact NTFS clone or Windows 10 support claim. **A safe copy does not imply game compatibility.**
+
+See [ModPackTransfer comparison](docs/modpacktransfer-compatibility.md) and [architecture](docs/architecture.md).
+
+## v1.0.0 validation
+
+The [published-tag GitHub Actions run](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083931) for [`2faebe8`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/commit/2faebe8be3c5fc382b91f046a11eb0eed1f81886) passed on October 9, 2026:
+
+- **458/458 deterministic tests** passed (Domain 110, Application 136, Infrastructure 131, App 81).
+- **10/10 WPF UI tests** passed, including packaged-build UI verification.
+- **0 build warnings and 0 errors**; version/checksum, self-contained launch, and installer installation/reinstallation/uninstallation checks passed.
+- Published assets are **unsigned-community**, not Authenticode-signed. Optional production signing is not required for this edition.
+
+See [v1.0.0 release](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0), [release process](docs/release.md) and [validation checklist](docs/release-validation.md) (which contains older and outstanding manual evidence).
 
 ## Current implementation
 
@@ -211,15 +234,9 @@ See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibilit
 
 ## Phase 5.0 release hardening
 
-Candidate version `1.0.0` is published for Windows 11 x64 as a .NET 10 self-contained folder. The release workflow
-builds a portable ZIP and per-user Inno Setup installer, verifies version metadata and SHA-256 checksums,
-and exercises install/uninstall on a hosted Windows runner. The application shows its assembly version in
-About. Pull-request and branch dry-runs are unsigned; production signing requires a trusted tag context.
+**Complete for the public unsigned v1.0.0 community edition (October 9, 2026).** The .NET 10 self-contained Windows 11 x64 application ships as portable ZIP and per-user Inno Setup installer. The [tag workflow](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083931) passed packaging, version/checksum, launch, installation/reinstallation/uninstallation and packaged UI checks.
 
-Single-file, trimming, and NativeAOT remain disabled for this release. The application uses the final
-multi-resolution icon. Production signing is optional for the unsigned edition. Phase 5.1 records
-package, install, migration, upgrade, uninstall, and remaining manual evidence in the
-[release validation checklist](docs/release-validation.md).
+The About dialog shows version metadata and the final multi-resolution icon is included. Single-file publishing, trimming and NativeAOT remain disabled. Optional Cloud HSM Authenticode signing is separate from the published **unsigned** assets. See [distribution validation](docs/release-validation.md) for manual checks that remain outside CI.
 
 ## What the current UI can do
 
@@ -408,34 +425,29 @@ The design primarily uses the BCL and explicit ports/adapters.
 
 See [architecture](docs/architecture.md) for details.
 
-## Installation status
+## Published v1.0.0 packages
 
-The pipeline prepares these fixed artifact names:
+**[GitHub Release v1.0.0](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0) is publicly available**, not only locally validated:
 
-- `MinecraftInstanceMigrationTool-1.0.0-win-x64.zip`
-- `MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`
-- `SHA256SUMS.txt`
+- [`MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe) — per-user installer.
+- [`MinecraftInstanceMigrationTool-1.0.0-win-x64.zip`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64.zip) — fully extracted portable edition.
+- [`SHA256SUMS.txt`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) — matching release checksums.
 
-Share a locally verified member package, or obtain one from your distributor. The installer is
-per-user; the ZIP is portable; both are self-contained. See [install](docs/install.md) and
-[release process](docs/release.md) for checksum, signing, upgrade, and support details.
-
-This is an unofficial community tool and is not affiliated with Mojang Studios or Microsoft.
+See [install](docs/install.md) and [release process](docs/release.md) for checksums, unsigned warnings, upgrades, and support. This unofficial community tool is not affiliated with Mojang Studios or Microsoft.
 
 ## Not implemented yet
 
-The following are not complete:
+The public v1.0.0 edition does not claim:
 
-- report persistence / user-initiated export
-- automatic rollback resume
+- Report persistence or user export
+- Automatic rollback or recovery resume
 - Merge conflict semantics
-- Minecraft / mod / loader compatibility analysis
-- exact NTFS clone semantics
-- production Authenticode signing and stable release publication
-- remaining release validation listed in [Phase 5.1](docs/release-validation.md)
+- Minecraft/mod/loader compatibility analysis or launcher auto-detection
+- Exact NTFS cloning or Windows 10 support
+- Signed production binaries (the published release is intentionally unsigned)
+- Additional manual or environment-specific checks listed in [distribution validation](docs/release-validation.md)
 
-In particular, **being safe to copy is not the same as being compatible with the target instance**.
-The current implementation does not claim compatibility.
+**Safe file copying is not equivalent to target-instance compatibility.**
 
 ## Development
 
@@ -506,8 +518,8 @@ Implemented:
 
 Next major areas:
 
-22. **Phase 5.0 — Release hardening (implementation complete; production signing pending)**
-23. **Phase 5.1 — v1.0 member distribution validation (see current package evidence)**
+22. **Phase 5.0 — Release hardening (complete for unsigned v1.0.0)**
+23. **Phase 5.1 — Member distribution / public v1.0.0 release (complete; further manual validation documented)**
 
 See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the inspected
 reference inventory and regression evidence, [migration rules](docs/migration-rules.md) for candidate rules,
