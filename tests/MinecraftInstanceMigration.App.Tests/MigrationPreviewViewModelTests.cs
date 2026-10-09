@@ -1033,7 +1033,8 @@ public sealed class MigrationPreviewViewModelTests
                 capacity ?? new ReadyCapacityPreflight(),
                 backupPlanner ?? new BackupPlanner(),
                 new RecordingBackupExecutor(calls, backupResult),
-                execution ?? new RecordingExecutionOrchestrator(calls)),
+                execution ?? new RecordingExecutionOrchestrator(calls),
+                new SafeWorkspaceValidator()),
             _ => null,
             confirmation,
             recovery,
@@ -1053,7 +1054,8 @@ public sealed class MigrationPreviewViewModelTests
                 new ReadyCapacityPreflight(),
                 new BackupPlanner(),
                 new NeverCalledBackupExecutor(),
-                new NeverCalledExecutionOrchestrator()),
+                new NeverCalledExecutionOrchestrator(),
+                new SafeWorkspaceValidator()),
             _ => null);
 
     private static IMigrationWorkflow CreateWorkflow(IInstanceInspector inspector)
@@ -1066,7 +1068,8 @@ public sealed class MigrationPreviewViewModelTests
             new ReadyCapacityPreflight(),
             backupPlanner,
             new NeverCalledBackupExecutor(),
-            new NeverCalledExecutionOrchestrator());
+            new NeverCalledExecutionOrchestrator(),
+            new SafeWorkspaceValidator());
     }
 
     private sealed class ReadyCapacityPreflight : IMigrationCapacityPreflight
@@ -1085,6 +1088,13 @@ public sealed class MigrationPreviewViewModelTests
                 DestinationAvailableBytes: 100,
                 SafetyWorkspaceAvailableBytes: 100));
         }
+    }
+
+    private sealed class SafeWorkspaceValidator : IExecutionWorkspaceSafetyValidator
+    {
+        public Task<ExecutionWorkspaceSafetyResult> ValidateAsync(string sourceRoot,
+            string destinationRoot, string journalParent, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ExecutionWorkspaceSafetyResult(ExecutionWorkspaceSafetyStatus.Safe));
     }
 
     private sealed class StubCapacityPreflight(

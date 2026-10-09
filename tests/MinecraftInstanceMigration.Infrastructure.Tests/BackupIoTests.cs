@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using MinecraftInstanceMigration.Application.Backup;
 using MinecraftInstanceMigration.Domain.Backup;
@@ -7,6 +8,7 @@ using MinecraftInstanceMigration.Infrastructure.Backup;
 namespace MinecraftInstanceMigration.Infrastructure.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection("Drive aliases")]
 public sealed class BackupIoTests
 {
     [Fact]
@@ -141,6 +143,51 @@ public sealed class BackupIoTests
         Assert.NotNull(result.BackupRootPath);
         Assert.True(File.Exists(Path.Combine(result.BackupRootPath!, ".mim-backup-owner.json")));
         Assert.False(File.Exists(Path.Combine(result.BackupRootPath!, "backup-manifest.json")));
+    }
+
+    [Fact]
+    public async Task BackupDriveAliasInsideUnselectedDestinationIsRejectedWithoutWrites()
+    {
+        using var fixture = new InspectionFixture();
+        string destination = fixture.At("destination");
+        string unsafeParent = fixture.At("destination/not-selected/backups");
+        Directory.CreateDirectory(Path.Combine(destination, "config"));
+        Directory.CreateDirectory(unsafeParent);
+        File.WriteAllText(Path.Combine(destination, "config", "settings.json"), "original");
+        string[] before = Snapshot(destination);
+        var used = DriveInfo.GetDrives().Select(drive => char.ToUpperInvariant(drive.Name[0])).ToHashSet();
+        char alias = Enumerable.Range('R', 'Z' - 'R' + 1).Select(value => (char)value)
+            .Reverse().First(candidate => !used.Contains(candidate));
+        RunSubst($"{alias}:", Path.GetDirectoryName(unsafeParent)!);
+        try
+        {
+            BackupExecutionResult result = await Execute(destination, $"{alias}:\\backups",
+                ReadyPlan(new BackupPlanEntry("config", ExpectedEntryKind.Directory, EntryState.Directory)));
+            Assert.Equal(BackupExecutionStatus.Failed, result.Status);
+            Assert.Equal(BackupFailureKind.OverlappingRoots, result.FailureKind);
+            Assert.Null(result.BackupRootPath);
+            Assert.Equal(before, Snapshot(destination));
+        }
+        finally
+        {
+            RunSubst($"{alias}:", "/D");
+        }
+    }
+
+    private static void RunSubst(string drive, string argument)
+    {
+        var start = new ProcessStartInfo("subst.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        start.ArgumentList.Add(drive);
+        start.ArgumentList.Add(argument);
+        using Process process = Process.Start(start)!;
+        Assert.True(process.WaitForExit(10000), "SUBST timed out.");
+        Assert.Equal(0, process.ExitCode);
     }
 
     [Fact]

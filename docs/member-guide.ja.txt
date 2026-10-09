@@ -1,0 +1,67 @@
+Minecraft Instance Migration Tool — メンバー用ガイド
+
+必要なもの: Windows 11 x64、旧インスタンス、新インスタンス、空き容量。
+メンバーは .NET、Visual Studio、Python、署名サービスを契約・導入する必要はありません。
+ZIP は全体を展開し、MinecraftInstanceMigrationTool.exe を起動してください。
+EXE だけを取り出すと起動できません。
+setup.exe はアプリを導入するためのインストーラーです。導入後はスタートメニューから
+Minecraft Instance Migration Tool を起動してください。毎回 setup.exe を開く必要はありません。
+アプリ本体のファイル名は MinecraftInstanceMigrationTool.exe です。
+管理者権限は不要です。ZIP版はインストールせず使用できます。
+画面上部で 日本語 / English、Windowsに合わせる / ライト / ダークを切り替えられます。
+言語・表示の選択は起動中のみ保持し、設定ファイルを書き込みません。
+
+配布ファイルは次の3点です。
+  MinecraftInstanceMigrationTool-1.0.0-win-x64.zip
+  MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe
+  SHA256SUMS.txt
+ZIP とインストーラのどちらかを選んでください。
+このガイドは両方のアプリフォルダに START-HERE.ja.txt として入っています。
+
+移行手順
+1. Minecraft とランチャーを終了し、必要なデータの別コピーを保管します。
+2. 起動時に「移行する」タブが開きます。「次にすること」に沿って進めます。
+3. 「移行元」に旧インスタンス、「移行先」に新インスタンスを指定します。
+   options.txt や config が直下にあるゲーム用フォルダを選んでください。
+   Destination は事前に作成してください。両フォルダは同一・親子にしないでください。
+4. 「① 移行内容を調べる」で内容を確認します。この操作ではファイルを書き換えません。
+5. おすすめ設定は saves と screenshots が対象外です。必要な行を選び「対象にする」
+   「対象から外す」、全項目なら「すべて対象にする」を使います。ワールドは saves です。
+6. 移行先に既存項目がある場合は、行を選び「スキップ」か「置換」を決定します。
+   置換はその項目を置き換えます。既存フォルダーへの統合はありません。
+7. 「選択を確定」で変更を確定します。未決定の衝突を残すと実行できません。
+   「すべて対象にする」「すべて対象から外す」「おすすめに戻す」は即時適用するため、
+   それ以外の編集がなければ「選択を確定」は無効です。
+8. 「バックアップ・記録の保存先」に、両インスタンスの外側にある別フォルダを指定します。
+   置換のバックアップと実行記録がここへ保存されます。
+9. 「③ 空き容量を確認」で「準備完了」になったことを確認します。
+10. 「④ 移行を実行」を押し、確認画面のフォルダーと項目数を読んで実行します。
+11. 「⑤ 移行結果」で「完了」と「内容確認: 成功」を確認します。
+    新インスタンスのデータを確認してから Minecraft を起動してください。
+
+移行候補
+options.txt, config, resourcepacks, shaderpacks, schematics, saves, screenshots,
+XaeroWaypoints, XaeroWorldMap, itemscroller, g4mespeed
+hanemod-client.json は大文字小文字を区別せず、対象フォルダ内の全階層で除外します。
+Replace 時には Destination の既存除外ファイルを保持します。
+MOD・Minecraft・ローダーの互換性は判定しません。mods やランチャー設定は移行しません。
+
+エラー・復旧
+Blocked は表示された条件を確認し、ファイルが変わったら Preview を作り直してください。
+RecoveryRequired / Failed / Uncertain は成功ではありません。再実行や手作業での削除を
+繰り返さず、Source / Destination と Safety workspace の状態を保持してください。
+アプリが復旧可能と判定した場合だけ、内容を確認して guarded rollback を選べます。
+自動rollbackや再起動後の自動再開はありません。
+Report は画面表示のみです。Safety workspace は動作確認が済むまで消さないでください。
+アンインストールはアプリを削除しますが、インスタンスやSafety workspaceは削除しません。
+
+配布の確認
+標準のcommunity版は未署名です。Windowsに不明な発行元やSmartScreen警告が表示される
+場合があります。警告の有無は環境により異なります。
+信頼する配布元から受け取り、必要に応じて SHA256SUMS.txt と照合してください。
+ハッシュは同じ配布元のチェックサムと内容が一致することを確認するもので、署名ではありません。
+不明なファイルや一致しないファイルは実行せず配布担当者へ確認してください。
+組織の実行制限がある場合は管理者へ相談してください。セキュリティ機能の無効化は不要です。
+
+本ツールは非公式のコミュニティツールです。Mojang Studios / Microsoft と提携していません。
+ライセンスは同梱LICENSE、再配布ランタイム等の通知はTHIRD-PARTY-NOTICES.txtを参照してください。

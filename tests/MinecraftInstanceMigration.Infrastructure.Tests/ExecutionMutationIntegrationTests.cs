@@ -8,6 +8,7 @@ using MinecraftInstanceMigration.Infrastructure.Execution;
 namespace MinecraftInstanceMigration.Infrastructure.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection("Drive aliases")]
 public sealed class ExecutionMutationIntegrationTests
 {
     [Fact]

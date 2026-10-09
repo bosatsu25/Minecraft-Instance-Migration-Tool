@@ -16,7 +16,8 @@ public sealed class MigrationWorkflow(
     IMigrationCapacityPreflight capacityPreflight,
     IBackupPlanner backupPlanner,
     IBackupExecutor backupExecutor,
-    IExecutionOrchestrator executionOrchestrator) : IMigrationWorkflow
+    IExecutionOrchestrator executionOrchestrator,
+    IExecutionWorkspaceSafetyValidator workspaceSafetyValidator) : IMigrationWorkflow
 {
     private readonly IInstanceInspector inspector =
         inspector ?? throw new ArgumentNullException(nameof(inspector));
@@ -32,6 +33,8 @@ public sealed class MigrationWorkflow(
         backupExecutor ?? throw new ArgumentNullException(nameof(backupExecutor));
     private readonly IExecutionOrchestrator executionOrchestrator =
         executionOrchestrator ?? throw new ArgumentNullException(nameof(executionOrchestrator));
+    private readonly IExecutionWorkspaceSafetyValidator workspaceSafetyValidator =
+        workspaceSafetyValidator ?? throw new ArgumentNullException(nameof(workspaceSafetyValidator));
 
     public MigrationWorkflowSession CreateSession() =>
         new(MigrationWorkflowState.SelectRoots);
@@ -382,6 +385,21 @@ public sealed class MigrationWorkflow(
 
         try
         {
+            ExecutionWorkspaceSafetyResult workspace = await ValidateBackupWorkspaceAsync(
+                session, cancellationToken);
+            if (workspace.Status == ExecutionWorkspaceSafetyStatus.Cancelled)
+            {
+                return session with
+                {
+                    State = MigrationWorkflowState.Cancelled,
+                    FailureKind = MigrationWorkflowFailureKind.Cancelled,
+                };
+            }
+            if (!workspace.IsSafe)
+            {
+                return Failure(session, MigrationWorkflowFailureKind.WorkspaceUnsafe);
+            }
+
             var result = await backupExecutor.ExecuteAsync(
                 session.DestinationRoot,
                 session.BackupParent,
@@ -423,6 +441,35 @@ public sealed class MigrationWorkflow(
         catch (Exception)
         {
             return Failure(session, MigrationWorkflowFailureKind.BackupFailed);
+        }
+    }
+
+    private async Task<ExecutionWorkspaceSafetyResult> ValidateBackupWorkspaceAsync(
+        MigrationWorkflowSession session, CancellationToken cancellationToken)
+    {
+        try
+        {
+            foreach (string parent in new[] { session.BackupParent, session.JournalParent }
+                .OfType<string>().Distinct(StringComparer.Ordinal))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ExecutionWorkspaceSafetyResult result = await workspaceSafetyValidator.ValidateAsync(
+                    session.SourceRoot!, session.DestinationRoot!, parent, cancellationToken);
+                if (!result.IsSafe)
+                {
+                    return result;
+                }
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ExecutionWorkspaceSafetyResult(ExecutionWorkspaceSafetyStatus.Safe);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new ExecutionWorkspaceSafetyResult(ExecutionWorkspaceSafetyStatus.Cancelled);
+        }
+        catch (Exception)
+        {
+            return new ExecutionWorkspaceSafetyResult(ExecutionWorkspaceSafetyStatus.Invalid);
         }
     }
 

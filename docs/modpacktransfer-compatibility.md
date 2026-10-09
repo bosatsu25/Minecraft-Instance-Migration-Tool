@@ -10,6 +10,12 @@
 The inspected project file also references absent `Form2.cs` files. That repository defect is not a
 migration feature and is not reproduced here.
 
+The owner's supplied source ZIP was independently inspected in place for member-distribution work.
+Its Form1 source contains the same eleven candidates, All/None/Recommended actions, recursive copy,
+and exact-basename exclusion. It is used as behavioural reference only and is not copied into the
+successor package. The packaged UI regression now exercises all eleven candidates in one real
+Copy/Replace workflow and checks the excluded source and retained destination contents.
+
 ## Original feature inventory
 
 The code defines 18 user-visible or migration-relevant behaviors:

@@ -10,6 +10,7 @@ on:
     branches:
       - 'feature/phase-5.0-release-hardening'
       - 'feature/phase-5.1-v1-release-validation'
+      - 'release/v1.0.0-community-release'
     tags:
       - 'v*'
 
@@ -44,6 +45,9 @@ jobs:
         run: dotnet test --configuration Release --no-build --no-restore
       - name: Verify formatting
         run: dotnet format --verify-no-changes --no-restore
+      - name: Test release-mode contract
+        shell: pwsh
+        run: ./eng/release/Test-ReleaseMode.ps1
 
   ui-smoke:
     runs-on: windows-latest
@@ -60,11 +64,35 @@ jobs:
       - name: Run WPF UI smoke
         run: dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release --no-restore
 
+  release-mode:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    outputs:
+      require-signing: ${{ steps.mode.outputs.require-signing }}
+      environment-name: ${{ steps.mode.outputs.environment-name }}
+      artifact-kind: ${{ steps.mode.outputs.artifact-kind }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Select explicit release mode
+        id: mode
+        shell: pwsh
+        env:
+          REQUESTED_SIGNING_MODE: ${{ vars.MIM_RELEASE_SIGNING_MODE }}
+        run: |
+          . ./eng/release/ReleaseMode.ps1
+          $props = [xml](Get-Content Directory.Build.props -Raw)
+          $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+          $mode = Get-MigrationReleaseMode -RequestedMode $env:REQUESTED_SIGNING_MODE -Ref $env:GITHUB_REF -Version $version
+          "require-signing=$($mode.RequireSigning.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "environment-name=$($mode.EnvironmentName)" >> $env:GITHUB_OUTPUT
+          "artifact-kind=$($mode.ArtifactKind)" >> $env:GITHUB_OUTPUT
+
   release-package:
-    needs: [verify, ui-smoke]
+    needs: [verify, ui-smoke, release-mode]
     runs-on: windows-latest
     environment:
-      name: ${{ startsWith(github.ref, 'refs/tags/v') && 'production-signing' || 'release-dry-run' }}
+      name: ${{ needs.release-mode.outputs.environment-name }}
     timeout-minutes: 25
     steps:
       - name: Checkout
@@ -92,7 +120,7 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
           "ISCC_PATH=$installDir\ISCC.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Setup Cloud HSM signing client (DigiCert KeyLocker)
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: needs.release-mode.outputs.require-signing == 'true'
         shell: pwsh
         env:
           SM_API_KEY: ${{ secrets.SM_API_KEY }}
@@ -103,7 +131,7 @@ jobs:
           TIMESTAMP_URL: ${{ vars.MIM_PRODUCTION_SIGNING_TIMESTAMP_URL }}
         run: |
           if (-not $env:SM_API_KEY -or -not $env:SM_CLIENT_CERT_FILE_B64 -or -not $env:SM_CLIENT_CERT_PASSWORD -or -not $env:CERT_THUMBPRINT -or -not $env:TIMESTAMP_URL) {
-            throw 'Cloud HSM signing configuration is incomplete.'
+            throw 'Signed release was explicitly selected, but signing configuration is incomplete.'
           }
           $hostUrl = if ($env:SM_HOST) { $env:SM_HOST } else { 'https://clientauth.one.digicert.com' }
           $clientCertPath = Join-Path $env:RUNNER_TEMP 'sm_client_cert.p12'
@@ -134,7 +162,7 @@ jobs:
           & $smctl windows-cert sync
           if ($LASTEXITCODE -ne 0) { throw "DigiCert certificate sync failed: $LASTEXITCODE" }
       - name: Locate SignTool
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: needs.release-mode.outputs.require-signing == 'true'
         shell: pwsh
         run: |
           $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
@@ -142,12 +170,14 @@ jobs:
           if (-not $signTool) { throw 'SignTool was not found.' }
           "SIGNTOOL_PATH=$($signTool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build and verify unsigned release artifacts
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: needs.release-mode.outputs.require-signing != 'true'
         shell: pwsh
         run: |
-          ./eng/release/Build-Release.ps1 -IsccPath $env:ISCC_PATH
+          $props = [xml](Get-Content Directory.Build.props -Raw)
+          $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+          ./eng/release/Build-Release.ps1 -IsccPath $env:ISCC_PATH -ExpectedVersion $version
       - name: Build and verify signed release artifacts
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: needs.release-mode.outputs.require-signing == 'true'
         shell: pwsh
         run: |
           ./eng/release/Build-Release.ps1 `
@@ -158,7 +188,7 @@ jobs:
             -CertificateThumbprint $env:SIGNING_CERT_THUMBPRINT `
             -TimestampUrl $env:SIGNING_TIMESTAMP_URL
       - name: Remove temporary cloud signing authentication material
-        if: always() && startsWith(github.ref, 'refs/tags/v')
+        if: always() && needs.release-mode.outputs.require-signing == 'true'
         shell: pwsh
         run: |
           if (-not [string]::IsNullOrWhiteSpace($env:SM_CLIENT_CERT_FILE)) {
@@ -174,29 +204,33 @@ jobs:
               throw 'Temporary client certificate cleanup failed.'
             }
           }
+          foreach ($name in @('SM_API_KEY', 'SM_CLIENT_CERT_PASSWORD', 'SM_CLIENT_CERT_FILE', 'SM_HOST')) {
+            [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+            "$name=" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
       - name: Validate per-user install and uninstall
         shell: pwsh
         run: |
           $props = [xml](Get-Content Directory.Build.props -Raw)
           $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
-          $isTag = $env:GITHUB_REF.StartsWith('refs/tags/v', [StringComparison]::Ordinal)
+          $requireSigning = ('${{ needs.release-mode.outputs.require-signing }}' -eq 'true')
           ./eng/release/Test-Installer.ps1 `
             -InstallerPath "artifacts/release/MinecraftInstanceMigrationTool-$version-win-x64-setup.exe" `
             -ExpectedVersion $version `
             -TestReinstall `
             -CreateDesktopShortcut `
-            -RequireSigning:$isTag `
+            -RequireSigning:$requireSigning `
             -UseDefaultInstallPath
       - name: Validate clean-machine release package
         shell: pwsh
         run: |
           $props = [xml](Get-Content Directory.Build.props -Raw)
           $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
-          $isTag = $env:GITHUB_REF.StartsWith('refs/tags/v', [StringComparison]::Ordinal)
+          $requireSigning = ('${{ needs.release-mode.outputs.require-signing }}' -eq 'true')
           ./eng/release/Validate-CleanMachine.ps1 `
             -ArtifactsRoot "$PWD/artifacts" `
             -ExpectedVersion $version `
-            -RequireSigning:$isTag
+            -RequireSigning:$requireSigning
       - name: Run migration smoke against extracted portable package
         shell: pwsh
         run: |
@@ -211,38 +245,34 @@ jobs:
           dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj `
             --configuration Release `
             --no-restore
-      - name: Upload unsigned dry-run artifacts
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+      - name: Upload accurately labeled release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MinecraftInstanceMigrationTool-unsigned-dry-run-${{ github.run_id }}
-          path: artifacts/release/*
-          if-no-files-found: error
-          retention-days: 14
-      - name: Upload production signed artifacts
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
-        with:
-          name: MinecraftInstanceMigrationTool-production-signed-${{ github.run_id }}
+          name: MinecraftInstanceMigrationTool-${{ needs.release-mode.outputs.artifact-kind }}-${{ github.run_id }}
           path: artifacts/release/*
           if-no-files-found: error
           retention-days: 14
   draft-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: release-package
+    needs: [release-package, release-mode]
     runs-on: windows-latest
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Download signed artifacts
+      - name: Download verified release artifacts
         uses: actions/download-artifact@v4
         with:
-          name: MinecraftInstanceMigrationTool-production-signed-${{ github.run_id }}
+          name: MinecraftInstanceMigrationTool-${{ needs.release-mode.outputs.artifact-kind }}-${{ github.run_id }}
           path: artifacts/release
       - name: Create draft GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME artifacts/release/* --draft --verify-tag --title $env:GITHUB_REF_NAME --notes-file docs/release-notes-template.md
+        run: |
+          $mode = '${{ needs.release-mode.outputs.artifact-kind }}'
+          $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          "Artifact signing status: $mode`n`n$(Get-Content docs/release-notes-template.md -Raw)" |
+            Set-Content -LiteralPath $notes -Encoding utf8
+          gh release create $env:GITHUB_REF_NAME artifacts/release/* --draft --verify-tag --title $env:GITHUB_REF_NAME --notes-file $notes

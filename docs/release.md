@@ -1,115 +1,74 @@
-# Release process
+# Build and distribute the member edition
 
-Phase 5.0 prepares the Windows release pipeline. Phase 5.1 validates an untagged `1.0.0`
-release-candidate build; it does not publish `v1.0.0`.
+The default distribution is a free, **unsigned community build** for Windows 11 x64.
+Members need neither a developer SDK nor a signing account: the ZIP and per-user installer
+include the .NET runtime. A missing production-signing subscription is **not a blocker** for this
+edition. Unsigned does not mean signed, trusted by SmartScreen, or immune to organisation policies.
 
-## Fixed release configuration
+## Completion criteria
 
-| Setting | Value |
-| --- | --- |
-| Release-candidate version | `1.0.0` from `Directory.Build.props` |
-| Supported release target | Windows 11 x64 |
-| Runtime identifier | `win-x64` |
-| Deployment | self-contained folder publish |
-| Single-file | disabled |
-| Trimming / Native AOT / ReadyToRun | disabled |
-| Installer | Inno Setup 6.7.3, per-user |
-| Package names | `MinecraftInstanceMigrationTool-{version}-win-x64.zip`, `MinecraftInstanceMigrationTool-{version}-win-x64-setup.exe`, `SHA256SUMS.txt` |
+Member distribution is ready when the current source builds without warnings, safety tests pass,
+and the actual ZIP/installed EXE completes owned-fixture migration with independent verification.
+Packaging must include runtime files, licenses, the member guide, and matching checksums; exclude
+source/test/private files; and pass install, launch, reinstall, and uninstall checks.
+Paid signing, launcher integration, Windows 10 support, Merge, automatic resume, and report export
+are separate work and are not prerequisites for the stated Windows 11 member workflow.
+See [release validation](release-validation.md) for actual results and their limits.
 
-The folder publish was selected because WPF, native Windows filesystem calls, and recovery behavior benefit from the least transformed output. Single-file adds a large bundle and another loading/extraction mode without improving the installer experience. Trimming and AOT are deferred until a separate compatibility effort can prove the full migration and recovery paths.
+## One existing packaging pipeline
 
-The Phase 5.0 comparison used the same SDK, RID, self-contained mode, and disabled trimming/AOT. Both forms opened the WPF main window. The normal publish contained 403 files / 146,725,125 bytes with a 162,816-byte app host; the single-file evaluation contained one 140,106,806-byte executable. A roughly 4.5% directory-size reduction does not offset native-library extraction behavior, less transparent diagnostics, or the lack of benefit once an installer/ZIP is used, so the normal folder publish is the release format.
-
-## Local dry-run
-
-Install the official Inno Setup 6.7.3 compiler, verify its Authenticode signature, then run:
+The central numeric version is `1.0.0` in `Directory.Build.props`. The supported profile is an
+untrimmed, non-single-file, self-contained `win-x64` folder. Use the configured .NET SDK and
+verified Inno Setup 6.7.3 compiler on a developer/build machine:
 
 ```powershell
 ./eng/release/Build-Release.ps1 -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
 ./eng/release/Test-Installer.ps1 `
   -InstallerPath ./artifacts/release/MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe `
-  -ExpectedVersion 1.0.0 `
-  -TestReinstall `
-  -CreateDesktopShortcut
+  -ExpectedVersion 1.0.0 -TestReinstall -CreateDesktopShortcut -UseDefaultInstallPath
+./eng/release/Validate-CleanMachine.ps1 -ArtifactsRoot ./artifacts -ExpectedVersion 1.0.0
 ```
 
-The build restores the `win-x64` runtime, publishes without PDBs, launches the published application, creates both packages, verifies package contents and version metadata, and writes SHA-256 checksums. Output is restricted to ignored `artifacts/` directories.
-Before clearing output, the build rejects reparse points in the repository-to-output path. The current packaging script accepts numeric `major.minor.patch` versions only; prerelease labels require a separate numeric Windows file-version policy before use.
+Share the ZIP or installer with `SHA256SUMS.txt` from `artifacts/release/`. Both packages include
+`START-HERE.ja.txt`, `LICENSE`, and `THIRD-PARTY-NOTICES.txt`. Members open the complete extracted
+ZIP's `MinecraftInstanceMigrationTool.exe`, or install and use the Start Menu shortcut. They do
+not run the build scripts. [Installation](install.md) explains the trust boundary and user flow.
 
-The workflow downloads the immutable Inno Setup 6.7.3 asset and checks its SHA-256 against the digest published on the [official release](https://github.com/jrsoftware/issrc/releases/tag/is-6_7_3) (`9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732`). It also requires a valid Authenticode signature from Pyrsys B.V. before running the compiler installer.
+Output cleanup stays inside the ignored repository `artifacts/` directory and rejects reparse
+ancestors. Checksums are generated only after the final binary mutation and independently checked.
+Inno Setup's compiler download is pinned to 6.7.3 and verified by SHA-256 and Authenticode in CI.
 
-## CI modes
+## Explicit CI release mode
 
-`.github/workflows/release.yml` supports:
+The optional repository variable `MIM_RELEASE_SIGNING_MODE` accepts `unsigned` or `signed`.
+Absent/empty means `unsigned`; invalid values fail. Branch/PR builds always run unsigned and
+never receive signing credentials, regardless of this setting. Every version tag must exactly
+match the central version, including unsigned tags.
 
-- pull-request, Phase 5.0/5.1 branches, and manual unsigned dry-runs after core and UI verification;
-- trusted `v*` tags, which require valid signing configuration before a draft GitHub release can be created.
+| Build | Environment | Artifact label |
+| --- | --- | --- |
+| PR or branch | `release-dry-run` | `unsigned-dry-run` |
+| Version tag, default/unsigned mode | `release-dry-run` | `unsigned-community` |
+| Version tag, explicitly signed mode | `production-signing` | `production-signed` |
 
-Normal jobs have `contents: read`. Only the tag-only draft-release job receives `contents: write`. Pull requests never receive or use production signing material.
+`release-package` depends on core/UI verification and the release-mode gate. The draft-release
+job downloads the same accurately labeled artifact and adds its actual signing mode to the notes.
+A version tag creates a **draft** only. Publishing, merging, and creating tags remain human gates.
+No tag or public release is required to distribute an already verified local member package.
+README-only changes remain excluded from CI.
 
-## Signing boundary
+## Optional signed edition
 
-Unsigned dry-run artifacts are intentionally reported as unsigned. Under current CA/Browser Forum requirements, trusted public code-signing certificates store private keys on FIPS 140 Level 2+ hardware devices or Cloud HSMs; private keys are non-exportable and cannot be distributed as a PFX file.
+The existing Cloud HSM path (DigiCert KeyLocker) remains available only if the owner deliberately
+chooses `signed`. Its private key stays outside the repository. Configure the protected
+`production-signing` environment, its reviewers/tag policy, and:
 
-The production release pipeline uses **Cloud HSM signing** via **DigiCert KeyLocker** integrated with the Windows Key Storage Provider (KSP) and SignTool. The code-signing private key remains securely in Cloud HSM and is never exported or transferred to the GitHub runner.
+- secrets `SM_API_KEY`, `SM_CLIENT_CERT_FILE_B64`, `SM_CLIENT_CERT_PASSWORD`;
+- variables `SM_HOST`, `MIM_PRODUCTION_SIGNING_CERT_THUMBPRINT`, `MIM_PRODUCTION_SIGNING_TIMESTAMP_URL`
+  (the thumbprint may also be an environment secret).
 
-Trusted tag builds require environment-scoped credentials in a protected `production-signing` environment:
-
-- secret `SM_API_KEY`: API key for DigiCert ONE Software Trust Manager / KeyLocker;
-- secret `SM_CLIENT_CERT_FILE_B64`: Base64 client authentication certificate (.p12) for mutual TLS (mTLS) authentication to DigiCert ONE (this is an authentication credential only, distinct from the non-exportable code-signing private key);
-- secret `SM_CLIENT_CERT_PASSWORD`: password unlocking the client authentication certificate;
-- variable `SM_HOST`: DigiCert ONE endpoint (defaults to `https://clientauth.one.digicert.com`);
-- variable/secret `MIM_PRODUCTION_SIGNING_CERT_THUMBPRINT`: SHA-1 certificate thumbprint of the production code-signing certificate hosted in KeyLocker;
-- variable `MIM_PRODUCTION_SIGNING_TIMESTAMP_URL`: usable RFC 3161 timestamp URL (e.g. `http://timestamp.digicert.com`).
-
-Configure these values as environment-scoped Actions secrets/variables in a protected
-`production-signing` environment before creating a production version tag. Require designated
-reviewer approval for that environment and restrict deployments to the intended version-tag
-pattern (`refs/tags/v*`). The release-package job selects this environment only for `v*` refs; PRs and branch builds
-select a separate `release-dry-run` environment. The workflow strictly uses these Cloud HSM credential
-names rather than legacy PFX names (`MIM_PRODUCTION_SIGNING_CERTIFICATE_*` or `WINDOWS_SIGNING_*`). Remove any legacy signing secrets and do not define the new
-values at repository or organization scope.
-
-Do not put any secret in source, workflow output, or release artifacts.
-
-Only a `v*` tag run that passes the protected environment approval receives signing material. A tag
-name alone is not treated as proof of trust. The runner configures the DigiCert KSP client, synchronizes
-the certificate into the Windows Certificate Store, signs the application executable with SignTool before ZIP and
-installer creation, signs the installer afterwards, verifies both signatures with
-`Get-AuthenticodeSignature`, and generates checksums only after signing succeeds. SignTool uses
-SHA-256 for both the file and timestamp digests (`/fd SHA256 /td SHA256`) and requires the
-timestamp URL (`/tr`) and certificate thumbprint (`/sha1`). Missing configuration, a failed signing command, or invalid signature fails
-the run closed. The temporary client authentication certificate is written under the runner temporary directory and a tag-only
-`always()` cleanup step removes it and unsets credentials; cleanup failures fail the workflow instead of being suppressed.
-After both signatures are verified, the build also cleans up temporary files and clears sensitive environment variables before launching the signed application or running package/installer smoke
-tests. The workflow cleanup remains as a failure-path fallback.
-
-Unsigned artifacts are uploaded as `MinecraftInstanceMigrationTool-unsigned-dry-run-{run_id}`.
-Signed tag artifacts use the separate `MinecraftInstanceMigrationTool-production-signed-{run_id}`
-name, and the draft release consumes only that signed artifact. This prevents unsigned validation
-packages from being mistaken for production release assets. Unsigned verification accepts only the
-explicit `NotSigned` Authenticode state; invalid, untrusted, or otherwise indeterminate signatures
-fail verification.
-
-The repository-side path is ready for these settings, but production signing is not considered
-validated until the real production Cloud HSM account, certificate, and timestamp service are configured and a trusted
-tag run verifies the resulting signatures. No certificate or credential is stored in the repository.
-
-The equivalent signing command is `signtool sign /sha1 <thumbprint> /fd SHA256 /td SHA256 /tr <timestamp-url> <artifact>`. The client credentials are supplied only through the Actions secret environment and are never committed or written to a tracked file.
-
-## Versioning
-
-Semantic Versioning is used. `0.x.y` is development, `1.0.0` is the first stable release, patch releases contain compatible fixes, minor releases contain compatible features, and major releases may change behavior incompatibly. Assembly, file, product, About UI, package, and installer versions derive from the central props file.
-
-## Current release blockers
-
-- Production Cloud HSM Authenticode credentials are not configured.
-
-This blocker prevents a stable public release. The unsigned CI artifact is for verification only.
-The approved original icon is stored as `AppIcon.png` and a multi-resolution `AppIcon.ico` under the App's `Assets/` directory. The executable, window, installer, shortcuts, and uninstall entry use that icon; the source PNG is excluded from publish output.
-The repository uses the MIT license in `LICENSE`; it is included in both release packages.
-Phase 5.1 evidence and blockers are recorded in [release validation](release-validation.md).
-
-## Phase 5.1 validation
-
-Validate clean-machine install, first launch, Copy, Replace, capacity failure, recovery/rollback, report, upgrade, uninstall, signature, and checksums before creating a stable tag or public release.
+Missing signed-mode configuration or signature failure aborts that mode; it never silently
+downgrades to unsigned. The app and installer are verified before final checksums, temporary client
+authentication material is removed, and credentials are cleared before app smoke tests.
+Self-signing is not accepted as evidence. This optional mode has not been production validated.
+It is not required for distributing the unsigned member edition.

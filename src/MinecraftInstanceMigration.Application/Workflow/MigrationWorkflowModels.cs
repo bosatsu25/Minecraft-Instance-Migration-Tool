@@ -37,6 +37,7 @@ public enum MigrationWorkflowFailureKind
     JournalRequired,
     BackupNotReady,
     BackupFailed,
+    WorkspaceUnsafe,
     ExecutionFailed,
     ExecutionRecoveryRequired,
     Cancelled,

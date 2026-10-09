@@ -5,28 +5,29 @@
 A Windows desktop application for selectively and safely migrating Minecraft user data
 from an old instance to a new one when changing mod packs or launch configurations.
 
-**Status: Phase 5.1 is validating an untagged `1.0.0` release candidate. Formal release readiness remains blocked until the evidence checklist and production signing requirements are satisfied.**
-Application now owns the product-level workflow that connects inspection, planning, preview,
-backup preparation/execution, and migration execution through explicit session states.
-The backend also includes verified Backup, durable execution and rollback-attempt journals,
-Windows Copy / Replace, independent post-write verification, and fingerprint-guarded rollback.
+**Distribution: free unsigned community edition for Windows 11 x64. [Download packages](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/latest).**
+Members receive a self-contained ZIP or per-user installer and do not need .NET, Visual Studio,
+Python, or a paid signing subscription. Both include `START-HERE.ja.txt`;
+see the [Japanese member guide](docs/member-guide.ja.txt).
 
-The WPF UI exposes Inspector, Migration Preview, selection/conflict editing, explicit execution
-confirmation, Backup when required, verified Copy / Replace execution, Recovery diagnosis,
-explicitly confirmed guarded rollback, and a read-only Migration Report.
-Execution also requires a current capacity preflight result for the selected safety workspace.
-The inspected ModPackTransfer migration feature set is covered by a traceable compatibility matrix
-and regression tests. Against reference commit `e174cdac8229f3e061175a36121d55db01961452`,
-18 migration-relevant behaviors were inventoried and the compatibility matrix contains **0 Missing**
-items. The successor keeps the same eleven migration candidates while strengthening overwrite, path,
-backup, verification, rollback, error-redaction, and capacity behavior.
+The app starts in Japanese. Switch to English and choose Windows, light, or dark appearance in the
+top toolbar. The next-step panel guides the migration; preferences last for the current session.
+The setup EXE installs the application; launch it from Start afterwards. For the portable edition,
+extract the entire ZIP and run `MinecraftInstanceMigrationTool.exe`.
 
-The Phase 4.6 verification baseline is **429 unit/integration tests + 6 FlaUI UI smoke tests**, with
-0 build warnings/errors and hosted `verify` / `ui-smoke` checks green before merge.
+The GUI connects source/destination selection, eleven-item Include/Exclude, explicit Skip/Replace,
+Preview, capacity check, confirmed execution, independent verification, and Report.
+Replace creates and validates backup first. Recovery uses explicitly confirmed guarded rollback;
+there is no automatic resume. Recommended leaves saves/screenshots OFF. The exact basename
+`hanemod-client.json` is excluded at every selected directory depth and retained at the
+destination during Replace. See [reference comparison](docs/modpacktransfer-compatibility.md)
+and [current validation evidence](docs/release-validation.md).
 
-Phase 5.1 uses numeric version `1.0.0` for an untagged Windows 11 x64 self-contained release candidate,
-portable ZIP, per-user Inno Setup installer, SHA-256 checksums, assembly-derived About display, and a
-least-privilege release workflow. It does not create a `v1.0.0` tag or public release.
+Unsigned packages may trigger Unknown Publisher or SmartScreen. Verify the trusted distributor and
+`SHA256SUMS.txt`; a matching hash confirms equality with supplied bytes, not publisher identity.
+Cancel and contact the distributor if unsure. No security-setting changes are required.
+There is no mod/loader compatibility analysis or automatic launcher detection: select game folders
+manually. See [installation](docs/install.md) and [distribution process](docs/release.md).
 
 ## Current implementation
 
@@ -42,6 +43,8 @@ Preview / Dry Run
 Capacity Preflight
   ↓
 Backup Preflight
+  ↓
+Backup Workspace Safety
   ↓
 Backup IO
   ↓
@@ -214,7 +217,7 @@ and exercises install/uninstall on a hosted Windows runner. The application show
 About. Pull-request and branch dry-runs are unsigned; production signing requires a trusted tag context.
 
 Single-file, trimming, and NativeAOT remain disabled for this release. The application uses the final
-multi-resolution icon; production signing configuration is pending. Phase 5.1 records clean-hosted-runner,
+multi-resolution icon. Production signing is optional for the unsigned edition. Phase 5.1 records
 package, install, migration, upgrade, uninstall, and remaining manual evidence in the
 [release validation checklist](docs/release-validation.md).
 
@@ -413,7 +416,7 @@ The pipeline prepares these fixed artifact names:
 - `MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`
 - `SHA256SUMS.txt`
 
-There is no stable download yet. Phase 5.1 must close its evidence checklist before a stable `v1.0.0` release. The installer is
+Share a locally verified member package, or obtain one from your distributor. The installer is
 per-user; the ZIP is portable; both are self-contained. See [install](docs/install.md) and
 [release process](docs/release.md) for checksum, signing, upgrade, and support details.
 
@@ -504,7 +507,7 @@ Implemented:
 Next major areas:
 
 22. **Phase 5.0 — Release hardening (implementation complete; production signing pending)**
-23. **Phase 5.1 — v1.0 release validation (in progress; release blocked while required evidence remains open)**
+23. **Phase 5.1 — v1.0 member distribution validation (see current package evidence)**
 
 See the [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) for the inspected
 reference inventory and regression evidence, [migration rules](docs/migration-rules.md) for candidate rules,

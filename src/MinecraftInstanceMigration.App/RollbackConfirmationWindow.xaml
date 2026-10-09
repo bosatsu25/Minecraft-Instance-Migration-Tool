@@ -1,7 +1,8 @@
 <Window x:Class="MinecraftInstanceMigration.App.RollbackConfirmationWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Confirm guarded rollback" SizeToContent="WidthAndHeight"
+        xmlns:ui="clr-namespace:MinecraftInstanceMigration.App.Presentation"
+        Title="{ui:Text Key='Confirm guarded rollback'}" SizeToContent="WidthAndHeight"
         MinWidth="520" MaxWidth="720" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
   <Grid Margin="24">
@@ -13,27 +14,27 @@
     </Grid.RowDefinitions>
 
     <StackPanel>
-      <TextBlock Text="Start guarded rollback?" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock Text="{ui:Text Key='Start guarded rollback?'}" FontSize="22" FontWeight="SemiBold" />
       <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
-                 Text="This operation changes the destination. Each action proceeds only while current filesystem and backup evidence still satisfy the existing safety guards." />
+                 Text="{ui:Text Key='This operation changes the destination. Each action proceeds only while current filesystem and backup evidence still satisfy the existing safety guards.'}" />
     </StackPanel>
 
     <TextBlock Grid.Row="1" Margin="0,18,0,0" TextWrapping="Wrap"
                AutomationProperties.AutomationId="RollbackConfirmationCounts">
-      <Run Text="Candidates: " /><Run Text="{Binding RollbackCandidateCount, Mode=OneWay}" />
-      <Run Text="   Delete created: " /><Run Text="{Binding DeleteCreatedEntryCount, Mode=OneWay}" />
-      <Run Text="   Restore backup: " /><Run Text="{Binding RestoreFromBackupCount, Mode=OneWay}" />
+      <Run Text="{ui:Text Key='Candidates: '}" /><Run Text="{Binding RollbackCandidateCount, Mode=OneWay}" />
+      <Run Text="{ui:Text Key='   Delete created: '}" /><Run Text="{Binding DeleteCreatedEntryCount, Mode=OneWay}" />
+      <Run Text="{ui:Text Key='   Restore backup: '}" /><Run Text="{Binding RestoreFromBackupCount, Mode=OneWay}" />
     </TextBlock>
 
     <TextBlock Grid.Row="2" Margin="0,8,0,0" FontWeight="SemiBold" TextWrapping="Wrap"
-               Text="{Binding BackupRequired, Mode=OneWay, StringFormat=Backup used: {0}}"
+               Text="{ui:LocalizedBinding Path=BackupRequired, Mode=OneWay, Format='Backup used: {0}'}"
                AutomationProperties.AutomationId="RollbackConfirmationBackup" />
 
     <StackPanel Grid.Row="3" Margin="0,22,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-      <Button Content="Cancel" Padding="18,7" IsCancel="True"
+      <Button Content="{ui:Text Key='Cancel'}" Padding="18,7" IsCancel="True" IsDefault="True"
               AutomationProperties.AutomationId="CancelRollback" />
-      <Button Content="Start Guarded Rollback" Padding="18,7" Margin="10,0,0,0"
-              IsDefault="True" Click="Confirm_Click"
+      <Button Content="{ui:Text Key='Start Guarded Rollback'}" Padding="18,7" Margin="10,0,0,0"
+              Click="Confirm_Click"
               AutomationProperties.AutomationId="ConfirmRollback" />
     </StackPanel>
   </Grid>

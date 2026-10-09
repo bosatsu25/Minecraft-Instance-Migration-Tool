@@ -137,7 +137,7 @@ public sealed class ReleaseConfigurationTests
             workflow,
             StringComparison.Ordinal);
         Assert.Contains(
-            "if: startsWith(github.ref, 'refs/tags/v')",
+            "if: needs.release-mode.outputs.require-signing == 'true'",
             workflow[signedStart..installerValidationStart],
             StringComparison.Ordinal);
         Assert.Contains(
@@ -147,7 +147,7 @@ public sealed class ReleaseConfigurationTests
     }
 
     [Fact]
-    public void ProductionSigningIsTagGatedAndTemporaryCertificateCleanupIsFailClosed()
+    public void CommunityReleaseDoesNotRequireSigningAndSignedModeFailsClosed()
     {
         string workflow = File.ReadAllText(FindRepositoryFile(".github", "workflows", "release.yml"));
         int releaseJobStart = workflow.IndexOf("  release-package:", StringComparison.Ordinal);
@@ -156,8 +156,7 @@ public sealed class ReleaseConfigurationTests
         int signedStart = workflow.IndexOf("name: Build and verify signed release artifacts", StringComparison.Ordinal);
         int cleanupStart = workflow.IndexOf("name: Remove temporary cloud signing authentication material", StringComparison.Ordinal);
         int validationStart = workflow.IndexOf("name: Validate per-user install and uninstall", StringComparison.Ordinal);
-        int uploadUnsignedStart = workflow.IndexOf("name: Upload unsigned dry-run artifacts", StringComparison.Ordinal);
-        int uploadSignedStart = workflow.IndexOf("name: Upload production signed artifacts", StringComparison.Ordinal);
+        int uploadStart = workflow.IndexOf("name: Upload accurately labeled release artifacts", StringComparison.Ordinal);
         int draftStart = workflow.IndexOf("draft-release:", StringComparison.Ordinal);
 
         Assert.True(prepareStart >= 0);
@@ -166,23 +165,22 @@ public sealed class ReleaseConfigurationTests
         Assert.True(signedStart > unsignedStart);
         Assert.True(cleanupStart > signedStart);
         Assert.True(validationStart > cleanupStart);
-        Assert.True(uploadUnsignedStart > validationStart);
-        Assert.True(uploadSignedStart > uploadUnsignedStart);
-        Assert.True(draftStart > uploadSignedStart);
+        Assert.True(uploadStart > validationStart);
+        Assert.True(draftStart > uploadStart);
 
         string prepare = workflow[prepareStart..unsignedStart];
         string unsigned = workflow[unsignedStart..signedStart];
         string releaseJob = workflow[releaseJobStart..prepareStart];
         string signed = workflow[signedStart..cleanupStart];
         string cleanup = workflow[cleanupStart..validationStart];
-        string uploads = workflow[uploadUnsignedStart..draftStart];
+        string uploads = workflow[uploadStart..draftStart];
         string draft = workflow[draftStart..];
 
         Assert.Contains(
-            "name: ${{ startsWith(github.ref, 'refs/tags/v') && 'production-signing' || 'release-dry-run' }}",
+            "name: ${{ needs.release-mode.outputs.environment-name }}",
             releaseJob,
             StringComparison.Ordinal);
-        Assert.Contains("if: startsWith(github.ref, 'refs/tags/v')", prepare, StringComparison.Ordinal);
+        Assert.Contains("if: needs.release-mode.outputs.require-signing == 'true'", prepare, StringComparison.Ordinal);
         Assert.Contains("secrets.SM_API_KEY", prepare, StringComparison.Ordinal);
         Assert.Contains("secrets.SM_CLIENT_CERT_FILE_B64", prepare, StringComparison.Ordinal);
         Assert.Contains("secrets.SM_CLIENT_CERT_PASSWORD", prepare, StringComparison.Ordinal);
@@ -193,17 +191,20 @@ public sealed class ReleaseConfigurationTests
         Assert.DoesNotContain("secrets.WINDOWS_SIGNING_CERTIFICATE_", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("vars.WINDOWS_SIGNING_TIMESTAMP_URL", workflow, StringComparison.Ordinal);
         Assert.Contains("smctl windows-cert sync", prepare, StringComparison.Ordinal);
-        Assert.Contains("if: startsWith(github.ref, 'refs/tags/v')", signed, StringComparison.Ordinal);
+        Assert.Contains("if: needs.release-mode.outputs.require-signing == 'true'", signed, StringComparison.Ordinal);
         Assert.Contains("-RequireSigning", signed, StringComparison.Ordinal);
         Assert.Contains("-CertificateThumbprint $env:SIGNING_CERT_THUMBPRINT", signed, StringComparison.Ordinal);
-        Assert.Contains("if: always() && startsWith(github.ref, 'refs/tags/v')", cleanup, StringComparison.Ordinal);
+        Assert.Contains("if: always() && needs.release-mode.outputs.require-signing == 'true'", cleanup, StringComparison.Ordinal);
         Assert.Contains("Remove-Item -LiteralPath $clientCert -Force -ErrorAction Stop", cleanup, StringComparison.Ordinal);
         Assert.Contains("Temporary client certificate cleanup failed.", cleanup, StringComparison.Ordinal);
-        Assert.Contains("if: ${{ !startsWith(github.ref, 'refs/tags/v') }}", uploads, StringComparison.Ordinal);
-        Assert.Contains("MinecraftInstanceMigrationTool-unsigned-dry-run-${{ github.run_id }}", uploads, StringComparison.Ordinal);
-        Assert.Contains("MinecraftInstanceMigrationTool-production-signed-${{ github.run_id }}", uploads, StringComparison.Ordinal);
-        Assert.Contains("MinecraftInstanceMigrationTool-production-signed-${{ github.run_id }}", draft, StringComparison.Ordinal);
-        Assert.DoesNotContain("MinecraftInstanceMigrationTool-unsigned-dry-run-${{ github.run_id }}", draft, StringComparison.Ordinal);
+        Assert.Contains("MinecraftInstanceMigrationTool-${{ needs.release-mode.outputs.artifact-kind }}-${{ github.run_id }}", uploads, StringComparison.Ordinal);
+        Assert.Contains("MinecraftInstanceMigrationTool-${{ needs.release-mode.outputs.artifact-kind }}-${{ github.run_id }}", draft, StringComparison.Ordinal);
+        Assert.Contains("MIM_RELEASE_SIGNING_MODE", workflow, StringComparison.Ordinal);
+        Assert.Contains("Signed release was explicitly selected, but signing configuration is incomplete.", prepare, StringComparison.Ordinal);
+        Assert.DoesNotContain("exit 0", prepare, StringComparison.Ordinal);
+        Assert.DoesNotContain("SIGNING_ENABLED", workflow, StringComparison.Ordinal);
+        Assert.Contains("'SM_API_KEY', 'SM_CLIENT_CERT_PASSWORD', 'SM_CLIENT_CERT_FILE', 'SM_HOST'", cleanup, StringComparison.Ordinal);
+        Assert.Contains("-Version $version", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -241,7 +242,7 @@ public sealed class ReleaseConfigurationTests
     }
 
     [Fact]
-    public void ReleaseDocumentationKeepsProductionSigningBlockedUntilRealCredentialsExist()
+    public void ReleaseDocumentationDistinguishesCommunityReadinessFromOptionalSigning()
     {
         string release = File.ReadAllText(FindRepositoryFile("docs", "release.md"));
         string validation = File.ReadAllText(FindRepositoryFile("docs", "release-validation.md"));
@@ -254,8 +255,10 @@ public sealed class ReleaseConfigurationTests
         Assert.Contains("KeyLocker", release, StringComparison.Ordinal);
         Assert.Contains("unsigned-dry-run", release, StringComparison.Ordinal);
         Assert.Contains("production-signed", release, StringComparison.Ordinal);
-        Assert.Contains("| Production Authenticode signing | FAIL |", validation, StringComparison.Ordinal);
-        Assert.Contains("Self-signing is not accepted as evidence.", validation, StringComparison.Ordinal);
+        Assert.Contains("| Production Authenticode signing | NOT APPLICABLE |", validation, StringComparison.Ordinal);
+        Assert.Contains("Self-signing is not accepted as evidence.", release, StringComparison.Ordinal);
+        Assert.Contains("unsigned-community", release, StringComparison.Ordinal);
+        Assert.Contains("not a blocker", release, StringComparison.Ordinal);
     }
 
     [Fact]

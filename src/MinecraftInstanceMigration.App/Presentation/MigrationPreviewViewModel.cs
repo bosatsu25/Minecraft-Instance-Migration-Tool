@@ -220,6 +220,54 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
 
     public string Status => status;
 
+    public string NextStep
+    {
+        get
+        {
+            if (IsBusy)
+            {
+                return "Wait for the current operation. You can cancel; completion is never assumed.";
+            }
+            if (IsRecoveryVisible)
+            {
+                return recoveryResult?.Outcome == MigrationRecoveryOutcome.Applied
+                    ? "Check the restored data. Keep the records; a new migration needs a fresh preview."
+                    : "Keep all folders and records. Review recovery before changing files or retrying.";
+            }
+            if (WorkflowState == MigrationWorkflowState.Completed)
+            {
+                return "Open Migration Report, verify the result, then check the new instance before launching Minecraft.";
+            }
+            if (session?.FailureKind == MigrationWorkflowFailureKind.WorkspaceUnsafe)
+            {
+                return "Choose a workspace outside both instances, then check capacity again.";
+            }
+            if (preview is null)
+            {
+                return "Choose source and destination, then select Generate Preview.";
+            }
+            if (hasPendingChoices)
+            {
+                return "Apply choices to confirm your latest selection.";
+            }
+            if (preview.Status == MigrationPlanStatus.NeedsDecision)
+            {
+                return "Select conflict rows, choose Skip or Replace, then Apply choices.";
+            }
+            if (preview.Status != MigrationPlanStatus.Ready || session?.FailureKind is not null)
+            {
+                return "Review the displayed reason and regenerate the preview after fixing it.";
+            }
+            if (string.IsNullOrWhiteSpace(SafetyWorkspacePath))
+            {
+                return "Review the items and choose a separate safety workspace outside both instances.";
+            }
+            return CapacityStatus == MigrationCapacityStatus.Ready
+                ? "Select Execute migration to review the final confirmation."
+                : "Check capacity for the current selection and safety workspace.";
+        }
+    }
+
     public MigrationCapacityStatus? CapacityStatus => session?.CapacityEstimate?.Status;
 
     public string CopySize => FormatBytes(session?.CapacityEstimate?.CopyBytes);
@@ -1048,6 +1096,13 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
                 "Rollback was blocked before a safe recovery could be completed.",
         };
 
-    private void Notify([CallerMemberName] string? propertyName = null) =>
+    private void Notify([CallerMemberName] string? propertyName = null)
+    {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        if (propertyName is nameof(Status) or nameof(IsBusy) or nameof(HasPendingChoices) or
+            nameof(CapacityStatus) or nameof(SafetyWorkspacePath) or nameof(WorkflowState) or nameof(RollbackOutcome))
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextStep)));
+        }
+    }
 }
