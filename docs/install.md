@@ -2,8 +2,9 @@
 
 The member edition targets Windows 11 x64 and includes its own .NET runtime. Members do not need
 .NET, Visual Studio, Python, Inno Setup, a licence purchase, or a signing-service subscription.
-Obtain a tested package and `SHA256SUMS.txt` from your distributor. A public GitHub Release is a
-separate publication step; these instructions also apply to a package shared directly with members.
+Obtain a package and `SHA256SUMS.txt` from the
+[published v1.0.0 Release](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0).
+These instructions also apply to the same verified package shared directly with members.
 
 ## Portable ZIP (no installation)
 

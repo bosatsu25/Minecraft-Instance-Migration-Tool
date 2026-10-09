@@ -1,98 +1,83 @@
-# Member distribution validation
+# v1.0.0 member release — DONE
 
-The owner has chosen a free **unsigned community edition** for Windows 11 x64. This supersedes
-the former rule that production signing was a prerequisite for every release. It does not change
-the migration safety contracts or turn an untested item into PASS. Optional paid signing remains
-unvalidated and outside the member-edition acceptance criteria.
+The free, unsigned Windows 11 x64 community edition is **complete and publicly released**.
+Phase 5.0 release hardening and Phase 5.1 member distribution are closed for this scope.
+There are no remaining required implementation, validation, or publication tasks.
 
-## DONE for this scope
+## Release identity
 
-The distributable ZIP and installer must be built from the current source, include the runtime
-and a Japanese member guide, pass content/checksum/metadata checks, start without a separate .NET
-installation, complete real Copy and Replace migration with verification, and pass install,
-reinstall, shortcuts, uninstall, and preservation of unrelated data. Core safety and compatibility
-regressions must remain green. Publishing a GitHub Release is a separate human-gated operation.
+- [Public v1.0.0 Release](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0)
+- Published: 2026-10-09, 10:20:01 UTC.
+- Source: `2faebe8be3c5fc382b91f046a11eb0eed1f81886`; tag: `v1.0.0`.
+- [Tag CI](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083840): success.
+- [Tag package and Release workflow](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083931): success.
+- Release page and all three download endpoints returned HTTP 200 without authentication.
+- Both package hashes and sizes were independently checked after downloading the CI-uploaded assets.
 
-## Current-source evidence
+These records describe the published binaries. Subsequent documentation changes do not replace
+the existing tag or its artifacts.
 
-The table below records the earlier local-only member packaging pass. The subsequent bilingual/theme
-release adds pre-backup workspace validation and canonical drive-alias protection. Its acceptance
-requires fresh packaging and hosted checks; the old hashes below do not identify the updated binaries.
-
-Local bilingual implementation evidence: Release build has zero warnings/errors; Domain 110,
-Application 136, Infrastructure 131, and App 81 tests passed (458 total). Japanese default, English
-switching, all three themes, preserved paths/selection, confirmed migration and report were exercised
-through FlaUI. A 256 MiB file migration passed the bounded-memory regression. Theme switching 100 times
-kept one palette. A fixed phrase index replaces timing-sensitive regular-expression translation.
-
-All ten UI tests also passed against the newly generated ZIP application with external .NET lookup
-disabled. The measured 256 MiB case used 104 MiB private memory before migration, 145 MiB after, and
-180 MiB peak working set on this host; these measurements are not universal limits. Dependency audit
-reported no known vulnerable packages from the configured NuGet source. The bilingual installer
-compiled and package content/checksum/startup verification passed. Local install/uninstall validation
-refused existing application registration and preserved it; the new hosted Windows runner supplies
-the clean install/reinstall/uninstall gate before artifact upload and draft-release creation.
-Hosted evidence belongs to the tag's Actions run; this pre-tag local record does not claim hosted PASS.
-
-Security audit: 209 text files reviewed; two binary icon assets excluded. A low-severity backup
-drive-alias overlap finding was reproduced, fixed, and regression-tested. Required backup now also
-validates workspace safety before any backup write; cancelled, invalid and exceptional checks refuse
-the operation. Independent safety and UI diff reviews identified no remaining product blocker within
-their reviewed scope. Optional signed-mode credential inheritance remains a separately reviewed
-hardening area; the chosen unsigned release does not populate signing credentials. No claim of
-universal safety or full fresh-machine validation is made.
+## Completed acceptance criteria
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Release-mode routing without credentials | PASS | Test-ReleaseMode.ps1: default unsigned tag, explicit unsigned/signed tags, branch/PR isolation, invalid configuration, and tag/version mismatch. |
-| Release build, warnings, all deterministic tests, formatting | PASS | SDK 10.0.401: restore/build succeeded, 0 warnings/errors, Domain 110 + Application 132 + Infrastructure 130 + App 68 = 440 passed; format verification and git diff --check passed. |
-| Reference candidate behaviour | PASS | User-supplied ModPackTransfer source ZIP inspected in place; eleven candidates, Recommended, All/None, and recursive exclusion match the existing compatibility matrix. Reference source is not redistributed. |
-| Self-contained ZIP and per-user installer generation | PASS | Existing Build-Release.ps1 generated fresh version 1.0.0 packages from the current working tree. |
-| Packaged runtime, licenses, Japanese member guide, absence of development/private files | PASS | Verify-Release.ps1 checked runtime, licenses, START-HERE.ja.txt, development/private file patterns, repository-path leakage, and ZIP/publish manifests. |
-| Final checksum and version match | PASS | EXE/installer metadata matches 1.0.0; final ZIP and installer SHA-256 match SHA256SUMS.txt; both Authenticode states are NotSigned. |
-| Packaged Copy, Replace, Backup, verification, Report | PASS | Eight FlaUI tests passed against the final extracted ZIP EXE, including confirmed Copy and Replace, original bytes retained in backup, and successful Report verification. |
-| Packaged eleven-candidate All selection and exclusion preservation | PASS | Actual ZIP EXE passed the new All fixture: all eleven items, opt-in saves/screenshots, nested source exclusion, retained destination exclusion, unrelated data, and verified replacement backup. |
-| Install, direct/Start Menu/desktop launch, reinstall, uninstall, external data preservation | PASS | Test-Installer.ps1 completed default-path per-user install, all three launch surfaces, same-version reinstall, uninstall, and sentinel preservation. Japanese guide presence was also checked. |
-| Startup with external .NET lookup disabled | PASS | Validate-CleanMachine.ps1 and all packaged UI processes used nonexistent DOTNET_ROOT/DOTNET_ROOT_X64, multilevel lookup off, and system-only PATH. No separately installed runtime was used by the self-contained app. |
-| Production Authenticode signing | NOT APPLICABLE | The selected edition is explicitly unsigned; no paid certificate, subscription, or protected signing-environment approval is required. |
-| Signed-mode failure and artifact labeling | PASS | Explicit signed mode never falls back after missing credentials; signing mode selects both upload and draft-release download labels. YAML parsing and PowerShell syntax checks also passed; Test-ReleaseMode.ps1 executed nine routing/rejection cases. |
-| Interactive SmartScreen / organisation policy | NOT TESTED | Not reproducible as a universal CI behaviour. Unsigned warning and cancellation guidance are documented; no promise of warning-free startup. |
-| Fresh physical Windows 11 machine / VM | NOT TESTED | This session has no dedicated fresh machine. Developer-machine results are not mislabeled clean-machine results. |
-| Visual small-icon rendering on every shell surface | NOT TESTED | Structural icon and wiring are covered by existing automated tests; exhaustive visual review is not claimed. |
-| Current-change hosted Actions | NOT TESTED | Local changes have not been pushed; previous runs are not evidence for this patch. |
+| Release build and formatting | PASS | Configured SDK 10.0.401; Release build with zero warnings/errors; format verification and git diff checks passed. |
+| Core tests | PASS | Domain 110 + Application 136 + Infrastructure 131 + App 81 = 458 passed, no failures or skips. |
+| UI and actual migration | PASS | Ten FlaUI tests, including Copy, Replace, verified backup, Report, all eleven candidates, source exclusion, retained destination exclusion, and unrelated-data preservation. |
+| Japanese/English and themes | PASS | Japanese startup, live language switching, all three appearance choices, preserved paths/plan, confirmation, and translated results. |
+| Bounded memory | PASS | Actual 256 MiB migration passed; 100 theme switches retained one palette. Fixed-phrase translation does not cache rendered messages or paths. |
+| Reference compatibility | PASS | Eighteen-item comparison has no Missing rows; eleven candidates, selection presets, and recursive exact-basename exclusion are covered by regressions. Reference source is not redistributed. |
+| Self-contained ZIP and installer | PASS | Both generated by the tag workflow; runtime, licenses, Japanese member guide, versions, and package manifests verified; development/private files rejected. |
+| Install/reinstall/uninstall | PASS | Hosted Windows runner checked per-user installation, direct/Start Menu/desktop launch, same-version reinstall, uninstall, and external-data preservation. |
+| Independent runtime startup | PASS | Extracted ZIP launched with external .NET lookup disabled; packaged UI suite also used that environment. |
+| Signing-mode routing | PASS | Nine routing/rejection cases; default unsigned, exact tag/version validation, branch/PR isolation, signed-mode failure instead of silent downgrade, and accurate artifact labels. |
+| Uploaded artifact integrity | PASS | All three asset SHA-256 digests and sizes matched GitHub metadata; both package records matched SHA256SUMS.txt. |
+| Public member distribution | PASS | Draft published as a non-prerelease v1.0.0 with ZIP, setup EXE, and checksums; anonymous download endpoints verified. |
+| Production Authenticode signing | NOT APPLICABLE | Deliberately excluded from this unsigned release; no paid certificate or signing subscription is required. |
 
-NOT TESTED items for optional signing, reputation, extra platforms, and cosmetic shell validation
-are not member-edition functional blockers. Failed migration, corruption, unresolved core regression,
-missing runtime, checksum mismatch, or broken install/uninstall remain blockers.
+The current documentation cleanup found no missing requirement within this acceptance contract.
+New functionality outside that contract requires a separate scope; it is not an unfinished v1.0.0 task.
 
-## Historical evidence and exclusions
-
-The earlier implementation at `ac27501d863c2d82c4d0d86776f041aac88f0bba` passed 440 deterministic
-tests, seven UI smoke tests, and hosted Windows verification. The current patch must take fresh local
-evidence before delivery (now recorded above). Historical hosted success is not a claim of current-patch hosted success.
-
-Windows 10, automatic launcher detection/integration, mod/version compatibility analysis, Merge,
-automatic recovery resume, and report export are outside this edition. Recovery is guarded and
-explicitly confirmed; it is not an atomic filesystem transaction or an automatic retry.
-
-## Earlier local-only decision (superseded by release work)
-
-- **Member package ready: Yes — locally validated unsigned Windows 11 x64 edition**
-- **Public GitHub Release published by this work: No**
-
-Validation date: 2026-10-09 (Asia/Tokyo). Actual local host: Windows 11 Home x64
-`10.0.26300`. This is a developer machine, not a fresh VM. No new commit, push, tag, or public
-release was performed during this member-distribution fix. Base commit: `9436f5c`.
-
-Final package identities:
+## Published package identities
 
 | File | Bytes | SHA-256 |
 | --- | --- | --- |
-| MinecraftInstanceMigrationTool-1.0.0-win-x64.zip | 65,741,597 | `008bdf39ab3564a16b0933f272997d581f66811484e8a92edff6945ee5372158` |
-| MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe | 46,954,186 | `f1c7a1a0f301556534bd279fe7ff0a8a67bb96daaa6e5233257abfc765349e6a` |
+| MinecraftInstanceMigrationTool-1.0.0-win-x64.zip | 65,757,291 | `ce2ff89dbce0e2ef5d5bffffdf231033c478ba9288d3a62fa0054857c9b8ad93` |
+| MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe | 46,970,888 | `a841f8e29a422a9a31b7f54c4fed49c790b8733ac6ab6fdd867a6468149e0602` |
+| SHA256SUMS.txt | 238 | `518a40cd762a3d7e55e387ed6bcb2fe9c16e13f6ab322cbc27e43c80445c4a02` |
 
-The independent diff review found and fixed signed-label leakage, the unwanted paid-environment
-gate, silent signed-mode fallback, stale tag version acceptance, misleading support/atomic-recovery
-claims in release notes, and missing member instructions. Migration policy and storage engines were
-not changed. A new test initially invoked Apply after Select all; the existing Select all command
-already applies immediately. The fixture and guide were corrected to that actual behaviour.
+Earlier local build hashes are superseded by these uploaded Release artifacts.
+
+## Security and execution boundaries
+
+The pre-implementation audit reviewed 209 text files and excluded two binary icon assets.
+A low-severity drive-alias backup-containment issue was reproduced, corrected, and regression-tested.
+Replacement backup now validates workspace separation before any backup write, and Windows storage
+checks canonical paths from held handles. Invalid, exceptional, or cancelled validation refuses backup.
+Independent safety/UI/release reviews found no remaining blocker within the reviewed unsigned scope.
+Dependency audit reported no known vulnerable packages from the configured NuGet source.
+
+Execution still requires current capacity evidence, resolved choices, an external safety workspace,
+and explicit confirmation. Replace requires verified backup. Independent verification and guarded
+recovery remain active; incomplete or uncertain evidence is never reported as success.
+These controls and tests do not establish absence of every possible defect.
+
+## Explicit exclusions and limits
+
+The following are outside the completed member-edition contract, not remaining delivery work:
+
+- Paid Authenticode signing and optional Cloud HSM production validation.
+- Windows 10, other platforms, automatic launcher integration, and mod/loader compatibility analysis.
+- Merge, automatic rollback/resume, report-file export, and exact NTFS metadata cloning.
+- A guarantee of warning-free SmartScreen startup or acceptance under every organisation policy.
+- Certification on a fresh physical Windows 11 machine and exhaustive visual checking of every shell icon surface.
+
+The actual local validation host was Windows 11 Home x64 `10.0.26300`; hosted checks used Windows
+runners. No fresh physical-machine certification is claimed. The local install test preserved existing
+registration and refused destructive reuse; clean install/uninstall evidence comes from the hosted job.
+
+The measured 256 MiB migration used 104 MiB private memory before, 145 MiB after, and 180 MiB peak
+working set on the local host. These are observations, not universal memory limits.
+
+The optional signed-mode path is outside the accepted release. Its production credentials and
+child-process isolation are not claimed to have been validated by the unsigned run.
