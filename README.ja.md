@@ -18,7 +18,17 @@ MODパックや起動構成を変更するときに、旧Minecraftインスタ�
 
 起動時は日本語です。画面上部で**日本語 / English**と、**Windowsに合わせる / ライト / ダーク**を切り替えられます。言語とテーマの選択は起動中のみ保持します。
 
-未署名版のため、Windowsに「不明な発行元」やSmartScreenの警告が表示される場合があります。信頼する[GitHub Release](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0)とチェックサムを確認してください。ハッシュは配布内容の一致を確認するもので、発行元の署名ではありません。配布元が不明な場合やハッシュが一致しない場合は実行を中止してください。セキュリティ機能の無効化は不要です。
+未署名版のため、Windows初回起動時に「WindowsによってPCが保護されました」（Microsoft Defender SmartScreen）や「不明な発行元」の警告が表示される場合があります:
+1. 警告画面内の**「詳細情報」**をクリックします。
+2. アプリ名を確認し、**「実行」**ボタンをクリックします。
+
+実行前にファイルの完全性を確認する場合は、PowerShellでSHA-256ハッシュ値を照合できます:
+
+```powershell
+Get-FileHash .\MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe -Algorithm SHA256
+```
+
+出力結果を [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) と比較してください。ハッシュが一致しない場合や配布元が不明な場合は実行を中止してください。セキュリティ機能の無効化は不要です。
 
 ## 移行手順
 
