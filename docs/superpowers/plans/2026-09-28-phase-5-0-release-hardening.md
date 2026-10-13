@@ -1,5 +1,10 @@
 # Phase 5.0 Release Hardening implementation plan
 
+**Historical plan — closed for the unsigned v1.0.0 member edition.** Phase 5.0 and Phase 5.1
+are complete; see the [published release validation](../../release-validation.md).
+The original decisions and task list below record the earlier planning context, not an active backlog.
+The current version is 1.0.0 and paid production signing is outside its completion scope.
+
 The approved Phase 5.0 brief turns the existing Windows application into a reproducible release candidate without publishing v1.0.0.
 
 ## Decisions

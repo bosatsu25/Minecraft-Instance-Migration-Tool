@@ -7,12 +7,16 @@ edition. Unsigned does not mean signed, trusted by SmartScreen, or immune to org
 
 ## Completion criteria
 
+**v1.0.0: DONE.** The unsigned member edition has been implemented, validated, and
+[publicly released](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0).
+Phase 5.0 and Phase 5.1 are closed for this edition; no required release task remains.
+
 Member distribution is ready when the current source builds without warnings, safety tests pass,
 and the actual ZIP/installed EXE completes owned-fixture migration with independent verification.
 Packaging must include runtime files, licenses, the member guide, and matching checksums; exclude
 source/test/private files; and pass install, launch, reinstall, and uninstall checks.
 Paid signing, launcher integration, Windows 10 support, Merge, automatic resume, and report export
-are separate work and are not prerequisites for the stated Windows 11 member workflow.
+are outside this release scope and are not pending tasks for the stated Windows 11 member workflow.
 See [release validation](release-validation.md) for actual results and their limits.
 
 ## One existing packaging pipeline
@@ -54,7 +58,7 @@ match the central version, including unsigned tags.
 `release-package` depends on core/UI verification and the release-mode gate. The draft-release
 job downloads the same accurately labeled artifact and adds its actual signing mode to the notes.
 A version tag creates a **draft** only. Publishing, merging, and creating tags remain human gates.
-No tag or public release is required to distribute an already verified local member package.
+The v1.0.0 publication gate was authorized and completed; future tags/publications still require authorization.
 README-only changes remain excluded from CI.
 
 ## Optional signed edition
@@ -68,7 +72,8 @@ chooses `signed`. Its private key stays outside the repository. Configure the pr
   (the thumbprint may also be an environment secret).
 
 Missing signed-mode configuration or signature failure aborts that mode; it never silently
-downgrades to unsigned. The app and installer are verified before final checksums, temporary client
-authentication material is removed, and credentials are cleared before app smoke tests.
-Self-signing is not accepted as evidence. This optional mode has not been production validated.
-It is not required for distributing the unsigned member edition.
+downgrades to unsigned. The app and installer are verified before final checksums. Workflow cleanup
+removes temporary client authentication material after the build; isolation of cloud-signing credentials
+from build-time application smoke launches has not been validated by the unsigned release.
+Self-signing is not accepted as evidence. This optional mode has not been production validated and
+is outside the completed member-edition scope.

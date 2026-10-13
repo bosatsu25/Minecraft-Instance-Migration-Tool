@@ -41,8 +41,9 @@ change or a new Preview clears the previous report from the UI.
 Phase 4.4 keeps the report in memory and does not write or export a report file. This avoids automatic
 writes to user-selected locations and avoids silently choosing collision or overwrite behavior.
 
-A later explicit export feature must cross an Application port and define all of the following before an
-Infrastructure adapter is added:
+Report-file export is outside the completed v1.0.0 member-edition scope. It is not a remaining release
+task. If separately requested, an export feature must cross an Application port and define all of the
+following before an Infrastructure adapter is added:
 
 - user-initiated destination selection or an explicitly owned report directory;
 - a versioned, path-free schema;
