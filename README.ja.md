@@ -1,528 +1,97 @@
 # Minecraft Instance Migration Tool
 
-[English](README.md) · [リリース一覧](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases) · [導入ガイド](docs/install.md) · [日本語メンバー用ガイド](docs/member-guide.ja.txt)
+[English](README.md)
 
-MODパックや起動構成を変えるとき、Minecraftの旧インスタンスから新インスタンスへ**必要なユーザーデータを選んで安全に移行する**、無料の非公式Windowsデスクトップアプリです。
+MODパックや起動構成を変更するときに、旧Minecraftインスタンスから新しいインスタンスへ、選んだユーザーデータを移行するWindowsアプリです。
 
-**最新公開版：[v1.0.0](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0)（2026年10月9日）。** 配布対象は**Windows 11 x64・未署名コミュニティ版**。インストーラーとZIPには.NETランタイムが同梱されており、利用者が.NET・Visual Studio・Python・有料サービスを別途導入する必要はありません。
+**v1.0.0は完成・公開済みです。** 無料の未署名コミュニティ版として、**Windows 11 x64**向けの実装・必須検証・メンバー配布まで完了しています。現行リリースのスコープに未完了タスクはありません。
 
-## v1.0.0をダウンロード
+## ダウンロードと起動
 
-| ファイル | 使いかた | ダウンロード |
-| --- | --- | --- |
-| インストーラー | 初回だけ導入し、以降はスタートメニューから起動 | [Windows x64 setup.exe](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe) |
-| ZIP版 | **ZIP全体を展開**して`MinecraftInstanceMigrationTool.exe`を起動 | [Windows x64 ZIP](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64.zip) |
-| チェックサム | 信頼できる配布元の値と照合 | [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) |
+| 配布ファイル | 使い方 |
+| --- | --- |
+| [インストール版](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe) | setupを最初に実行し、導入後はスタートメニューからアプリを起動します。管理者権限は不要です。 |
+| [ZIP版](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64.zip) | ZIP全体を展開し、中の `MinecraftInstanceMigrationTool.exe` を起動します。他の展開ファイルも一緒に保管してください。 |
+| [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) | ダウンロードした配布ファイルのSHA-256を照合するためのチェックサムです。 |
 
-両パッケージに`START-HERE.ja.txt`、ライセンス、サードパーティ通知、.NETランタイムを同梱しています。インストールはユーザー単位で、通常は管理者権限が不要です。ZIP内のEXEだけを抜き出しても起動できません。
+どちらにも.NETランタイム、ライセンス、操作ガイド `START-HERE.ja.txt` を同梱しています。メンバーによる.NET・Visual Studio・Pythonの追加導入や、有料サービスの契約は不要です。
 
-**未署名版の注意：** 「不明な発行元」やSmartScreenの警告が出る場合があります。信頼できる配布元と`SHA256SUMS.txt`を確認してください。SHA-256一致は**配布されたチェックサムと内容が一致すること**の確認であり、発行元の身元を示す署名ではありません。Windowsのセキュリティ機能を無効化せず、不明なファイルは実行せずに配布元へ確認してください。
+起動時は日本語です。画面上部で**日本語 / English**と、**Windowsに合わせる / ライト / ダーク**を切り替えられます。言語とテーマの選択は起動中のみ保持します。
 
-## はじめかた
-
-1. Minecraftとランチャーを終了し、重要なデータは別途バックアップします。
-2. インストールするかZIP全体を展開して起動します。上部で日本語・英語とWindows設定・ライト・ダークを選べます（設定は起動中のみ有効）。
-3. **移行元**（旧）と**移行先**（新）を指定します。`options.txt`や`config`を直下に持つ既存のゲーム用フォルダを選び、同じ場所や親子関係の場所は避けます。
-4. **移行内容を調べる／Preview**から必要な項目を選びます。おすすめ設定では`saves`（ワールド）と`screenshots`がOFFなので、必要に応じて含めます。
-5. 移行先と衝突する項目は**Skip（スキップ）**か**Replace（置換）**を指定して選択を確定します。Replaceは**Merge（統合）ではありません**。
-6. 両インスタンスの外に**バックアップ・記録の保存先**を選び、空き容量を確認します。
-7. 内容を確認して**移行を実行**し、**移行結果／Report**で`Completed`と内容検証の成功を確認します。
-8. 新インスタンスの動作確認が済むまでは、別途バックアップと記録を保持してください。
-
-詳細な画面操作は[導入と操作](docs/install.md)と[日本語メンバー用ガイド](docs/member-guide.ja.txt)を参照してください。
-
-## 主な機能と制約
-
-- 移行候補11項目：`options.txt`、`config`、`resourcepacks`、`shaderpacks`、`schematics`、`saves`、`screenshots`、`XaeroWaypoints`、`XaeroWorldMap`、`itemscroller`、`g4mespeed`。
-- 読み取り専用Inspector/Preview、Include/Exclude・おすすめ設定・全選択/全解除、Skip/Replace、容量事前確認、Replace前の検証済みバックアップ、永続的な実行・復旧記録、独立検証、読み取り専用Report。
-- バックエンドが安全と判断した場合だけ、明示的に確認してfingerprint-guarded rollbackを実行できます。**自動rollbackや復旧の自動再開はありません**。
-- `hanemod-client.json`は名前の大小文字を区別せず対象フォルダの全階層で除外。Replace時も移行先の既存除外ファイルを残します。
-- ランチャー自動検出、`mods`移行、MOD・ローダー・Minecraftバージョン互換性判定、Merge、Report出力、NTFS完全クローン、Windows 10対応は保証しません。**安全にコピーできてもゲーム上の互換性は保証されません。**
-
-[ModPackTransferとの互換性比較](docs/modpacktransfer-compatibility.md)、[安全設計](docs/architecture.md)も参照してください。
-
-## v1.0.0の検証結果
-
-公開コミット[`2faebe8`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/commit/2faebe8be3c5fc382b91f046a11eb0eed1f81886)の[2026年10月9日GitHub Actions](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083931)が成功しました。
-
-- **通常テスト458/458件成功**（Domain 110、Application 136、Infrastructure 131、App 81）。
-- **WPF画面テスト10/10件成功**。配布パッケージの画面テストも成功しています。
-- Releaseビルドは**警告0・エラー0**。ZIP・インストーラー、SHA-256照合、.NETランタイム同梱での起動、インストール・再インストール・アンインストールの検証も成功。
-- 公開版は**unsigned-community（未署名コミュニティ版）**です。Authenticode署名は別途設定する任意のモードであり、配布ファイルを署名済みとは扱いません。
-
-[公式リリース](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0)、[配布手順](docs/release.md)、[検証チェックリスト](docs/release-validation.md)（過去の記録と残る手動確認を含む）を参照してください。
-
-## 現在の実装範囲
-
-バックエンドの実行フローは次の状態まで実装されています。
-
-```text
-Inspect
-  ↓
-Plan
-  ↓
-Preview / Dry Run
-  ↓
-Capacity Preflight
-  ↓
-Backup Preflight
-  ↓
-Backup Workspace Safety
-  ↓
-Backup IO
-  ↓
-Backup Revalidation
-  ↓
-Execution Workspace Safety
-  ↓
-Durable Execution Journal
-  ↓
-Live Revalidation
-  ↓
-Copy / Replace
-  ↓
-Independent Post-write Verification
-  ↓
-Durable Applied / Failed evidence
-```
-
-検証失敗後の rollback 側も実装済みです。
-
-```text
-Execution evidence
-  ↓
-RollbackPlan
-  ↓
-Backup Revalidation（Replace のみ）
-  ↓
-Durable Rollback Started
-  ↓
-Fingerprint-guarded Rollback IO
-  ↓
-Applied / GuardRejected / Failed
-  ↓
-Durable Rollback Attempt evidence
-```
-
-プロセス停止後に rollback journal が `Started` だけ残っている場合は
-`Uncertain` として復旧し、成功・失敗・再実行可能を推測しません。
-Phase 3.8 は **復旧診断を永続化する段階**であり、自動 resume は実装していません。
-
-### Phase 4.0 Application workflow / session
-
-Phase 4.0 では、既存の use case 群を接続する Application 所有の workflow 境界を追加しました。
-product-level な session 遷移は `MigrationWorkflow` が管理し、
-呼び出し側は `MigrationWorkflowSession` の evidence を読み取れますが、
-public API から任意の state を構築したり state / evidence setter を変更したりはできません。
-
-```text
-SelectRoots
-  ↓
-Inspect
-  ↓
-ConfigurePlan
-  ↓
-Preview
-  ↓
-ReadyForBackup
-  ↓
-BackupReady
-  ↓
-ReadyForExecution
-  ↓
-Executing
-  ↓
-Completed / Cancelled / Blocked / RecoveryRequired
-```
-
-独立監査後の Phase 4.0 では、次を固定しています。
-
-- root を選び直すと以前の plan / backup / execution evidence を持ち越さず fresh state へ戻る
-- selection / conflict 入力は defensive copy する
-- plan を再設定すると downstream の Preview / Backup / Execution evidence を破棄する
-- `NeedsDecision` など Ready でない Preview は backup へ進めない
-- `BackupPlanStatus.NotRequired` は backup path を捏造せず、backup IO も呼ばずに進行できる
-- Replace 用の実 backup が必要な場合だけ backup parent を必須にする
-- Execute 前には journal parent を必須にする
-- execution から例外や cancellation exception が漏れた場合は保守的に `RecoveryRequired` とする
-
-Phase 4.0 自体では WPF UI や filesystem adapter を追加していませんでした。
-Phase 4.1 では selection と Skip / Replace conflict 編集を接続し、Phase 4.2 では確認付き実行を接続しました。
-
-## Phase 4.1 selection / conflict 編集
-
-Migration Preview を Phase 4.0 の workflow に接続し、Recommended を初期値にしつつ各候補を Include / Exclude できるようにしました。
-現在の destination conflict には、Domain ですでに定義済みの `Skip` / `Replace` だけを明示的に選べます。Merge はまだありません。
-編集内容は **Apply choices** を押すまで pending とし、既存 inspection evidence から plan / preview を再構築します。choice 編集だけでは再 inspection も filesystem write も行いません。
-Source / Destination を変更すると以前の choice/session は破棄し、**Reset Recommended** で既定 preset に戻せます。
-
-## Phase 4.2 確認付き実行
-
-Ready な Previewは、pending choiceをすべてApplyし、Safety workspaceを選択した場合だけ実行できます。
-Safety workspaceにはdurable execution journalと、Replace時に必要な検証済みbackup artifactを保存します。
-filesystem writeの前に専用確認画面でCopy / Replace / Skip件数、Backup要否、Source、Destinationを表示します。
-
-ViewModelは既存`IMigrationWorkflow`をPrepare Backup、Backup、Prepare Execution、Executeの順に進めます。
-Copy-only planではworkflowの`NotRequired` backup resultを使い、backup IOを呼びません。
-UIはworkflow evidenceから`Completed`、`Blocked`、`Cancelled`、`RecoveryRequired`を表示します。
-`RecoveryRequired`では入力編集と再Executeを禁止します。
-
-## Phase 4.3 Recovery 診断と guarded rollback
-
-Execute が `RecoveryRequired` を返すと、Application が durable execution journal を再読込し、
-必要な Replace backup を再検証して、既存 Domain の `RollbackPlan` を生成します。UI は journal
-を独自解釈せず、Applied / Failed / Uncertain の typed evidence と、rollback可能・blocked・
-manual recovery required の区別を表示します。
-
-Rollback は自動開始しません。backend が Ready と判定した plan だけを有効にし、
-Delete-created / Restore-backup 件数を示す専用確認画面を必須にします。既存 executor は
-destructive mutation より先に durable Started を保存します。UI は attempt evidence を
-Recovered、GuardRejected、Failed、Uncertain として表示します。GuardRejected は現在内容が
-migration直後のfingerprintと一致しないため変更しなかった状態です。Uncertainは再実行可能と
-解釈せず、automatic resumeは引き続き未実装です。
-
-## Phase 4.4 読み取り専用 Migration Report
-
-Application は既存の Preview、Backup、Execution、Verification、Recovery、Rollback evidence を
-typed report へ投影します。Completed、Cancelled、Blocked、RecoveryRequired、Recovered、
-GuardRejected、Failed、Uncertain を区別し、workflow state の変更や Execute / Rollback の
-許可には使用しません。不足・矛盾した evidence は成功結果を捏造せず、report unavailable
-として fail closed に扱います。
-
-Report tab には action 件数、backup outcome、verification outcome を表示し、recovery evidence
-がある場合だけ recovery 詳細を表示します。Report model は filesystem path と raw exception
-message を保持しません。Phase 4.4 は memory 内表示までとし、自動保存とユーザー export は、
-owned destination、collision policy、partial-write 対策を定義する将来フェーズへ残します。
-詳細は [report](docs/report.md) を参照してください。
-
-## Phase 4.5 Capacity / Free-space Preflight
-
-Backup や移行書込みを始める前に、Application が Copy / Replace の source logical bytes と、
-Replace で backup する現在の destination bytes を評価します。Infrastructure は既存の
-handle-relative / no-follow Windows traversal で計測し、canonical volume identity と空き容量も
-取得します。Destination と safety workspace が同じ物理 volume なら、SUBST 等の alias も含めて
-書込みと backup の必要量を合算します。
-
-見積りには logical bytes の 5%、最小 64 MiB、最大 1 GiB の bounded reserve を加えます。
-計測不能、unsafe tree、不正値、overflow、cancel は Ready になりません。root、choice、Preview、
-safety workspace を変更すると古い結果を破棄し、現在の Preview と workspace に対する Ready 結果が
-なければ Execute は無効です。これは明白な容量不足を事前検出するもので、実行時の live validation や
-disk-full を含む IO failure 処理は引き続き必要です。詳細は
-[capacity preflight](docs/capacity-preflight.md) を参照してください。
-
-## Phase 4.6 ModPackTransfer compatibility closure
-
-Phase 4.6 では参照元 `TaichiServer/ModPackTransfer` の
-commit `e174cdac8229f3e061175a36121d55db01961452` を実コードから監査し、
-ユーザー操作・migration に関係する behavior 18件を追跡可能な compatibility matrix に整理しました。
-`Missing` は0件です。
-
-旧版の `hanemod-client.json` 除外は、Domain が所有する明示的な migration-content rule として実装しました。
-directory candidate 配下の全階層で basename を大文字小文字を区別せず判定し、Copy、Replace時の保持、
-Backup、Rollback restore、独立 verification / fingerprint、Capacity 計測、Preview、Report で同じruleを
-一貫して利用します。似た名前のfileまで誤って除外しません。
-
-安全性を弱める旧版behaviorはそのまま再現せず、より安全なequivalentへ置き換えています。
-無条件overwriteは明示的な Skip / Replace、単純なrecursive copyはhandle-relative no-follow traversalとなり、
-Replaceでは verified Backup、live revalidation、durable journal、独立verification、
-guarded rollback、capacity gateを維持します。
-
-詳細は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md) を参照してください。
-
-## Phase 5.0 Release Hardening
-
-**2026年10月9日、未署名コミュニティ版v1.0.0の公開まで完了。** Windows 11 x64向け.NET 10 self-containedアプリをportable ZIPとユーザー単位のInno Setupインストーラーで配布しています。[公開タグのCI](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083931)でversion情報、SHA-256、インストール・起動・再インストール・アンインストール、配布版UIテストを検証済みです。
-
-About画面にバージョンを表示し、最終アイコンを同梱しています。single-file、trimming、NativeAOTは未採用です。Cloud HSMによるAuthenticode署名は任意の別モードであり、公開した**未署名**v1.0.0には適用していません。追加の手動・別環境の確認項目は[配布検証記録](docs/release-validation.md)を参照してください。
-
-## UI で現在できること
-
-### Inspector
-
-任意名のローカルフォルダを選択し、直下の既知 11 項目を読み取り専用で観測します。
-
-- `options.txt`
-- `config`
-- `resourcepacks`
-- `shaderpacks`
-- `schematics`
-- `saves`
-- `screenshots`
-- `XaeroWaypoints`
-- `XaeroWorldMap`
-- `itemscroller`
-- `g4mespeed`
-
-期待 kind と実際の state を分離して表示します。
-Missing / Inaccessible / Unavailable / ReparsePoint などを区別し、
-junction / symlink / reparse point は追跡しません。
-
-### Migration Preview / Dry Run
-
-Source / Destination を読み取り専用で再観測し、Recommended preset の MigrationPlan を表示します。
-
-Recommended では `saves` と `screenshots` は既定 OFF です。
-既存 destination conflict は UI 上では `NeedsDecision` のまま表示されます。
-Preview UI から Skip / Replace を設定し、未解決状態へ戻すこともできます。選択内容は明示的に
-Apply したときだけ、root を再 inspection せず plan / preview へ反映されます。
-
-Previewの生成と編集はmetadata-onlyです。実行は明示的な確認後にのみ開始し、既存Application workflowが
-live stateを再検証してからwriteします。
-
-## 安全設計
-
-現在の実装は、単純な再帰コピーではなく、失敗時に状態を証明できる migration engine を目指しています。
-
-### Windows filesystem
-
-- ローカルドライブの絶対パスのみを対象
-- handle-relative traversal
-- retained parent handles
-- no-follow reparse policy
-- nested junction / symlink / reparse point を fail closed
-- lexical root overlap と canonical handle path の両方を検査
-- SUBST 等の物理 alias を考慮
-- Copy は create-only
-- Replace は backup と live state を再検証してから実行
-- user path を untrusted input として扱う
-
-### Backup
-
-Replace 対象だけを事前 backup します。
-
-- owned backup root
-- owner marker
-- version 付き completion manifest
-- planned top-level membership の検証
-- tree fingerprint の再計算
-- nested reparse rejection
-- completed backup の read-only revalidation
-- failed / cancelled backup を recovery evidence として扱わない
-
-Backup は完全な NTFS clone ではありません。
-ACL、alternate data streams、完全な timestamp / metadata fidelity は保証していません。
-
-### Execution journal
-
-実 write の前に `Started` を durable に保存し、
-mutation と独立 verifier が成功した後だけ `Applied` を保存します。
-
-```text
-Live Revalidation
-  ↓
-Backup Revalidation（Replace）
-  ↓
-durable Started
-  ↓
-single-entry mutation
-  ↓
-independent verification
-  ↓
-durable Applied
-```
-
-JSONL record は SHA-256 checksum と previous-checksum chain を持ち、
-acknowledged record は `Flush(flushToDisk: true)` 後にのみ成功扱いになります。
-
-unterminated final record は torn tail として扱えますが、
-newline 済みの malformed / checksum-invalid / state-invalid record は fail closed です。
-
-### Independent verification
-
-mutation の成功フラグだけを信用せず、
-
-```text
-source fingerprint #1
-destination fingerprint
-source fingerprint #2
-```
-
-を比較します。
-
-source が途中で変化した場合は `SourceChanged`、
-stable source と destination が一致しない場合は `VerificationMismatch` になります。
-
-fingerprint は path を含まず、相対 tree 構造、通常 file stream の bytes、
-file / directory count、total bytes、SHA-256 を使用します。
-
-### Guarded rollback
-
-rollback は execution journal の post-write fingerprint を mandatory guard として使います。
-
-- Copy: 現在 destination が execution 時 fingerprint と一致するときだけ削除
-- Replace: backup を再検証し、現在 destination が fingerprint と一致するときだけ restore
-- destination / backup の nested tree は handle で保持したまま guard と mutation を行う
-- migration 後にユーザーや別プロセスが変更したデータは自動で削除・上書きしない
-- destructive rollback 開始後の失敗は `RecoveryRequired`
-
-### Durable rollback-attempt journal
-
-Phase 3.8 では rollback 自体の証拠も別 journal に保存します。
-
-```text
-NotStarted
-   ↓
-durable Started
-   ↓
-guarded rollback IO
-   ↓
-Applied / GuardRejected / Failed
-```
-
-`Started` の後に terminal record が無ければ再読込時は `Uncertain` です。
-
-rollback journal は exact `RollbackPlan` に binding され、
-order、name、expected kind、execution operation、rollback action、
-post-write fingerprint を検証します。
-
-未知 JSON property、重複 property、必須 field 欠落、checksum / chain / order 不整合は拒否します。
-entry name は single Windows name として検証され、絶対パスや path fragment を journal に保存しません。
-
-checksum は accidental corruption の検出用であり、
-journal 全体を書き換えて checksum chain を再計算できる攻撃者に対する authentication ではありません。
-
-## アーキテクチャ
-
-```text
-App (WPF)
-   ↓
-Application
-   ↓
-Domain
-
-Infrastructure
-   ↑
-Application ports
-```
-
-- **Domain** — 観測モデル、MigrationPlan、選択 / conflict policy、backup / execution / rollback policy
-- **Application** — use case、orchestration、外部 effect 用 port
-- **Infrastructure** — Windows filesystem、backup、journal、mutation、verification、rollback adapter
-- **App** — WPF / MVVM、Inspector / Preview / selection / conflict / Execute / Recovery Diagnosis / Guarded Rollback / Migration Report UI、composition root
-- **Tests** — Domain / Application / Infrastructure / App / FlaUI UI smoke
-
-依存は内向きです。
-Application / Domain は Infrastructure や UI を参照しません。
-
-採用技術:
-
-- C#
-- .NET 10
-- WPF
-- MVVM
-- System.IO / Windows native filesystem APIs
-- System.Text.Json
-- xUnit v3
-- FlaUI
-- GitHub Actions
-
-production code では不要な DI / MVVM / logging framework を追加せず、
-BCL と明示的な port / adapter を中心に構成しています。
-
-詳細は [architecture](docs/architecture.md) を参照してください。
-
-## 公開済みv1.0.0パッケージ
-
-**[GitHub Releasesのv1.0.0](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/tag/v1.0.0)で一般公開済み**です。
-
-- [`MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe) — インストールしてスタートメニューから起動。
-- [`MinecraftInstanceMigrationTool-1.0.0-win-x64.zip`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/MinecraftInstanceMigrationTool-1.0.0-win-x64.zip) — 全体を展開して起動。
-- [`SHA256SUMS.txt`](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) — 公開ファイルの照合用。
-
-検証方法、バージョン更新、未署名版の注意事項は[導入ガイド](docs/install.md)と[配布手順](docs/release.md)を参照。本ツールは非公式コミュニティ製品で、Mojang Studios / Microsoftとは提携していません。
-
-## 現在未実装のもの
-
-公開v1.0.0の機能範囲には次を含めません。
-
-- Reportの永続化・ユーザー操作によるエクスポート
-- 自動rollback・復旧処理の自動再開
-- 既存データのMerge（統合）
-- Minecraft / MOD / ローダー互換性判定とランチャー自動検出
-- NTFSの完全クローンとWindows 10サポート
-- 公開済みの署名付きバイナリ（今回のv1.0.0は意図的に未署名）
-- [配布検証記録](docs/release-validation.md)に残る別環境・手動確認項目
-
-特に**「コピーできる」ことと「新インスタンスで互換性がある」ことは別です。**
-
-## 開発環境
-
-Windows と [global.json](global.json) 指定の .NET 10 SDK
-（10.0.401、同じ feature band の最新 patch を許容）が必要です。
+未署名版です。ダウンロードしたファイルを実行する前に、PowerShellでSHA-256ハッシュ値を確認してください:
 
 ```powershell
-dotnet restore
-dotnet build --configuration Release --no-restore
-dotnet run --project src/MinecraftInstanceMigration.App --configuration Release --no-build
+Get-FileHash .\MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe -Algorithm SHA256
 ```
 
-ライブラリは `net10.0`、WPF host は `net10.0-windows` です。
-依存 restore には NuGet 接続が必要ですが、アプリ自体に network 機能はありません。
+出力結果を [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) と比較してください。一致すれば、手元のファイルが公開されたものと同一で、破損や差し替えがないことを確認できます。チェックサムは同じリリースに置かれているため、誰がビルドしたかの証明にはなりません。ハッシュが一致しない場合や配布元が不明な場合は実行しないでください。
 
-## 検証
+その後、Windows初回起動時に「WindowsによってPCが保護されました」（Microsoft Defender SmartScreen）や「不明な発行元」の警告が表示される場合があります:
+1. 警告画面内の**「詳細情報」**をクリックします。
+2. アプリ名を確認し、**「実行」**ボタンをクリックします。
 
-通常の deterministic gate:
+セキュリティ機能の無効化は不要です。
+
+## 移行手順
+
+1. Minecraftとランチャーを終了し、重要なデータの別コピーを保管します。
+2. **移行元**に古いゲーム用フォルダー、**移行先**に新しいゲーム用フォルダーを選びます。`options.txt` や `config` が直下にある、既存の別々のフォルダーを指定してください。
+3. **① 移行内容を調べる**を押し、一覧を確認します。この操作ではファイルを変更しません。
+4. 移す項目を選びます。移行先に同じ項目がある場合は**スキップ / 置換**を決め、**選択を確定**します。すべて対象・すべて対象外・おすすめの操作は即時適用されます。
+5. 両ゲーム用フォルダーの外側にある**バックアップ・記録の保存先**を選び、**③ 空き容量を確認**します。
+6. **④ 移行を実行**で確認画面を読み、移行を開始します。**⑤ 移行結果**で「完了」と内容確認の成功を確認してから、新しいインスタンスを起動してください。
+
+おすすめ設定では `saves` と `screenshots` は対象外です。ワールドやスクリーンショットを移す場合は対象に追加してください。置換は既存項目を先にバックアップしてから置き換える操作で、フォルダー内のデータを統合する操作ではありません。
+
+新しいインスタンスの確認が済むまで、バックアップ・記録の保存先を保管してください。失敗や結果不明の場合は、両インスタンスと復旧記録を保持し、アプリが復旧可能と判定した場合に確認付きの復旧を使用します。
+
+詳しくは[メンバー用ガイド](docs/member-guide.ja.txt)と[導入・操作ガイド](docs/install.md)を参照してください。
+
+## 機能と安全性
+
+- 日本語・英語、3種類の表示設定、次にすることを示す操作ガイド。
+- 読み取り専用の調査・プレビュー、項目選択、既存項目への操作の明示的な決定。
+- 空き容量の確認、置換前の検証済みバックアップ、書き込み前の最終確認、移行後の内容確認。
+- 操作記録に基づく移行結果の表示と、確認付きの復旧。
+- 大きなファイルも分割してコピー・検証し、ファイル全体をメモリに読み込みません。
+- ローカルフォルダーの範囲確認とドライブ別名の検査。未対応のリンクや不明な状態では処理を止めます。
+- テレメトリー、外部サービス、自動再実行・自動復旧はありません。
+
+移行候補は次の11項目です。
+
+`options.txt`、`config`、`resourcepacks`、`shaderpacks`、`schematics`、`saves`、`screenshots`、`XaeroWaypoints`、`XaeroWorldMap`、`itemscroller`、`g4mespeed`。
+
+`hanemod-client.json` という名前のファイルは、大文字小文字を区別せず、対象フォルダー内の全階層で除外します。置換時にも、移行先にある既存の除外ファイルを保持します。
+
+## 対応範囲と完了状況
+
+v1.0.0の対象は、Windows 11 x64上で手動選択したローカルのゲーム用フォルダーと、上記の移行候補です。
+
+有料のAuthenticode署名、Windows 10や他OSへの対応、ランチャーの自動連携、Minecraft・MOD・ローダーの互換性判定、既存データの統合、復旧の自動再開、結果ファイルの出力、NTFS情報の完全複製は**現行リリースのスコープ外**です。v1.0.0の未完了タスクとしては扱いません。データを移行できても、新しいMODパックとの互換性を保証するものではありません。
+
+公開版では通常テスト458件、画面テスト10件、配布生成、導入・再導入・削除、チェックサムの検証が完了しています。[検証記録](docs/release-validation.md)、[CI](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083840)、[配布検証](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/actions/runs/37916083931)を参照してください。
+
+## 開発
+
+`global.json` で指定した.NET SDKを使用します。
 
 ```powershell
 dotnet restore
 dotnet build --configuration Release --no-restore
 dotnet test --configuration Release --no-build --no-restore
 dotnet format --verify-no-changes --no-restore
-git diff --check
-git status --short --branch
 ```
 
-WPF UI smoke:
+WPFの画面テストはWindows上で別途実行します。
 
 ```powershell
 dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release --no-restore
 ```
 
-GitHub Actions は Windows 上で build / test / format と UI smoke を実行します。
-warnings は build failure として扱います。
+変更前に[AGENTS.md](AGENTS.md)を確認してください。技術的な詳細は[アーキテクチャ](docs/architecture.md)、[移行ルール](docs/migration-rules.md)、[テスト](docs/testing.md)、[配布手順](docs/release.md)にまとめています。
 
-高リスクな filesystem write / rollback のテストは、owned temporary fixture のみを使用します。
-実 Minecraft instance を test fixture として変更しません。
+## ライセンス
 
-詳細は [testing](docs/testing.md) を参照してください。
+[MIT](LICENSE)。ランタイムなどの通知は[THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)に含まれます。
 
-## ロードマップ
-
-実装済み:
-
-1. Phase 0 — solution / layer boundary / test / CI / minimal WPF shell
-2. Phase 1 — read-only Instance Inspector
-3. Phase 2 — deterministic Migration Planner
-4. Phase 2.1 — Recommended preset + Skip / Replace conflict intent
-5. Phase 2.2 — Preview / Dry Run + WPF preview
-6. Phase 3.0 — Backup Preflight
-7. Phase 3.1 — Windows Backup IO
-8. Phase 3.2 — completed-backup revalidation
-9. Phase 3.3 — execution journal / rollback contract
-10. Phase 3.4 — durable execution journal
-11. Phase 3.5 — live revalidation + execute orchestration
-12. Phase 3.6 — Windows Copy / Replace + independent verification
-13. Phase 3.7 — guarded rollback IO
-14. Phase 3.8 — durable rollback-attempt journal
-15. Phase 4.0 — Application 所有の migration workflow / session
-16. Phase 4.1 — selection / conflict 編集 UI
-17. Phase 4.2 — 確認付き end-to-end Execute UI
-18. Phase 4.3 — Recovery Diagnosis / Guarded Rollback UI
-19. Phase 4.4 — 読み取り専用 Migration Report
-20. Phase 4.5 — Capacity / Free-space Preflight
-21. Phase 4.6 — ModPackTransfer compatibility closure
-
-次の大きな領域:
-
-22. **Phase 5.0 — Release hardening（未署名v1.0.0向けに完了）**
-23. **Phase 5.1 — メンバー配布・v1.0.0一般公開（完了。追加の手動検証は別記）**
-
-調査した旧版機能と回帰証拠は [ModPackTransfer compatibility matrix](docs/modpacktransfer-compatibility.md)、
-移行候補と rule は [migration rules](docs/migration-rules.md)、
-rollback の保証範囲は [rollback](docs/rollback.md)、
-execution evidence は [execution journal](docs/execution-journal.md) を参照してください。
-Report projection と persistence 境界は [report](docs/report.md) を参照してください。
-
-開発ルールは [AGENTS.md](AGENTS.md)、
-検証方針は [testing](docs/testing.md)、
-Evidence-driven Graph Loop は [graph loop](docs/graph-loop.md) を参照してください。
+非公式のコミュニティツールです。Mojang Studios・Microsoftとの提携はありません。
