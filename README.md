@@ -18,17 +18,19 @@ Both packages include the .NET runtime, licenses, and `START-HERE.ja.txt`. Membe
 
 The app starts in Japanese. Use the top toolbar to select **English** and **Windows setting / Light / Dark** appearance. Language and theme choices last for the current session.
 
-This edition is unsigned. Windows may show Unknown Publisher or SmartScreen warnings when first run:
-1. Click **More info**.
-2. Verify the application name, then click **Run anyway**.
-
-To verify package integrity against tampering or corrupted download, check the SHA-256 hash in PowerShell:
+This edition is unsigned. Before running a downloaded package, check its SHA-256 hash in PowerShell:
 
 ```powershell
 Get-FileHash .\MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe -Algorithm SHA256
 ```
 
-Compare the output against [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt). If the source is unclear or the checksum differs, cancel execution. Do not disable security settings.
+Compare the output against [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt). A match shows that your file is identical to the published one and was not corrupted or swapped after download. Because the checksum file is published in the same Release, it does not prove who built the package. If the source is unclear or the checksum differs, do not run the file.
+
+Windows may then show Unknown Publisher or SmartScreen warnings when first run:
+1. Click **More info**.
+2. Verify the application name, then click **Run anyway**.
+
+Do not disable security settings.
 
 ## Migrate an instance
 

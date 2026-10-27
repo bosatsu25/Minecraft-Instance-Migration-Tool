@@ -18,17 +18,19 @@ MODパックや起動構成を変更するときに、旧Minecraftインスタ�
 
 起動時は日本語です。画面上部で**日本語 / English**と、**Windowsに合わせる / ライト / ダーク**を切り替えられます。言語とテーマの選択は起動中のみ保持します。
 
-未署名版のため、Windows初回起動時に「WindowsによってPCが保護されました」（Microsoft Defender SmartScreen）や「不明な発行元」の警告が表示される場合があります:
-1. 警告画面内の**「詳細情報」**をクリックします。
-2. アプリ名を確認し、**「実行」**ボタンをクリックします。
-
-実行前にファイルの完全性を確認する場合は、PowerShellでSHA-256ハッシュ値を照合できます:
+未署名版です。ダウンロードしたファイルを実行する前に、PowerShellでSHA-256ハッシュ値を確認してください:
 
 ```powershell
 Get-FileHash .\MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe -Algorithm SHA256
 ```
 
-出力結果を [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) と比較してください。ハッシュが一致しない場合や配布元が不明な場合は実行を中止してください。セキュリティ機能の無効化は不要です。
+出力結果を [SHA256SUMS.txt](https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases/download/v1.0.0/SHA256SUMS.txt) と比較してください。一致すれば、手元のファイルが公開されたものと同一で、破損や差し替えがないことを確認できます。チェックサムは同じリリースに置かれているため、誰がビルドしたかの証明にはなりません。ハッシュが一致しない場合や配布元が不明な場合は実行しないでください。
+
+その後、Windows初回起動時に「WindowsによってPCが保護されました」（Microsoft Defender SmartScreen）や「不明な発行元」の警告が表示される場合があります:
+1. 警告画面内の**「詳細情報」**をクリックします。
+2. アプリ名を確認し、**「実行」**ボタンをクリックします。
+
+セキュリティ機能の無効化は不要です。
 
 ## 移行手順
 
