@@ -242,6 +242,35 @@ public sealed class ReleaseConfigurationTests
     }
 
     [Fact]
+    public void CloudSigningCredentialsAreClearedBeforeAnyPackagedApplicationLaunch()
+    {
+        string build = File.ReadAllText(FindRepositoryFile("eng", "release", "Build-Release.ps1"));
+        int cleanupStart = build.IndexOf("function Remove-TemporarySigningCertificate", StringComparison.Ordinal);
+        int launchStart = build.IndexOf("function Test-PublishedApplication", StringComparison.Ordinal);
+        int launchEnd = build.IndexOf("$version = Get-ReleaseVersion", StringComparison.Ordinal);
+        int lastSigning = build.LastIndexOf("Invoke-AuthenticodeSigning $", StringComparison.Ordinal);
+        int cleanupCall = build.IndexOf("Remove-TemporarySigningCertificate", lastSigning, StringComparison.Ordinal);
+        int applicationLaunch = build.IndexOf("Test-PublishedApplication $executable", StringComparison.Ordinal);
+        int packageVerification = build.IndexOf("Verify-Release.ps1", StringComparison.Ordinal);
+        int processStart = build.IndexOf("Start-Process", StringComparison.Ordinal);
+
+        Assert.True(cleanupStart >= 0);
+        Assert.True(launchStart > cleanupStart);
+        Assert.True(launchEnd > launchStart);
+        foreach (string name in new[] { "SM_API_KEY", "SM_CLIENT_CERT_PASSWORD", "SM_CLIENT_CERT_FILE", "SM_HOST" })
+        {
+            Assert.Contains($"$env:{name} = $null", build[cleanupStart..launchStart], StringComparison.Ordinal);
+        }
+
+        // Every launch inherits this process environment, so all of them must follow the cleanup.
+        Assert.True(cleanupCall > lastSigning);
+        Assert.True(applicationLaunch > cleanupCall);
+        Assert.True(packageVerification > cleanupCall);
+        Assert.InRange(processStart, launchStart, launchEnd);
+        Assert.Equal(processStart, build.LastIndexOf("Start-Process", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ReleaseDocumentationDistinguishesCommunityReadinessFromOptionalSigning()
     {
         string release = File.ReadAllText(FindRepositoryFile("docs", "release.md"));
