@@ -1,7 +1,7 @@
-using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Domain.Inspection;
+using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Inspection;
 
@@ -15,28 +15,24 @@ public sealed class WindowsInspectionFileSystem : IInspectionFileSystem
             throw new PlatformNotSupportedException("Inspection requires Windows.");
         }
 
-        if (!IsLocalPath(candidatePath))
+        // The Inspector may observe a drive root; write adapters separately reject it.
+        if (!WindowsPathRules.TryNormalizeLocal(candidatePath, allowDriveRoot: true, out string normalized))
         {
             return new Session(EntryState.InvalidPath, null, []);
         }
 
-        string driveRoot = candidatePath[..3];
-        if (new DriveInfo(driveRoot).DriveType == DriveType.Network)
-        {
-            return new Session(EntryState.InvalidPath, null, []);
-        }
-
+        string driveRoot = normalized[..3];
         List<SafeFileHandle> handles = [];
         try
         {
-            string[] components = candidatePath[3..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
+            string[] components = normalized[3..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
             for (int index = -1; index < components.Length; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 // Resolve each single name relative to its held parent, never reopen ancestors by path.
                 (SafeFileHandle handle, EntryState state) = index < 0
-                    ? OpenDriveRoot(@"\\?\" + driveRoot)
-                    : OpenChild(handles[^1], components[index], NativeMethods.ShareRead);
+                    ? OpenDriveRoot(driveRoot)
+                    : OpenChild(handles[^1], components[index], NtFileApi.ShareRead);
                 handles.Add(handle);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (state != EntryState.Directory)
@@ -68,42 +64,31 @@ public sealed class WindowsInspectionFileSystem : IInspectionFileSystem
         }
     }
 
-    private static bool IsLocalPath(string? path)
+    private static (SafeFileHandle Handle, EntryState State) OpenDriveRoot(string driveRoot)
     {
-        if (string.IsNullOrWhiteSpace(path) || path.Length < 3 || path.Length > 32000 ||
-            !char.IsAsciiLetter(path[0]) || path[1] != ':' || path[2] != '\\')
-        {
-            return false;
-        }
-
-        return path[3..].Split('\\', StringSplitOptions.RemoveEmptyEntries).All(IsSingleName);
-    }
-
-    private static bool IsSingleName(string name) =>
-        name.Length > 0 && name is not "." and not ".." &&
-        !name.EndsWith('.') && !name.EndsWith(' ') &&
-        name.All(character => character >= 32 && !"<>:\"/\\|?*".Contains(character));
-
-    private static (SafeFileHandle Handle, EntryState State) OpenDriveRoot(string path)
-    {
-        SafeFileHandle handle = NativeMethods.CreateFileW(
-            path, NativeMethods.ReadAttributes, NativeMethods.ShareRead, IntPtr.Zero,
-            NativeMethods.OpenExisting, NativeMethods.OpenReparsePoint | NativeMethods.BackupSemantics, IntPtr.Zero);
+        (SafeFileHandle handle, int error) = NtFileApi.OpenDriveRoot(driveRoot, NtFileApi.FileReadAttributes);
         if (handle.IsInvalid)
         {
-            return (handle, MapError(Marshal.GetLastWin32Error()));
+            return (handle, MapError(error));
         }
 
         return (handle, ReadState(handle));
     }
 
+    // Attribute-only access: no data, listing, write, or delete rights are ever requested.
     private static (SafeFileHandle Handle, EntryState State) OpenChild(SafeFileHandle parent, string name, uint share)
     {
-        (SafeFileHandle handle, int status) = NativeMethods.OpenRelative(parent, name, share);
+        (SafeFileHandle handle, int status) = NtFileApi.OpenRelative(
+            parent,
+            name,
+            NtFileApi.FileReadAttributes | NtFileApi.Synchronize,
+            share,
+            NtFileApi.FileOpen,
+            NtFileApi.NoFollowOpenOptions);
         if (status != 0)
         {
-            return (handle, status == unchecked((int)0xC000050B) ? EntryState.ReparsePoint :
-                MapError((int)NativeMethods.RtlNtStatusToDosError(status)));
+            return (handle, status == NtFileApi.StatusReparsePointEncountered ? EntryState.ReparsePoint :
+                MapError((int)NtFileApi.ToDosError(status)));
         }
 
         return (handle, ReadState(handle));
@@ -111,14 +96,12 @@ public sealed class WindowsInspectionFileSystem : IInspectionFileSystem
 
     private static EntryState ReadState(SafeFileHandle handle)
     {
-        if (!NativeMethods.GetFileInformationByHandleEx(
-                handle, 9, out NativeMethods.AttributeTagInfo info,
-                (uint)Marshal.SizeOf<NativeMethods.AttributeTagInfo>()))
+        int error = NtFileApi.TryReadAttributes(handle, out FileAttributes attributes);
+        if (error != 0)
         {
-            return MapError(Marshal.GetLastWin32Error());
+            return MapError(error);
         }
 
-        FileAttributes attributes = (FileAttributes)info.FileAttributes;
         return attributes.HasFlag(FileAttributes.ReparsePoint) ? EntryState.ReparsePoint :
             attributes.HasFlag(FileAttributes.Directory) ? EntryState.Directory : EntryState.File;
     }
@@ -141,7 +124,7 @@ public sealed class WindowsInspectionFileSystem : IInspectionFileSystem
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!IsSingleName(childName))
+            if (!WindowsPathRules.IsSingleName(childName))
             {
                 return EntryState.InvalidPath;
             }
@@ -152,7 +135,7 @@ public sealed class WindowsInspectionFileSystem : IInspectionFileSystem
             }
 
             (SafeFileHandle handle, EntryState state) = OpenChild(
-                root, childName, NativeMethods.ShareRead | NativeMethods.ShareWrite | NativeMethods.ShareDelete);
+                root, childName, NtFileApi.ShareRead | NtFileApi.ShareWrite | NtFileApi.ShareDelete);
             using (handle)
             {
                 cancellationToken.ThrowIfCancellationRequested();

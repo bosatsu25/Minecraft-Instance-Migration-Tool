@@ -78,7 +78,8 @@ public sealed class MigrationSelectionEntryViewModel : INotifyPropertyChanged
         PlanDisposition is
             MigrationPlanDisposition.DestinationConflict or
             MigrationPlanDisposition.SkippedDestinationConflict or
-            MigrationPlanDisposition.ReadyToReplace;
+            MigrationPlanDisposition.ReadyToReplace or
+            MigrationPlanDisposition.BlockedDestinationKindMismatch;
 
     public EntryState? SourceState { get; }
 

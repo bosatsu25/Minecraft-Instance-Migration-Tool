@@ -1,21 +1,31 @@
-using System.Buffers;
-using System.Buffers.Binary;
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Backup;
 using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Inspection;
-using MinecraftInstanceMigration.Domain.Rules;
 using MinecraftInstanceMigration.Infrastructure.Execution;
+using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Backup;
 
 public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValidationStorage
 {
-    private const int BufferSize = 128 * 1024;
+    private const string OwnerMarkerName = ".mim-backup-owner.json";
+    private const string ManifestName = "backup-manifest.json";
+
+    // The backup parent only needs to receive one new owned directory.
+    private const uint BackupParentAccess =
+        NtFileApi.FileAddFile | NtFileApi.FileAddSubdirectory | NtFileApi.FileWriteAttributes;
+
+    // Metadata must match exactly what this adapter writes; anything else is not an owned artifact.
+    private static readonly JsonSerializerOptions StrictReadOptions = new()
+    {
+        UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
+        AllowDuplicateProperties = false,
+        RespectRequiredConstructorParameters = true,
+    };
+
+    private static readonly JsonSerializerOptions ManifestWriteOptions = new() { WriteIndented = true };
 
     public Task<BackupExecutionResult> CreateBackupAsync(
         string destinationRoot,
@@ -56,26 +66,23 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
 
         if (!plan.CanStartBackup)
         {
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Invalid,
-                BackupArtifactFailureKind.InvalidPlan);
+            return InvalidArtifact(BackupArtifactFailureKind.InvalidPlan);
         }
 
-        if (!TryNormalizeLocalDirectoryPath(backupRoot, out string normalizedBackupRoot))
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(backupRoot, out string normalizedBackupRoot))
         {
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Invalid,
-                BackupArtifactFailureKind.InvalidPath);
+            return InvalidArtifact(BackupArtifactFailureKind.InvalidPath);
         }
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using HeldDirectory root = OpenDirectoryChain(normalizedBackupRoot, writableFinal: false);
+            using WindowsExecutionTree.HeldDirectory root =
+                OpenRoot(normalizedBackupRoot, WindowsExecutionTree.ReadOnlyDirectoryAccess);
 
             OwnerMarker owner = ReadJsonFile<OwnerMarker>(
                 root.Root,
-                ".mim-backup-owner.json",
+                OwnerMarkerName,
                 4096,
                 BackupArtifactFailureKind.OwnershipMarkerInvalid,
                 cancellationToken);
@@ -87,44 +94,41 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
                     "mim-backup-" + owner.ExecutionId,
                     StringComparison.OrdinalIgnoreCase))
             {
-                throw new BackupArtifactValidationException(
-                    BackupArtifactFailureKind.OwnershipMarkerInvalid);
+                throw new BackupArtifactValidationException(BackupArtifactFailureKind.OwnershipMarkerInvalid);
             }
 
             CompletedManifest manifest = ReadJsonFile<CompletedManifest>(
                 root.Root,
-                "backup-manifest.json",
+                ManifestName,
                 64 * 1024,
                 BackupArtifactFailureKind.ManifestInvalid,
                 cancellationToken);
 
             if (!CompletedManifestMatchesPlan(plan, manifest))
             {
-                throw new BackupArtifactValidationException(
-                    BackupArtifactFailureKind.ManifestInvalid);
+                throw new BackupArtifactValidationException(BackupArtifactFailureKind.ManifestInvalid);
             }
 
-            IReadOnlyList<string> actualNames = BackupNativeMethods.EnumerateNames(root.Root);
+            IReadOnlyList<string> actualNames = NtFileApi.EnumerateNames(root.Root);
             var expectedNames = new HashSet<string>(
                 plan.Entries.Select(entry => entry.Name),
                 StringComparer.OrdinalIgnoreCase)
             {
-                ".mim-backup-owner.json",
-                "backup-manifest.json",
+                OwnerMarkerName,
+                ManifestName,
             };
 
             if (actualNames.Count != expectedNames.Count ||
                 actualNames.Any(name => !expectedNames.Contains(name)))
             {
-                throw new BackupArtifactValidationException(
-                    BackupArtifactFailureKind.UnexpectedContent);
+                throw new BackupArtifactValidationException(BackupArtifactFailureKind.UnexpectedContent);
             }
 
-            TreeFingerprint actual = FingerprintPlan(root.Root, plan, cancellationToken);
+            WindowsExecutionTree.TreeFingerprint actual =
+                WindowsExecutionTree.FingerprintBackupEntries(root.Root, plan, cancellationToken);
             if (!FingerprintMatches(actual, manifest.Verification))
             {
-                throw new BackupArtifactValidationException(
-                    BackupArtifactFailureKind.VerificationMismatch);
+                throw new BackupArtifactValidationException(BackupArtifactFailureKind.VerificationMismatch);
             }
 
             return new BackupArtifactValidationResult(
@@ -133,56 +137,19 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
         }
         catch (OperationCanceledException)
         {
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Cancelled);
+            return new BackupArtifactValidationResult(BackupArtifactValidationStatus.Cancelled);
         }
         catch (BackupArtifactValidationException error)
         {
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Invalid,
-                error.Kind);
+            return InvalidArtifact(error.Kind);
         }
         catch (BackupStorageException error)
         {
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Invalid,
-                MapValidationFailure(error.Kind));
+            return InvalidArtifact(MapValidationFailure(error.Kind));
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Invalid,
-                BackupArtifactFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 5)
-        {
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Invalid,
-                BackupArtifactFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Invalid,
-                BackupArtifactFailureKind.IoFailure);
-        }
-        catch (IOException)
-        {
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Invalid,
-                BackupArtifactFailureKind.IoFailure);
-        }
-        catch (BackupNativeException error)
-        {
-            BackupArtifactFailureKind kind =
-                error.Status == BackupNativeMethods.StatusReparsePointEncountered
-                    ? BackupArtifactFailureKind.ReparsePoint
-                    : BackupNativeMethods.RtlNtStatusToDosError(error.Status) == 5
-                        ? BackupArtifactFailureKind.AccessDenied
-                        : BackupArtifactFailureKind.IoFailure;
-            return new BackupArtifactValidationResult(
-                BackupArtifactValidationStatus.Invalid,
-                kind);
+            return InvalidArtifact(MapValidationFailure(MapPayloadFailure(kind)));
         }
     }
 
@@ -205,15 +172,15 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
                 FailureKind: BackupFailureKind.InvalidPlan);
         }
 
-        if (!TryNormalizeLocalDirectoryPath(destinationRoot, out string normalizedDestination) ||
-            !TryNormalizeLocalDirectoryPath(backupParent, out string normalizedBackupParent))
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(destinationRoot, out string normalizedDestination) ||
+            !WindowsPathRules.TryNormalizeLocalDirectory(backupParent, out string normalizedBackupParent))
         {
             return new BackupExecutionResult(
                 BackupExecutionStatus.Failed,
                 FailureKind: BackupFailureKind.InvalidPath);
         }
 
-        if (IsEqualOrDescendant(normalizedBackupParent, normalizedDestination))
+        if (WindowsPathRules.IsEqualOrDescendant(normalizedBackupParent, normalizedDestination))
         {
             return new BackupExecutionResult(
                 BackupExecutionStatus.Failed,
@@ -227,13 +194,13 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            using HeldDirectory destination = OpenDirectoryChain(normalizedDestination, writableFinal: false);
-            using HeldDirectory backupParentDirectory = OpenDirectoryChain(normalizedBackupParent, writableFinal: true);
+            using WindowsExecutionTree.HeldDirectory destination =
+                OpenRoot(normalizedDestination, WindowsExecutionTree.ReadOnlyDirectoryAccess);
+            using WindowsExecutionTree.HeldDirectory backupParentDirectory =
+                OpenRoot(normalizedBackupParent, BackupParentAccess);
 
             // Drive aliases can differ lexically while naming a destination descendant.
-            if (IsEqualOrDescendant(
-                    ExecutionNativeMethods.GetCanonicalVolumePath(backupParentDirectory.Root),
-                    ExecutionNativeMethods.GetCanonicalVolumePath(destination.Root)))
+            if (WindowsExecutionTree.IsPhysicalEqualOrDescendant(backupParentDirectory.Root, destination.Root))
             {
                 return new BackupExecutionResult(
                     BackupExecutionStatus.Failed,
@@ -244,39 +211,45 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
             string backupRootName = $"mim-backup-{executionId}";
             backupRootPath = Path.Combine(normalizedBackupParent, backupRootName);
 
-            if (IsEqualOrDescendant(backupRootPath, normalizedDestination))
+            if (WindowsPathRules.IsEqualOrDescendant(backupRootPath, normalizedDestination))
             {
                 return new BackupExecutionResult(
                     BackupExecutionStatus.Failed,
                     FailureKind: BackupFailureKind.OverlappingRoots);
             }
 
-            using SafeFileHandle backupRoot = CreateDirectory(backupParentDirectory.Root, backupRootName);
+            using SafeFileHandle backupRoot =
+                WindowsExecutionTree.CreateDirectory(backupParentDirectory.Root, backupRootName);
+
+            // The ownership marker comes first so a partial root is still recognisably ours.
             WriteOwnedFile(
                 backupRoot,
-                ".mim-backup-owner.json",
+                OwnerMarkerName,
                 JsonSerializer.SerializeToUtf8Bytes(new OwnerMarker(1, executionId)),
                 cancellationToken);
 
             foreach (BackupPlanEntry entry in plan.Entries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                ValidateSingleName(entry.Name);
 
-                using OpenedNode source = OpenExistingNode(destination.Root, entry.Name);
-                bool expectedDirectory = entry.DestinationState == EntryState.Directory;
-                if (source.IsDirectory != expectedDirectory)
+                using WindowsExecutionTree.OpenedNode source =
+                    WindowsExecutionTree.OpenExistingNode(destination.Root, entry.Name);
+                if (source.IsDirectory != (entry.DestinationState == EntryState.Directory))
                 {
                     throw new BackupStorageException(BackupFailureKind.SourceChanged);
                 }
 
-                CopyNode(source, backupRoot, entry.Name, cancellationToken);
+                WindowsExecutionTree.CopyNode(source, backupRoot, entry.Name, cancellationToken);
                 entriesCopied++;
             }
 
-            TreeFingerprint sourceFirst = FingerprintPlan(destination.Root, plan, cancellationToken);
-            TreeFingerprint backup = FingerprintPlan(backupRoot, plan, cancellationToken);
-            TreeFingerprint sourceSecond = FingerprintPlan(destination.Root, plan, cancellationToken);
+            // Independent verification: source, backup, then source again.
+            WindowsExecutionTree.TreeFingerprint sourceFirst =
+                WindowsExecutionTree.FingerprintBackupEntries(destination.Root, plan, cancellationToken);
+            WindowsExecutionTree.TreeFingerprint backup =
+                WindowsExecutionTree.FingerprintBackupEntries(backupRoot, plan, cancellationToken);
+            WindowsExecutionTree.TreeFingerprint sourceSecond =
+                WindowsExecutionTree.FingerprintBackupEntries(destination.Root, plan, cancellationToken);
 
             if (!sourceFirst.Equals(sourceSecond))
             {
@@ -288,12 +261,7 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
                 throw new BackupStorageException(BackupFailureKind.VerificationFailed);
             }
 
-            var verification = new BackupVerificationSummary(
-                backup.FileCount,
-                backup.DirectoryCount,
-                backup.TotalBytes,
-                backup.Sha256);
-
+            BackupVerificationSummary verification = ToSummary(backup);
             byte[] manifestBytes = JsonSerializer.SerializeToUtf8Bytes(
                 new CompletedManifest(
                     manifest.SchemaVersion,
@@ -302,9 +270,10 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
                         entry.ExpectedKind.ToString(),
                         entry.DestinationState.ToString())).ToArray(),
                     verification),
-                new JsonSerializerOptions { WriteIndented = true });
+                ManifestWriteOptions);
 
-            WriteOwnedFile(backupRoot, "backup-manifest.json", manifestBytes, cancellationToken);
+            // Only a verified copy receives the completion manifest.
+            WriteOwnedFile(backupRoot, ManifestName, manifestBytes, cancellationToken);
 
             return new BackupExecutionResult(
                 BackupExecutionStatus.Completed,
@@ -327,50 +296,32 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
                 error.Kind,
                 entriesCopied);
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
             return new BackupExecutionResult(
                 BackupExecutionStatus.Failed,
                 backupRootPath,
-                BackupFailureKind.AccessDenied,
+                MapPayloadFailure(kind),
                 entriesCopied);
         }
-        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 5)
+    }
+
+    // An absent or non-directory root is an invalid path rather than payload drift.
+    private static WindowsExecutionTree.HeldDirectory OpenRoot(string path, uint finalAccess)
+    {
+        try
         {
-            return new BackupExecutionResult(
-                BackupExecutionStatus.Failed,
-                backupRootPath,
-                BackupFailureKind.AccessDenied,
-                entriesCopied);
+            return WindowsExecutionTree.OpenDirectoryChain(path, finalAccess);
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (FileSystemException error)
         {
-            return new BackupExecutionResult(
-                BackupExecutionStatus.Failed,
-                backupRootPath,
-                BackupFailureKind.IoFailure,
-                entriesCopied);
-        }
-        catch (IOException)
-        {
-            return new BackupExecutionResult(
-                BackupExecutionStatus.Failed,
-                backupRootPath,
-                BackupFailureKind.IoFailure,
-                entriesCopied);
-        }
-        catch (BackupNativeException error)
-        {
-            BackupFailureKind kind = error.Status == BackupNativeMethods.StatusReparsePointEncountered
-                ? BackupFailureKind.ReparsePoint
-                : BackupNativeMethods.RtlNtStatusToDosError(error.Status) == 5
-                    ? BackupFailureKind.AccessDenied
-                    : BackupFailureKind.IoFailure;
-            return new BackupExecutionResult(
-                BackupExecutionStatus.Failed,
-                backupRootPath,
-                kind,
-                entriesCopied);
+            throw new BackupStorageException(error.Kind switch
+            {
+                FileSystemFailureKind.Missing or FileSystemFailureKind.InvalidPath => BackupFailureKind.InvalidPath,
+                FileSystemFailureKind.ReparsePoint => BackupFailureKind.ReparsePoint,
+                FileSystemFailureKind.AccessDenied => BackupFailureKind.AccessDenied,
+                _ => BackupFailureKind.IoFailure,
+            });
         }
     }
 
@@ -383,12 +334,13 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        OpenedNode node;
+        WindowsExecutionTree.OpenedNode node;
         try
         {
-            node = OpenExistingNode(parent, name);
+            node = WindowsExecutionTree.OpenExistingNode(parent, name);
         }
-        catch (BackupStorageException error) when (error.Kind == BackupFailureKind.SourceChanged)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new BackupArtifactValidationException(invalidKind);
         }
@@ -422,7 +374,7 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
 
             try
             {
-                T? value = JsonSerializer.Deserialize<T>(bytes);
+                T? value = JsonSerializer.Deserialize<T>(bytes, StrictReadOptions);
                 return value ?? throw new BackupArtifactValidationException(invalidKind);
             }
             catch (JsonException)
@@ -430,6 +382,22 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
                 throw new BackupArtifactValidationException(invalidKind);
             }
         }
+    }
+
+    private static void WriteOwnedFile(
+        SafeFileHandle parent,
+        string name,
+        byte[] content,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using SafeFileHandle file = WindowsExecutionTree.CreateFile(parent, name);
+        if (content.Length > 0)
+        {
+            RandomAccess.Write(file, content, 0);
+        }
+
+        RandomAccess.FlushToDisk(file);
     }
 
     private static bool CompletedManifestMatchesPlan(BackupPlan plan, CompletedManifest manifest)
@@ -441,7 +409,7 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
             manifest.Verification.FileCount < 0 ||
             manifest.Verification.DirectoryCount < 0 ||
             manifest.Verification.TotalBytes < 0 ||
-            !IsSha256(manifest.Verification.Sha256))
+            !ChecksummedJournal.IsSha256Hex(manifest.Verification.Sha256))
         {
             return false;
         }
@@ -461,40 +429,6 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
 
         return true;
     }
-
-    private static bool FingerprintMatches(
-        TreeFingerprint actual,
-        BackupVerificationSummary expected) =>
-        actual.FileCount == expected.FileCount &&
-        actual.DirectoryCount == expected.DirectoryCount &&
-        actual.TotalBytes == expected.TotalBytes &&
-        string.Equals(actual.Sha256, expected.Sha256, StringComparison.OrdinalIgnoreCase);
-
-    private static BackupVerificationSummary ToSummary(TreeFingerprint fingerprint) =>
-        new(
-            fingerprint.FileCount,
-            fingerprint.DirectoryCount,
-            fingerprint.TotalBytes,
-            fingerprint.Sha256);
-
-    private static bool IsSha256(string? value) =>
-        value is { Length: 64 } &&
-        value.All(character =>
-            character is >= '0' and <= '9' or
-            >= 'A' and <= 'F' or
-            >= 'a' and <= 'f');
-
-    private static BackupArtifactFailureKind MapValidationFailure(BackupFailureKind kind) =>
-        kind switch
-        {
-            BackupFailureKind.InvalidPlan => BackupArtifactFailureKind.InvalidPlan,
-            BackupFailureKind.InvalidPath => BackupArtifactFailureKind.InvalidPath,
-            BackupFailureKind.ReparsePoint => BackupArtifactFailureKind.ReparsePoint,
-            BackupFailureKind.AccessDenied => BackupArtifactFailureKind.AccessDenied,
-            BackupFailureKind.SourceChanged or BackupFailureKind.VerificationFailed =>
-                BackupArtifactFailureKind.VerificationMismatch,
-            _ => BackupArtifactFailureKind.IoFailure,
-        };
 
     private static bool ManifestMatchesPlan(BackupPlan plan, BackupManifestDraft manifest)
     {
@@ -520,525 +454,43 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
         return true;
     }
 
-    private static void CopyNode(
-        OpenedNode source,
-        SafeFileHandle backupParent,
-        string name,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
+    private static bool FingerprintMatches(
+        WindowsExecutionTree.TreeFingerprint actual,
+        BackupVerificationSummary expected) =>
+        actual.FileCount == expected.FileCount &&
+        actual.DirectoryCount == expected.DirectoryCount &&
+        actual.TotalBytes == expected.TotalBytes &&
+        string.Equals(actual.Sha256, expected.Sha256, StringComparison.OrdinalIgnoreCase);
 
-        if (!source.IsDirectory &&
-            KnownMigrationContentRules.IsExcludedFileName(name))
+    private static BackupVerificationSummary ToSummary(WindowsExecutionTree.TreeFingerprint fingerprint) =>
+        new(fingerprint.FileCount, fingerprint.DirectoryCount, fingerprint.TotalBytes, fingerprint.Sha256);
+
+    // Payload that disappears or changes kind while it is being copied is source drift.
+    private static BackupFailureKind MapPayloadFailure(FileSystemFailureKind kind) =>
+        kind switch
         {
-            return;
-        }
-
-        if (source.IsDirectory)
-        {
-            using SafeFileHandle destination = CreateDirectory(backupParent, name);
-            foreach (string childName in BackupNativeMethods.EnumerateNames(source.Handle))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                ValidateSingleName(childName);
-                using OpenedNode child = OpenExistingNode(source.Handle, childName);
-                CopyNode(child, destination, childName, cancellationToken);
-            }
-
-            return;
-        }
-
-        using SafeFileHandle destinationFile = CreateFile(backupParent, name);
-        CopyFileBytes(source.Handle, destinationFile, cancellationToken);
-    }
-
-    private static void CopyFileBytes(
-        SafeFileHandle source,
-        SafeFileHandle destination,
-        CancellationToken cancellationToken)
-    {
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
-        try
-        {
-            long offset = 0;
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int read = RandomAccess.Read(source, buffer.AsSpan(0, BufferSize), offset);
-                if (read == 0)
-                {
-                    break;
-                }
-
-                RandomAccess.Write(destination, buffer.AsSpan(0, read), offset);
-                offset += read;
-            }
-
-            RandomAccess.FlushToDisk(destination);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer, clearArray: false);
-        }
-    }
-
-    private static TreeFingerprint FingerprintPlan(
-        SafeFileHandle root,
-        BackupPlan plan,
-        CancellationToken cancellationToken)
-    {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        int files = 0;
-        int directories = 0;
-        long totalBytes = 0;
-
-        foreach (BackupPlanEntry entry in plan.Entries)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            using OpenedNode node = OpenExistingNode(root, entry.Name);
-            AppendNodeFingerprint(
-                node,
-                entry.Name,
-                hash,
-                ref files,
-                ref directories,
-                ref totalBytes,
-                cancellationToken);
-        }
-
-        return new TreeFingerprint(
-            files,
-            directories,
-            totalBytes,
-            Convert.ToHexString(hash.GetHashAndReset()));
-    }
-
-    private static void AppendNodeFingerprint(
-        OpenedNode node,
-        string relativePath,
-        IncrementalHash hash,
-        ref int files,
-        ref int directories,
-        ref long totalBytes,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        AppendRecordPrefix(hash, node.IsDirectory ? (byte)1 : (byte)2, relativePath);
-
-        if (node.IsDirectory)
-        {
-            directories++;
-            foreach (string childName in BackupNativeMethods.EnumerateNames(node.Handle))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                ValidateSingleName(childName);
-                using OpenedNode child = OpenExistingNode(node.Handle, childName);
-                if (!child.IsDirectory &&
-                    KnownMigrationContentRules.IsExcludedFileName(childName))
-                {
-                    continue;
-                }
-
-                AppendNodeFingerprint(
-                    child,
-                    relativePath + "/" + childName,
-                    hash,
-                    ref files,
-                    ref directories,
-                    ref totalBytes,
-                    cancellationToken);
-            }
-
-            return;
-        }
-
-        files++;
-        long length = RandomAccess.GetLength(node.Handle);
-        totalBytes = checked(totalBytes + length);
-        Span<byte> lengthBytes = stackalloc byte[8];
-        BinaryPrimitives.WriteInt64LittleEndian(lengthBytes, length);
-        hash.AppendData(lengthBytes);
-
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
-        try
-        {
-            long offset = 0;
-            while (offset < length)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int read = RandomAccess.Read(node.Handle, buffer.AsSpan(0, BufferSize), offset);
-                if (read == 0)
-                {
-                    throw new BackupStorageException(BackupFailureKind.SourceChanged);
-                }
-
-                hash.AppendData(buffer.AsSpan(0, read));
-                offset += read;
-            }
-
-            if (RandomAccess.GetLength(node.Handle) != length)
-            {
-                throw new BackupStorageException(BackupFailureKind.SourceChanged);
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer, clearArray: false);
-        }
-    }
-
-    private static void AppendRecordPrefix(IncrementalHash hash, byte type, string relativePath)
-    {
-        Span<byte> typeBytes = stackalloc byte[1];
-        typeBytes[0] = type;
-        hash.AppendData(typeBytes);
-
-        byte[] path = Encoding.UTF8.GetBytes(relativePath);
-        Span<byte> length = stackalloc byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(length, path.Length);
-        hash.AppendData(length);
-        hash.AppendData(path);
-    }
-
-    private static OpenedNode OpenExistingNode(SafeFileHandle parent, string name)
-    {
-        ValidateSingleName(name);
-
-        (SafeFileHandle metadata, int metadataStatus) = BackupNativeMethods.OpenRelative(
-            parent,
-            name,
-            BackupNativeMethods.FileReadAttributes | BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
-            BackupNativeMethods.FileOpen,
-            BackupNativeMethods.FileOpenReparsePoint |
-            BackupNativeMethods.FileOpenNoRecall |
-            BackupNativeMethods.FileSynchronousIoNonAlert);
-
-        if (metadataStatus != 0)
-        {
-            metadata.Dispose();
-            throw MapNativeFailure(metadataStatus);
-        }
-
-        using (metadata)
-        {
-            FileAttributes attributes = BackupNativeMethods.ReadAttributes(metadata);
-            if (attributes.HasFlag(FileAttributes.ReparsePoint))
-            {
-                throw new BackupStorageException(BackupFailureKind.ReparsePoint);
-            }
-
-            bool directory = attributes.HasFlag(FileAttributes.Directory);
-            uint desiredAccess = (directory
-                ? BackupNativeMethods.FileListDirectory | BackupNativeMethods.FileTraverse
-                : BackupNativeMethods.FileReadData) |
-                BackupNativeMethods.FileReadAttributes |
-                BackupNativeMethods.Synchronize;
-            uint options = BackupNativeMethods.FileOpenReparsePoint |
-                BackupNativeMethods.FileOpenNoRecall |
-                BackupNativeMethods.FileSynchronousIoNonAlert;
-
-            (SafeFileHandle data, int status) = BackupNativeMethods.OpenRelative(
-                parent,
-                name,
-                desiredAccess,
-                BackupNativeMethods.ShareRead,
-                BackupNativeMethods.FileOpen,
-                options);
-            if (status != 0)
-            {
-                data.Dispose();
-                throw MapNativeFailure(status);
-            }
-
-            FileAttributes confirmed = BackupNativeMethods.ReadAttributes(data);
-            if (confirmed.HasFlag(FileAttributes.ReparsePoint))
-            {
-                data.Dispose();
-                throw new BackupStorageException(BackupFailureKind.ReparsePoint);
-            }
-
-            bool confirmedDirectory = confirmed.HasFlag(FileAttributes.Directory);
-            if (confirmedDirectory != directory)
-            {
-                data.Dispose();
-                throw new BackupStorageException(BackupFailureKind.SourceChanged);
-            }
-
-            return new OpenedNode(data, directory);
-        }
-    }
-
-    private static SafeFileHandle CreateDirectory(SafeFileHandle parent, string name)
-    {
-        ValidateSingleName(name);
-        (SafeFileHandle handle, int status) = BackupNativeMethods.OpenRelative(
-            parent,
-            name,
-            BackupNativeMethods.FileListDirectory |
-            BackupNativeMethods.FileAddFile |
-            BackupNativeMethods.FileAddSubdirectory |
-            BackupNativeMethods.FileTraverse |
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.FileWriteAttributes |
-            BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
-            BackupNativeMethods.FileCreate,
-            BackupNativeMethods.FileDirectoryFile |
-            BackupNativeMethods.FileSynchronousIoNonAlert);
-        if (status != 0)
-        {
-            handle.Dispose();
-            throw MapNativeFailure(status);
-        }
-
-        return handle;
-    }
-
-    private static SafeFileHandle CreateFile(SafeFileHandle parent, string name)
-    {
-        ValidateSingleName(name);
-        (SafeFileHandle handle, int status) = BackupNativeMethods.OpenRelative(
-            parent,
-            name,
-            BackupNativeMethods.FileReadData |
-            BackupNativeMethods.FileWriteData |
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.FileWriteAttributes |
-            BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
-            BackupNativeMethods.FileCreate,
-            BackupNativeMethods.FileNonDirectoryFile |
-            BackupNativeMethods.FileSynchronousIoNonAlert);
-        if (status != 0)
-        {
-            handle.Dispose();
-            throw MapNativeFailure(status);
-        }
-
-        return handle;
-    }
-
-    private static void WriteOwnedFile(
-        SafeFileHandle parent,
-        string name,
-        byte[] content,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        using SafeFileHandle file = CreateFile(parent, name);
-        if (content.Length > 0)
-        {
-            RandomAccess.Write(file, content, 0);
-        }
-
-        RandomAccess.FlushToDisk(file);
-    }
-
-    private static HeldDirectory OpenDirectoryChain(string path, bool writableFinal)
-    {
-        string driveRoot = path[..3];
-        SafeFileHandle drive = BackupNativeMethods.CreateFileW(
-            @"\\?\" + driveRoot,
-            BackupNativeMethods.FileListDirectory |
-            BackupNativeMethods.FileTraverse |
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
-            IntPtr.Zero,
-            BackupNativeMethods.OpenExisting,
-            BackupNativeMethods.BackupSemantics | BackupNativeMethods.OpenReparsePoint,
-            IntPtr.Zero);
-        if (drive.IsInvalid)
-        {
-            int error = Marshal.GetLastWin32Error();
-            drive.Dispose();
-            throw new BackupStorageException(error == 5
-                ? BackupFailureKind.AccessDenied
-                : BackupFailureKind.IoFailure);
-        }
-
-        var handles = new List<SafeFileHandle> { drive };
-        try
-        {
-            string[] components = path[3..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
-            for (int index = 0; index < components.Length; index++)
-            {
-                bool isFinal = index == components.Length - 1;
-                uint desiredAccess =
-                    BackupNativeMethods.FileListDirectory |
-                    BackupNativeMethods.FileTraverse |
-                    BackupNativeMethods.FileReadAttributes |
-                    BackupNativeMethods.Synchronize;
-                if (writableFinal && isFinal)
-                {
-                    desiredAccess |= BackupNativeMethods.FileAddFile |
-                        BackupNativeMethods.FileAddSubdirectory |
-                        BackupNativeMethods.FileWriteAttributes;
-                }
-
-                (SafeFileHandle next, int status) = BackupNativeMethods.OpenRelative(
-                    handles[^1],
-                    components[index],
-                    desiredAccess,
-                    BackupNativeMethods.ShareRead,
-                    BackupNativeMethods.FileOpen,
-                    BackupNativeMethods.FileOpenReparsePoint |
-                    BackupNativeMethods.FileOpenNoRecall |
-                    BackupNativeMethods.FileSynchronousIoNonAlert);
-                if (status != 0)
-                {
-                    next.Dispose();
-                    throw MapRootFailure(status);
-                }
-
-                FileAttributes attributes = BackupNativeMethods.ReadAttributes(next);
-                if (attributes.HasFlag(FileAttributes.ReparsePoint))
-                {
-                    next.Dispose();
-                    throw new BackupStorageException(BackupFailureKind.ReparsePoint);
-                }
-
-                handles.Add(next);
-            }
-
-            return new HeldDirectory(handles);
-        }
-        catch
-        {
-            foreach (SafeFileHandle handle in handles)
-            {
-                handle.Dispose();
-            }
-
-            throw;
-        }
-    }
-
-    private static BackupStorageException MapNativeFailure(int status)
-    {
-        if (status == BackupNativeMethods.StatusReparsePointEncountered)
-        {
-            return new BackupStorageException(BackupFailureKind.ReparsePoint);
-        }
-
-        uint error = BackupNativeMethods.RtlNtStatusToDosError(status);
-        return new BackupStorageException(error switch
-        {
-            2 or 3 => BackupFailureKind.SourceChanged,
-            5 => BackupFailureKind.AccessDenied,
+            FileSystemFailureKind.Missing or FileSystemFailureKind.Changed => BackupFailureKind.SourceChanged,
+            FileSystemFailureKind.InvalidPath => BackupFailureKind.InvalidPath,
+            FileSystemFailureKind.OverlappingRoots => BackupFailureKind.OverlappingRoots,
+            FileSystemFailureKind.ReparsePoint => BackupFailureKind.ReparsePoint,
+            FileSystemFailureKind.AccessDenied => BackupFailureKind.AccessDenied,
             _ => BackupFailureKind.IoFailure,
-        });
-    }
+        };
 
-    private static BackupStorageException MapRootFailure(int status)
-    {
-        if (status == BackupNativeMethods.StatusReparsePointEncountered)
+    private static BackupArtifactFailureKind MapValidationFailure(BackupFailureKind kind) =>
+        kind switch
         {
-            return new BackupStorageException(BackupFailureKind.ReparsePoint);
-        }
+            BackupFailureKind.InvalidPlan => BackupArtifactFailureKind.InvalidPlan,
+            BackupFailureKind.InvalidPath => BackupArtifactFailureKind.InvalidPath,
+            BackupFailureKind.ReparsePoint => BackupArtifactFailureKind.ReparsePoint,
+            BackupFailureKind.AccessDenied => BackupArtifactFailureKind.AccessDenied,
+            BackupFailureKind.SourceChanged or BackupFailureKind.VerificationFailed =>
+                BackupArtifactFailureKind.VerificationMismatch,
+            _ => BackupArtifactFailureKind.IoFailure,
+        };
 
-        uint error = BackupNativeMethods.RtlNtStatusToDosError(status);
-        return new BackupStorageException(error switch
-        {
-            2 or 3 or 123 or 161 => BackupFailureKind.InvalidPath,
-            5 => BackupFailureKind.AccessDenied,
-            _ => BackupFailureKind.IoFailure,
-        });
-    }
-
-    private static bool TryNormalizeLocalDirectoryPath(string? path, out string normalized)
-    {
-        normalized = "";
-        if (string.IsNullOrWhiteSpace(path) ||
-            path.Length < 4 ||
-            path.Length > 32000 ||
-            !char.IsAsciiLetter(path[0]) ||
-            path[1] != ':' ||
-            path[2] != '\\')
-        {
-            return false;
-        }
-
-        string[] components = path[3..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        if (components.Length == 0 || components.Any(component => !IsSingleName(component)))
-        {
-            return false;
-        }
-
-        string driveRoot = path[..3];
-        try
-        {
-            if (new DriveInfo(driveRoot).DriveType == DriveType.Network)
-            {
-                return false;
-            }
-        }
-        catch
-        {
-            return false;
-        }
-
-        normalized = driveRoot + string.Join('\\', components);
-        return true;
-    }
-
-    private static bool IsEqualOrDescendant(string candidate, string root)
-    {
-        if (string.Equals(candidate, root, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return candidate.StartsWith(
-            root.TrimEnd('\\') + "\\",
-            StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsSingleName(string name) =>
-        name.Length > 0 &&
-        name is not "." and not ".." &&
-        !name.EndsWith('.') &&
-        !name.EndsWith(' ') &&
-        name.All(character =>
-            character >= 32 &&
-            !"<>:".Contains(character) &&
-            character != '"' &&
-            character != '/' &&
-            character != '\\' &&
-            character != '|' &&
-            character != '?' &&
-            character != '*');
-
-    private static void ValidateSingleName(string name)
-    {
-        if (!IsSingleName(name))
-        {
-            throw new BackupStorageException(BackupFailureKind.InvalidPath);
-        }
-    }
-
-    private sealed class HeldDirectory(List<SafeFileHandle> handles) : IDisposable
-    {
-        public SafeFileHandle Root => handles[^1];
-
-        public void Dispose()
-        {
-            foreach (SafeFileHandle handle in handles)
-            {
-                handle.Dispose();
-            }
-        }
-    }
-
-    private sealed class OpenedNode(SafeFileHandle handle, bool isDirectory) : IDisposable
-    {
-        public SafeFileHandle Handle { get; } = handle;
-
-        public bool IsDirectory { get; } = isDirectory;
-
-        public void Dispose() => Handle.Dispose();
-    }
+    private static BackupArtifactValidationResult InvalidArtifact(BackupArtifactFailureKind kind) =>
+        new(BackupArtifactValidationStatus.Invalid, kind);
 
     private sealed class BackupStorageException(BackupFailureKind kind) : Exception
     {
@@ -1058,10 +510,4 @@ public sealed class WindowsBackupStorage : IBackupStorage, IBackupArtifactValida
         int SchemaVersion,
         IReadOnlyList<ManifestEntry> Entries,
         BackupVerificationSummary Verification);
-
-    private sealed record TreeFingerprint(
-        int FileCount,
-        int DirectoryCount,
-        long TotalBytes,
-        string Sha256);
 }

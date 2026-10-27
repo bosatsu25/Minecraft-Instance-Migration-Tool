@@ -26,6 +26,13 @@ unresolved by default; an explicit Skip becomes a visible no-op and an explicit 
 `ReadyToReplace` with a backup requirement. Unsafe/unknown observations still block the plan.
 This is intent only and performs no IO.
 
+Replace is accepted only when the existing destination has the catalog kind (a file for
+`options.txt`, a directory for the others). An explicit Replace of a destination with a different
+kind becomes `BlockedDestinationKindMismatch`: the executor can never replace it, so planning refuses it
+before any Backup IO or durable `Started` record instead of letting execution fail into
+`RecoveryRequired`. Skip remains available for such an entry, and an unresolved decision still shows
+`NeedsDecision`.
+
 The known exclusion is **a file whose basename equals `hanemod-client.json` must not be migrated**.
 It applies at every depth inside selected directory candidates. Matching is case-insensitive under the
 Windows policy. It is an exact basename rule, not a path, glob, pattern, or user-configurable filter.

@@ -24,6 +24,7 @@ concurrency:
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
   DOTNET_NOLOGO: '1'
+  TESTINGPLATFORM_TELEMETRY_OPTOUT: '1'
   DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
 
 jobs:
@@ -32,13 +33,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           global-json-file: global.json
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore --locked-mode
       - name: Build
         run: dotnet build --configuration Release --no-restore
       - name: Test
@@ -54,13 +57,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           global-json-file: global.json
       - name: Restore UI tests
-        run: dotnet restore tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj
+        run: dotnet restore tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --locked-mode
       - name: Run WPF UI smoke
         run: dotnet test tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --configuration Release --no-restore
 
@@ -73,7 +78,9 @@ jobs:
       artifact-kind: ${{ steps.mode.outputs.artifact-kind }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Select explicit release mode
         id: mode
         shell: pwsh
@@ -96,13 +103,15 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           global-json-file: global.json
       - name: Restore packaged-application UI tests
-        run: dotnet restore tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj
+        run: dotnet restore tests/MinecraftInstanceMigration.UiTests/MinecraftInstanceMigration.UiTests.csproj --locked-mode
       - name: Install verified Inno Setup compiler
         shell: pwsh
         run: |
@@ -138,8 +147,6 @@ jobs:
           [IO.File]::WriteAllBytes($clientCertPath, [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64))
           "SM_CLIENT_CERT_FILE=$clientCertPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "SM_HOST=$hostUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "SM_API_KEY=$env:SM_API_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "SM_CLIENT_CERT_PASSWORD=$env:SM_CLIENT_CERT_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "SIGNING_CERT_THUMBPRINT=$env:CERT_THUMBPRINT" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "SIGNING_TIMESTAMP_URL=$env:TIMESTAMP_URL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -147,6 +154,10 @@ jobs:
           Invoke-WebRequest "https://one.digicert.com/signingmanager/api-ui/v1/releases/smtools-windows-x64.msi/download" `
             -Headers @{ 'x-api-key' = $env:SM_API_KEY } `
             -OutFile $smToolsInstaller
+          $toolsSignature = Get-AuthenticodeSignature -LiteralPath $smToolsInstaller
+          if ($toolsSignature.Status -ne 'Valid' -or $toolsSignature.SignerCertificate.Subject -notmatch 'DigiCert') {
+            throw 'DigiCert One tools installer signature verification failed.'
+          }
           $process = Start-Process msiexec.exe -ArgumentList @('/i', $smToolsInstaller, '/quiet', '/qn', '/norestart') -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "DigiCert One tools installation failed: $($process.ExitCode)" }
 
@@ -179,6 +190,10 @@ jobs:
       - name: Build and verify signed release artifacts
         if: needs.release-mode.outputs.require-signing == 'true'
         shell: pwsh
+        env:
+          # Scoped to this step so later test and validation steps never receive signing secrets.
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
         run: |
           ./eng/release/Build-Release.ps1 `
             -IsccPath $env:ISCC_PATH `
@@ -210,10 +225,12 @@ jobs:
           }
       - name: Validate per-user install and uninstall
         shell: pwsh
+        env:
+          REQUIRE_SIGNING: ${{ needs.release-mode.outputs.require-signing }}
         run: |
           $props = [xml](Get-Content Directory.Build.props -Raw)
           $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
-          $requireSigning = ('${{ needs.release-mode.outputs.require-signing }}' -eq 'true')
+          $requireSigning = ($env:REQUIRE_SIGNING -eq 'true')
           ./eng/release/Test-Installer.ps1 `
             -InstallerPath "artifacts/release/MinecraftInstanceMigrationTool-$version-win-x64-setup.exe" `
             -ExpectedVersion $version `
@@ -223,10 +240,12 @@ jobs:
             -UseDefaultInstallPath
       - name: Validate clean-machine release package
         shell: pwsh
+        env:
+          REQUIRE_SIGNING: ${{ needs.release-mode.outputs.require-signing }}
         run: |
           $props = [xml](Get-Content Directory.Build.props -Raw)
           $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
-          $requireSigning = ('${{ needs.release-mode.outputs.require-signing }}' -eq 'true')
+          $requireSigning = ($env:REQUIRE_SIGNING -eq 'true')
           ./eng/release/Validate-CleanMachine.ps1 `
             -ArtifactsRoot "$PWD/artifacts" `
             -ExpectedVersion $version `
@@ -246,7 +265,7 @@ jobs:
             --configuration Release `
             --no-restore
       - name: Upload accurately labeled release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: MinecraftInstanceMigrationTool-${{ needs.release-mode.outputs.artifact-kind }}-${{ github.run_id }}
           path: artifacts/release/*
@@ -258,21 +277,33 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      # Sigstore-backed build provenance lets members verify that packages came from this workflow.
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Download verified release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: MinecraftInstanceMigrationTool-${{ needs.release-mode.outputs.artifact-kind }}-${{ github.run_id }}
           path: artifacts/release
+      - name: Attest release package provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            artifacts/release/*.zip
+            artifacts/release/*-setup.exe
       - name: Create draft GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          ARTIFACT_KIND: ${{ needs.release-mode.outputs.artifact-kind }}
         run: |
-          $mode = '${{ needs.release-mode.outputs.artifact-kind }}'
+          $mode = $env:ARTIFACT_KIND
           $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           "Artifact signing status: $mode`n`n$(Get-Content docs/release-notes-template.md -Raw)" |
             Set-Content -LiteralPath $notes -Encoding utf8
-          gh release create $env:GITHUB_REF_NAME artifacts/release/* --draft --verify-tag --title $env:GITHUB_REF_NAME --notes-file $notes
+          gh release create $env:GITHUB_REF_NAME artifacts/release/* --repo $env:GITHUB_REPOSITORY --draft --verify-tag --title $env:GITHUB_REF_NAME --notes-file $notes

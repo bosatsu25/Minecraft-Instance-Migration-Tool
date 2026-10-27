@@ -38,6 +38,21 @@ Output cleanup stays inside the ignored repository `artifacts/` directory and re
 ancestors. Checksums are generated only after the final binary mutation and independently checked.
 Inno Setup's compiler download is pinned to 6.7.3 and verified by SHA-256 and Authenticode in CI.
 
+## Supply-chain controls
+
+- GitHub Actions are pinned to full commit SHAs and checkouts do not persist the job token.
+  Dependabot proposes grouped action and NuGet updates; review them like code.
+- Only test projects consume third-party packages. They restore from `packages.lock.json` with
+  `--locked-mode` against the single `nuget.org` source declared in `nuget.config`.
+  After changing a test package version, regenerate the lock files with `dotnet restore` and commit them.
+- Job outputs reach PowerShell only through environment variables, never by template expansion.
+- Signing secrets are scoped to the signing build step; installer, clean-machine, and packaged UI steps
+  never receive them.
+- Version-tag drafts attach a build-provenance attestation for the ZIP and installer before
+  `gh release create`. Distributors can verify it as described in [install](install.md).
+- The optional OpenCodeReview workflow never runs for fork pull requests, so fork content is not sent
+  to the configured external model endpoint.
+
 ## Explicit CI release mode
 
 The optional repository variable `MIM_RELEASE_SIGNING_MODE` accepts `unsigned` or `signed`.

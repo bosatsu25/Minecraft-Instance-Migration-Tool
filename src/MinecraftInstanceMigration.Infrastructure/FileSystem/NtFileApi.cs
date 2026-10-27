@@ -1,9 +1,13 @@
+using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32.SafeHandles;
 
-namespace MinecraftInstanceMigration.Infrastructure.Backup;
+namespace MinecraftInstanceMigration.Infrastructure.FileSystem;
 
-internal static class BackupNativeMethods
+// The only Windows interop surface in Infrastructure. Every child is opened as one name relative to
+// a held parent handle with OBJ_DONT_REPARSE, so no adapter resolves user paths by string.
+internal static class NtFileApi
 {
     internal const uint FileReadData = 0x0001;
     internal const uint FileListDirectory = 0x0001;
@@ -11,8 +15,10 @@ internal static class BackupNativeMethods
     internal const uint FileAddFile = 0x0002;
     internal const uint FileAddSubdirectory = 0x0004;
     internal const uint FileTraverse = 0x0020;
+    internal const uint FileDeleteChild = 0x0040;
     internal const uint FileReadAttributes = 0x0080;
     internal const uint FileWriteAttributes = 0x0100;
+    internal const uint DeleteAccess = 0x00010000;
     internal const uint Synchronize = 0x00100000;
 
     internal const uint ShareRead = 0x00000001;
@@ -28,12 +34,25 @@ internal static class BackupNativeMethods
     internal const uint FileOpenReparsePoint = 0x00200000;
     internal const uint FileOpenNoRecall = 0x00400000;
 
-    internal const uint OpenExisting = 3;
-    internal const uint BackupSemantics = 0x02000000;
-    internal const uint OpenReparsePoint = 0x00200000;
+    // Options for opening an existing object without following or recalling it.
+    internal const uint NoFollowOpenOptions =
+        FileOpenReparsePoint | FileOpenNoRecall | FileSynchronousIoNonAlert;
 
     internal const int StatusReparsePointEncountered = unchecked((int)0xC000050B);
-    internal const int StatusNoMoreFiles = unchecked((int)0x80000006);
+
+    private const int StatusNoMoreFiles = unchecked((int)0x80000006);
+    private const uint ObjCaseInsensitive = 0x00000040;
+    private const uint ObjDontReparse = 0x00001000;
+    private const uint OpenExisting = 3;
+    private const uint BackupSemantics = 0x02000000;
+    private const uint OpenReparsePointFlag = 0x00200000;
+    private const int FileAttributeTagInfo = 9;
+    private const int FileNamesInformation = 12;
+    private const int FileDispositionInfoEx = 21;
+    private const uint FileDispositionFlagDelete = 0x00000001;
+    private const uint FileDispositionFlagPosixSemantics = 0x00000002;
+    private const uint FileDispositionFlagIgnoreReadonlyAttribute = 0x00000010;
+    private const uint VolumeNameGuid = 0x00000001;
 
     internal static (SafeFileHandle Handle, int Status) OpenRelative(
         SafeFileHandle parent,
@@ -62,7 +81,7 @@ internal static class BackupNativeMethods
                 Length = Marshal.SizeOf<ObjectAttributes>(),
                 RootDirectory = parent.DangerousGetHandle(),
                 ObjectName = unicodePointer,
-                Attributes = 0x1040, // OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE
+                Attributes = ObjCaseInsensitive | ObjDontReparse,
             };
             int status = NtCreateFile(
                 out SafeFileHandle handle,
@@ -90,6 +109,20 @@ internal static class BackupNativeMethods
         }
     }
 
+    // Opens a drive root without following a reparse point. Returns the Win32 error on failure.
+    internal static (SafeFileHandle Handle, int Error) OpenDriveRoot(string driveRoot, uint desiredAccess)
+    {
+        SafeFileHandle handle = CreateFileW(
+            @"\\?\" + driveRoot,
+            desiredAccess,
+            ShareRead,
+            IntPtr.Zero,
+            OpenExisting,
+            BackupSemantics | OpenReparsePointFlag,
+            IntPtr.Zero);
+        return (handle, handle.IsInvalid ? Marshal.GetLastWin32Error() : 0);
+    }
+
     internal static IReadOnlyList<string> EnumerateNames(SafeFileHandle directory)
     {
         const int bufferSize = 64 * 1024;
@@ -108,7 +141,7 @@ internal static class BackupNativeMethods
                     out IoStatusBlock ioStatus,
                     buffer,
                     bufferSize,
-                    12, // FileNamesInformation
+                    FileNamesInformation,
                     false,
                     IntPtr.Zero,
                     restart);
@@ -121,7 +154,7 @@ internal static class BackupNativeMethods
 
                 if (status != 0)
                 {
-                    throw new BackupNativeException(status);
+                    throw new FileSystemException(FileSystemErrors.ForEnumeration(status));
                 }
 
                 int available = checked((int)ioStatus.Information.ToUInt64());
@@ -159,17 +192,80 @@ internal static class BackupNativeMethods
 
     internal static FileAttributes ReadAttributes(SafeFileHandle handle)
     {
+        int error = TryReadAttributes(handle, out FileAttributes attributes);
+        return error == 0 ? attributes : throw new Win32Exception(error);
+    }
+
+    // Returns 0 on success, otherwise the Win32 error, so read-only observers can map it without throwing.
+    internal static int TryReadAttributes(SafeFileHandle handle, out FileAttributes attributes)
+    {
         if (!GetFileInformationByHandleEx(
                 handle,
-                9,
+                FileAttributeTagInfo,
                 out AttributeTagInfo info,
                 (uint)Marshal.SizeOf<AttributeTagInfo>()))
         {
-            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            attributes = default;
+            return Marshal.GetLastWin32Error();
         }
 
-        return (FileAttributes)info.FileAttributes;
+        attributes = (FileAttributes)info.FileAttributes;
+        return 0;
     }
+
+    internal static void DeleteByHandle(SafeFileHandle handle)
+    {
+        var info = new FileDispositionInfoExData
+        {
+            Flags = FileDispositionFlagDelete |
+                FileDispositionFlagPosixSemantics |
+                FileDispositionFlagIgnoreReadonlyAttribute,
+        };
+
+        if (!SetFileInformationByHandle(
+                handle,
+                FileDispositionInfoEx,
+                ref info,
+                (uint)Marshal.SizeOf<FileDispositionInfoExData>()))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+
+    internal static string GetCanonicalVolumePath(SafeFileHandle handle)
+    {
+        uint capacity = 512;
+
+        while (true)
+        {
+            var buffer = new StringBuilder(checked((int)capacity));
+            uint length = GetFinalPathNameByHandleW(handle, buffer, capacity, VolumeNameGuid);
+
+            if (length == 0)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            if (length < capacity)
+            {
+                return buffer.ToString();
+            }
+
+            capacity = checked(length + 1);
+        }
+    }
+
+    internal static long GetAvailableBytes(string canonicalPath)
+    {
+        if (!GetDiskFreeSpaceExW(canonicalPath, out ulong available, out _, out _))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        return checked((long)available);
+    }
+
+    internal static uint ToDosError(int status) => RtlNtStatusToDosError(status);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct UnicodeString
@@ -204,6 +300,12 @@ internal static class BackupNativeMethods
         internal uint ReparseTag;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileDispositionInfoExData
+    {
+        internal uint Flags;
+    }
+
     [DllImport("ntdll.dll", ExactSpelling = true)]
     private static extern int NtCreateFile(
         out SafeFileHandle handle,
@@ -233,10 +335,10 @@ internal static class BackupNativeMethods
         [MarshalAs(UnmanagedType.U1)] bool restartScan);
 
     [DllImport("ntdll.dll", ExactSpelling = true)]
-    internal static extern uint RtlNtStatusToDosError(int status);
+    private static extern uint RtlNtStatusToDosError(int status);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
-    internal static extern SafeFileHandle CreateFileW(
+    private static extern SafeFileHandle CreateFileW(
         string fileName,
         uint desiredAccess,
         uint shareMode,
@@ -252,9 +354,27 @@ internal static class BackupNativeMethods
         int fileInformationClass,
         out AttributeTagInfo fileInformation,
         uint bufferSize);
-}
 
-internal sealed class BackupNativeException(int status) : Exception
-{
-    internal int Status { get; } = status;
+    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandle(
+        SafeFileHandle fileHandle,
+        int fileInformationClass,
+        ref FileDispositionInfoExData fileInformation,
+        uint bufferSize);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandleW(
+        SafeFileHandle fileHandle,
+        StringBuilder filePath,
+        uint filePathLength,
+        uint flags);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetDiskFreeSpaceExW(
+        string directoryName,
+        out ulong freeBytesAvailableToCaller,
+        out ulong totalNumberOfBytes,
+        out ulong totalNumberOfFreeBytes);
 }

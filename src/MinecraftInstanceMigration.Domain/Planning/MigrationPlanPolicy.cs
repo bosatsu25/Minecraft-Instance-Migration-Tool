@@ -49,7 +49,8 @@ public static class MigrationPlanPolicy
                 string.Equals(candidate.Name, pair.Key, StringComparison.Ordinal));
             if (entry.Disposition is not MigrationPlanDisposition.DestinationConflict
                 and not MigrationPlanDisposition.SkippedDestinationConflict
-                and not MigrationPlanDisposition.ReadyToReplace)
+                and not MigrationPlanDisposition.ReadyToReplace
+                and not MigrationPlanDisposition.BlockedDestinationKindMismatch)
             {
                 decisionIssues.Add(new ConflictDecisionIssue(pair.Key, ConflictDecisionIssueKind.NoDestinationConflict));
             }
@@ -172,6 +173,10 @@ public static class MigrationPlanPolicy
         {
             DestinationConflictDecision.Skip =>
                 Entry(candidate, source, destination, MigrationPlanDisposition.SkippedDestinationConflict),
+            // Execution replaces only an entry of the catalog kind. Refuse a mismatched Replace here,
+            // before Backup or a durable Started record, instead of failing after the journal begins.
+            DestinationConflictDecision.Replace when destination.MatchesExpectedKind != true =>
+                Entry(candidate, source, destination, MigrationPlanDisposition.BlockedDestinationKindMismatch),
             DestinationConflictDecision.Replace =>
                 Entry(candidate, source, destination, MigrationPlanDisposition.ReadyToReplace),
             _ => Entry(candidate, source, destination, MigrationPlanDisposition.DestinationConflict),

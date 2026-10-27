@@ -1,4 +1,5 @@
 using MinecraftInstanceMigration.Application.Execution;
+using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
 
@@ -30,20 +31,20 @@ public sealed class WindowsExecutionWorkspaceSafetyValidator
                 "Execution workspace validation requires Windows.");
         }
 
-        if (!WindowsExecutionTree.TryNormalizeRoot(sourceRoot, out string source) ||
-            !WindowsExecutionTree.TryNormalizeRoot(destinationRoot, out string destination) ||
-            !WindowsExecutionTree.TryNormalizeRoot(journalParent, out string journal))
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(sourceRoot, out string source) ||
+            !WindowsPathRules.TryNormalizeLocalDirectory(destinationRoot, out string destination) ||
+            !WindowsPathRules.TryNormalizeLocalDirectory(journalParent, out string journal))
         {
             return Invalid(ExecutionWorkspaceSafetyFailureKind.InvalidPath);
         }
 
-        if (WindowsExecutionTree.RootsOverlap(source, destination))
+        if (WindowsPathRules.RootsOverlap(source, destination))
         {
             return Invalid(ExecutionWorkspaceSafetyFailureKind.OverlappingRoots);
         }
 
-        if (IsEqualOrDescendant(journal, source) ||
-            IsEqualOrDescendant(journal, destination))
+        if (WindowsPathRules.IsEqualOrDescendant(journal, source) ||
+            WindowsPathRules.IsEqualOrDescendant(journal, destination))
         {
             return Invalid(
                 ExecutionWorkspaceSafetyFailureKind.JournalInsideMigrationRoot);
@@ -95,54 +96,22 @@ public sealed class WindowsExecutionWorkspaceSafetyValidator
             return new ExecutionWorkspaceSafetyResult(
                 ExecutionWorkspaceSafetyStatus.Cancelled);
         }
-        catch (ExecutionTreeException error)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
-            return Invalid(error.Kind switch
+            return Invalid(kind switch
             {
-                ExecutionTreeFailureKind.ReparsePoint =>
+                FileSystemFailureKind.ReparsePoint =>
                     ExecutionWorkspaceSafetyFailureKind.ReparsePoint,
-                ExecutionTreeFailureKind.AccessDenied =>
+                FileSystemFailureKind.AccessDenied =>
                     ExecutionWorkspaceSafetyFailureKind.AccessDenied,
-                ExecutionTreeFailureKind.InvalidPath or
-                ExecutionTreeFailureKind.Missing or
-                ExecutionTreeFailureKind.Changed =>
+                FileSystemFailureKind.InvalidPath or
+                FileSystemFailureKind.Missing or
+                FileSystemFailureKind.Changed =>
                     ExecutionWorkspaceSafetyFailureKind.InvalidPath,
                 _ => ExecutionWorkspaceSafetyFailureKind.IoFailure,
             });
         }
-        catch (UnauthorizedAccessException)
-        {
-            return Invalid(
-                ExecutionWorkspaceSafetyFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception error)
-            when (error.NativeErrorCode == 5)
-        {
-            return Invalid(
-                ExecutionWorkspaceSafetyFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return Invalid(
-                ExecutionWorkspaceSafetyFailureKind.IoFailure);
-        }
-        catch (IOException)
-        {
-            return Invalid(
-                ExecutionWorkspaceSafetyFailureKind.IoFailure);
-        }
     }
-
-    private static bool IsEqualOrDescendant(
-        string candidate,
-        string root) =>
-        string.Equals(
-            candidate,
-            root,
-            StringComparison.OrdinalIgnoreCase) ||
-        candidate.StartsWith(
-            root.TrimEnd('\\') + "\\",
-            StringComparison.OrdinalIgnoreCase);
 
     private static ExecutionWorkspaceSafetyResult Invalid(
         ExecutionWorkspaceSafetyFailureKind kind) =>

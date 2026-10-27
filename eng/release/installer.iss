@@ -19,6 +19,10 @@ AppId={{B8C724E4-E02C-4FDD-A3D3-4600AF40B402}
 AppName={#ProductName}
 AppVersion={#AppVersion}
 AppPublisher=bosatsuKing
+; Apps & features links let members find support and newer releases without an updater service.
+AppPublisherURL=https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool
+AppSupportURL=https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/issues
+AppUpdatesURL=https://github.com/bosatsu25/Minecraft-Instance-Migration-Tool/releases
 DefaultDirName={localappdata}\Programs\{#ProductName}
 DefaultGroupName={#ProductName}
 DisableProgramGroupPage=yes

@@ -2,6 +2,7 @@ using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Execution;
 using MinecraftInstanceMigration.Infrastructure.Backup;
+using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
 
@@ -49,7 +50,7 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             return GuardRejected(RollbackStorageFailureKind.InvalidPlan);
         }
 
-        if (!WindowsExecutionTree.TryNormalizeRoot(
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(
                 destinationRoot,
                 out string destination))
         {
@@ -66,14 +67,14 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                     RollbackStorageFailureKind.InvalidPlan);
             }
 
-            if (!WindowsExecutionTree.TryNormalizeRoot(
+            if (!WindowsPathRules.TryNormalizeLocalDirectory(
                     backupRoot,
                     out backup))
             {
                 return GuardRejected(RollbackStorageFailureKind.InvalidPath);
             }
 
-            if (WindowsExecutionTree.RootsOverlap(destination, backup))
+            if (WindowsPathRules.RootsOverlap(destination, backup))
             {
                 return GuardRejected(
                     RollbackStorageFailureKind.OverlappingRoots);
@@ -195,30 +196,9 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
         {
             return GuardRejected(error.Kind);
         }
-        catch (ExecutionTreeException error)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
-            return GuardRejected(MapGeneralFailure(error.Kind));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return GuardRejected(RollbackStorageFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception error)
-            when (error.NativeErrorCode == 5)
-        {
-            return GuardRejected(RollbackStorageFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return GuardRejected(RollbackStorageFailureKind.IoFailure);
-        }
-        catch (IOException)
-        {
-            return GuardRejected(RollbackStorageFailureKind.IoFailure);
-        }
-        catch (BackupNativeException error)
-        {
-            return GuardRejected(MapNativeFailure(error.Status));
+            return GuardRejected(MapGeneralFailure(kind));
         }
     }
 
@@ -257,45 +237,19 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             return new RollbackStorageResult(
                 RollbackStorageStatus.Applied);
         }
+        catch (OperationCanceledException)
+        {
+            // Cancellation after the guarded delete began cannot be reported as an untouched destination.
+            return Failure(RollbackStorageFailureKind.IoFailure, mutationStarted);
+        }
         catch (RollbackStorageException error)
         {
             return Failure(error.Kind, mutationStarted);
         }
-        catch (ExecutionTreeException error)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
             return Failure(
-                MapGeneralFailure(error.Kind),
-                mutationStarted);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Failure(
-                RollbackStorageFailureKind.AccessDenied,
-                mutationStarted);
-        }
-        catch (System.ComponentModel.Win32Exception error)
-            when (error.NativeErrorCode == 5)
-        {
-            return Failure(
-                RollbackStorageFailureKind.AccessDenied,
-                mutationStarted);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return Failure(
-                RollbackStorageFailureKind.IoFailure,
-                mutationStarted);
-        }
-        catch (IOException)
-        {
-            return Failure(
-                RollbackStorageFailureKind.IoFailure,
-                mutationStarted);
-        }
-        catch (BackupNativeException error)
-        {
-            return Failure(
-                MapNativeFailure(error.Status),
+                MapGeneralFailure(kind),
                 mutationStarted);
         }
     }
@@ -369,45 +323,19 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             return new RollbackStorageResult(
                 RollbackStorageStatus.Applied);
         }
+        catch (OperationCanceledException)
+        {
+            // Cancellation after the guarded delete began cannot be reported as an untouched destination.
+            return Failure(RollbackStorageFailureKind.IoFailure, mutationStarted);
+        }
         catch (RollbackStorageException error)
         {
             return Failure(error.Kind, mutationStarted);
         }
-        catch (ExecutionTreeException error)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
             return Failure(
-                MapGeneralFailure(error.Kind),
-                mutationStarted);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Failure(
-                RollbackStorageFailureKind.AccessDenied,
-                mutationStarted);
-        }
-        catch (System.ComponentModel.Win32Exception error)
-            when (error.NativeErrorCode == 5)
-        {
-            return Failure(
-                RollbackStorageFailureKind.AccessDenied,
-                mutationStarted);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return Failure(
-                RollbackStorageFailureKind.IoFailure,
-                mutationStarted);
-        }
-        catch (IOException)
-        {
-            return Failure(
-                RollbackStorageFailureKind.IoFailure,
-                mutationStarted);
-        }
-        catch (BackupNativeException error)
-        {
-            return Failure(
-                MapNativeFailure(error.Status),
+                MapGeneralFailure(kind),
                 mutationStarted);
         }
     }
@@ -437,14 +365,14 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                 throw;
             }
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind == ExecutionTreeFailureKind.Missing)
+        catch (FileSystemException error) when (
+            error.Kind == FileSystemFailureKind.Missing)
         {
             throw new RollbackStorageException(
                 RollbackStorageFailureKind.DestinationMissing);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind == ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind == FileSystemFailureKind.Changed)
         {
             throw new RollbackStorageException(
                 RollbackStorageFailureKind.DestinationChanged);
@@ -459,8 +387,8 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             return WindowsExecutionTree.OpenDirectoryChain(
                 path, writableFinal: false);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind == ExecutionTreeFailureKind.Missing)
+        catch (FileSystemException error) when (
+            error.Kind == FileSystemFailureKind.Missing)
         {
             throw new RollbackStorageException(
                 RollbackStorageFailureKind.BackupMissing);
@@ -476,8 +404,8 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             return WindowsExecutionTree.OpenHeldTree(
                 root, name, forDelete: false);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind == ExecutionTreeFailureKind.Missing)
+        catch (FileSystemException error) when (
+            error.Kind == FileSystemFailureKind.Missing)
         {
             throw new RollbackStorageException(
                 RollbackStorageFailureKind.BackupMissing);
@@ -494,8 +422,8 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
                 WindowsExecutionTree.OpenExistingNode(parent, name);
             return false;
         }
-        catch (ExecutionTreeException error)
-            when (error.Kind == ExecutionTreeFailureKind.Missing)
+        catch (FileSystemException error)
+            when (error.Kind == FileSystemFailureKind.Missing)
         {
             return true;
         }
@@ -513,37 +441,25 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             StringComparison.OrdinalIgnoreCase);
 
     private static RollbackStorageFailureKind MapGeneralFailure(
-        ExecutionTreeFailureKind kind) =>
+        FileSystemFailureKind kind) =>
         kind switch
         {
-            ExecutionTreeFailureKind.InvalidPath =>
+            FileSystemFailureKind.InvalidPath =>
                 RollbackStorageFailureKind.InvalidPath,
-            ExecutionTreeFailureKind.OverlappingRoots =>
+            FileSystemFailureKind.OverlappingRoots =>
                 RollbackStorageFailureKind.OverlappingRoots,
-            ExecutionTreeFailureKind.Missing =>
+            FileSystemFailureKind.Missing =>
                 RollbackStorageFailureKind.DestinationMissing,
-            ExecutionTreeFailureKind.Changed or
-            ExecutionTreeFailureKind.Collision =>
+            FileSystemFailureKind.Changed or
+            FileSystemFailureKind.Collision =>
                 RollbackStorageFailureKind.DestinationChanged,
-            ExecutionTreeFailureKind.ReparsePoint =>
+            FileSystemFailureKind.ReparsePoint =>
                 RollbackStorageFailureKind.ReparsePoint,
-            ExecutionTreeFailureKind.AccessDenied =>
+            FileSystemFailureKind.AccessDenied =>
                 RollbackStorageFailureKind.AccessDenied,
             _ => RollbackStorageFailureKind.IoFailure,
         };
 
-    private static RollbackStorageFailureKind MapNativeFailure(
-        int status)
-    {
-        if (status == BackupNativeMethods.StatusReparsePointEncountered)
-        {
-            return RollbackStorageFailureKind.ReparsePoint;
-        }
-
-        return BackupNativeMethods.RtlNtStatusToDosError(status) == 5
-            ? RollbackStorageFailureKind.AccessDenied
-            : RollbackStorageFailureKind.IoFailure;
-    }
 
     private static RollbackStorageResult Failure(
         RollbackStorageFailureKind kind,

@@ -35,6 +35,18 @@ Get-Content .\SHA256SUMS.txt
 
 SHA-256 confirms equality with the supplied checksum, not publisher identity. It is not Authenticode.
 
+### Build provenance for distributors (releases after v1.0.0)
+
+Tag releases built after v1.0.0 carry a GitHub build-provenance attestation. It proves that a package
+was produced by this repository's release workflow from a specific commit, which a checksum published
+next to the package cannot. It is optional for members and does not change SmartScreen behaviour.
+
+```powershell
+gh attestation verify .\MinecraftInstanceMigrationTool-<version>-win-x64.zip --repo bosatsu25/Minecraft-Instance-Migration-Tool
+```
+
+A failed verification means the file must not be redistributed. v1.0.0 predates attestations.
+
 ## Migration
 
 Close Minecraft and its launcher. In Migration Preview, choose existing source and destination game

@@ -1,21 +1,15 @@
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Text.Json;
-using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Execution;
-using MinecraftInstanceMigration.Infrastructure.Backup;
+using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
 
 public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
 {
-    private const int MaximumJournalBytes = 256 * 1024;
+    private const string FileNamePrefix = "mim-journal-";
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
+    // The journal parent only needs to receive the new create-only journal file.
+    private const uint JournalParentAccess = NtFileApi.FileAddFile | NtFileApi.FileWriteAttributes;
 
     public Task<ExecutionJournalWriteResult> CreateAsync(
         string journalParent,
@@ -31,13 +25,7 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
         int sequence,
         CancellationToken cancellationToken) =>
         Task.Run(
-            () => AppendTransition(
-                journal,
-                draft,
-                sequence,
-                "Started",
-                null,
-                cancellationToken),
+            () => AppendTransition(journal, draft, sequence, "Started", null, cancellationToken),
             CancellationToken.None);
 
     public Task<ExecutionJournalWriteResult> MarkStepAppliedAsync(
@@ -62,13 +50,7 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
         int sequence,
         CancellationToken cancellationToken) =>
         Task.Run(
-            () => AppendTransition(
-                journal,
-                draft,
-                sequence,
-                "Failed",
-                null,
-                cancellationToken),
+            () => AppendTransition(journal, draft, sequence, "Failed", null, cancellationToken),
             CancellationToken.None);
 
     public Task<ExecutionJournalReadResult> LoadAsync(
@@ -94,7 +76,7 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
             return InvalidWrite(ExecutionJournalPersistenceFailureKind.InvalidDraft);
         }
 
-        if (!TryNormalizeLocalDirectoryPath(journalParent, out string normalizedParent))
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(journalParent, out string normalizedParent))
         {
             return InvalidWrite(ExecutionJournalPersistenceFailureKind.InvalidPath);
         }
@@ -108,15 +90,13 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
 
         try
         {
-            using HeldDirectory parent = OpenDirectoryChain(normalizedParent, writableFinal: true);
+            using WindowsExecutionTree.HeldDirectory parent = OpenParent(normalizedParent, JournalParentAccess);
 
             string journalId = Guid.NewGuid().ToString("N");
-            string fileName = $"mim-journal-{journalId}.jsonl";
-            reference = new ExecutionJournalReference(
-                journalId,
-                Path.Combine(normalizedParent, fileName));
+            string fileName = $"{FileNamePrefix}{journalId}.jsonl";
+            reference = new ExecutionJournalReference(journalId, Path.Combine(normalizedParent, fileName));
 
-            using FileStream stream = CreateJournalFile(parent.Root, fileName);
+            using FileStream stream = CreateJournalFile(parent, fileName);
 
             JournalPayload headerPayload = new(
                 Index: 0,
@@ -134,46 +114,21 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
                 Sequence: null,
                 Fingerprint: null);
 
-            JournalEnvelope header = Envelope(headerPayload);
-            WriteEnvelopeDurably(stream, header);
+            ChecksummedJournal.AppendDurably(stream, Envelope(headerPayload));
 
-            return new ExecutionJournalWriteResult(
-                ExecutionJournalWriteStatus.Succeeded,
-                reference);
+            return new ExecutionJournalWriteResult(ExecutionJournalWriteStatus.Succeeded, reference);
         }
         catch (OperationCanceledException)
         {
-            return new ExecutionJournalWriteResult(
-                ExecutionJournalWriteStatus.Cancelled,
-                reference);
+            return new ExecutionJournalWriteResult(ExecutionJournalWriteStatus.Cancelled, reference);
         }
         catch (JournalStorageException error)
         {
             return WriteFailure(error.Kind, reference);
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
-            return WriteFailure(
-                ExecutionJournalPersistenceFailureKind.AccessDenied,
-                reference);
-        }
-        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 5)
-        {
-            return WriteFailure(
-                ExecutionJournalPersistenceFailureKind.AccessDenied,
-                reference);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return WriteFailure(
-                ExecutionJournalPersistenceFailureKind.IoFailure,
-                reference);
-        }
-        catch (IOException)
-        {
-            return WriteFailure(
-                ExecutionJournalPersistenceFailureKind.IoFailure,
-                reference);
+            return WriteFailure(MapFailure(kind, missingIsInvalidReference: false), reference);
         }
     }
 
@@ -217,83 +172,41 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
                 _ => false,
             };
 
-            if (!validTransition)
-            {
-                return InvalidWrite(
-                    ExecutionJournalPersistenceFailureKind.JournalStateInvalid,
-                    journal);
-            }
-
-            if (kind == "Applied" && fingerprint is null ||
+            if (!validTransition ||
+                kind == "Applied" && fingerprint is null ||
                 kind != "Applied" && fingerprint is not null)
             {
-                return InvalidWrite(
-                    ExecutionJournalPersistenceFailureKind.JournalStateInvalid,
-                    journal);
+                return InvalidWrite(ExecutionJournalPersistenceFailureKind.JournalStateInvalid, journal);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (parsed.HasTornTail)
-            {
-                stream.SetLength(parsed.ValidLength);
-                stream.Position = parsed.ValidLength;
-                stream.Flush(flushToDisk: true);
-            }
-            else
-            {
-                stream.Position = parsed.ValidLength;
-            }
+            ChecksummedJournal.PrepareAppend(stream, parsed.Contents);
 
             JournalPayload payload = new(
-                Index: parsed.NextIndex,
+                Index: parsed.Contents.Records.Count,
                 Kind: kind,
-                PreviousChecksum: parsed.LastChecksum,
+                PreviousChecksum: parsed.Contents.Records[^1].Checksum,
                 SchemaVersion: null,
                 JournalId: null,
                 Entries: null,
                 Sequence: sequence,
                 Fingerprint: fingerprint);
 
-            WriteEnvelopeDurably(stream, Envelope(payload));
+            ChecksummedJournal.AppendDurably(stream, Envelope(payload));
 
-            return new ExecutionJournalWriteResult(
-                ExecutionJournalWriteStatus.Succeeded,
-                journal);
+            return new ExecutionJournalWriteResult(ExecutionJournalWriteStatus.Succeeded, journal);
         }
         catch (OperationCanceledException)
         {
-            return new ExecutionJournalWriteResult(
-                ExecutionJournalWriteStatus.Cancelled,
-                journal);
+            return new ExecutionJournalWriteResult(ExecutionJournalWriteStatus.Cancelled, journal);
         }
         catch (JournalStorageException error)
         {
             return WriteFailure(error.Kind, journal);
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind failure))
         {
-            return WriteFailure(
-                ExecutionJournalPersistenceFailureKind.AccessDenied,
-                journal);
-        }
-        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 5)
-        {
-            return WriteFailure(
-                ExecutionJournalPersistenceFailureKind.AccessDenied,
-                journal);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return WriteFailure(
-                ExecutionJournalPersistenceFailureKind.IoFailure,
-                journal);
-        }
-        catch (IOException)
-        {
-            return WriteFailure(
-                ExecutionJournalPersistenceFailureKind.IoFailure,
-                journal);
+            return WriteFailure(MapFailure(failure, missingIsInvalidReference: false), journal);
         }
     }
 
@@ -324,9 +237,7 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            return new ExecutionJournalReadResult(
-                ExecutionJournalReadStatus.Loaded,
-                parsed.Snapshot);
+            return new ExecutionJournalReadResult(ExecutionJournalReadStatus.Loaded, parsed.Snapshot);
         }
         catch (OperationCanceledException)
         {
@@ -336,21 +247,9 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
         {
             return ReadFailure(error.Kind);
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
-            return ReadFailure(ExecutionJournalPersistenceFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 5)
-        {
-            return ReadFailure(ExecutionJournalPersistenceFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return ReadFailure(ExecutionJournalPersistenceFailureKind.IoFailure);
-        }
-        catch (IOException)
-        {
-            return ReadFailure(ExecutionJournalPersistenceFailureKind.IoFailure);
+            return ReadFailure(MapFailure(kind, missingIsInvalidReference: false));
         }
     }
 
@@ -359,101 +258,24 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
         ExecutionJournalReference journal,
         ExecutionJournalDraft draft)
     {
-        if (stream.Length <= 0 || stream.Length > MaximumJournalBytes)
+        JournalContents<JournalEnvelope> contents;
+        try
         {
-            throw new JournalStorageException(
-                ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
+            contents = ChecksummedJournal.Read<JournalEnvelope>(
+                stream,
+                envelope => envelope.Payload is not null &&
+                    ChecksummedJournal.ChecksumMatches(envelope.Checksum, envelope.Payload));
+        }
+        catch (JournalFormatException)
+        {
+            throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
         }
 
-        byte[] bytes = new byte[checked((int)stream.Length)];
-        stream.Position = 0;
-        int readOffset = 0;
-        while (readOffset < bytes.Length)
-        {
-            int read = stream.Read(bytes, readOffset, bytes.Length - readOffset);
-            if (read == 0)
-            {
-                throw new JournalStorageException(
-                    ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
-            }
-
-            readOffset += read;
-        }
-
-        int lastNewline = Array.LastIndexOf(bytes, (byte)'\n');
-        if (lastNewline < 0)
-        {
-            throw new JournalStorageException(
-                ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
-        }
-
-        int validLength = lastNewline + 1;
-        bool hasTornTail = validLength != bytes.Length;
-
-        var envelopes = new List<JournalEnvelope>();
-        int start = 0;
-        while (start < validLength)
-        {
-            int newline = Array.IndexOf(bytes, (byte)'\n', start, validLength - start);
-            if (newline < 0)
-            {
-                throw new JournalStorageException(
-                    ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
-            }
-
-            int length = newline - start;
-            if (length > 0 && bytes[newline - 1] == (byte)'\r')
-            {
-                length--;
-            }
-
-            if (length <= 0)
-            {
-                throw new JournalStorageException(
-                    ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
-            }
-
-            JournalEnvelope? envelope;
-            try
-            {
-                envelope = JsonSerializer.Deserialize<JournalEnvelope>(
-                    bytes.AsSpan(start, length),
-                    JsonOptions);
-            }
-            catch (JsonException)
-            {
-                throw new JournalStorageException(
-                    ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
-            }
-
-            if (envelope?.Payload is null ||
-                !IsSha256(envelope.Checksum) ||
-                !string.Equals(
-                    envelope.Checksum,
-                    ComputeChecksum(envelope.Payload),
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                throw new JournalStorageException(
-                    ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
-            }
-
-            envelopes.Add(envelope);
-            start = newline + 1;
-        }
-
-        if (envelopes.Count == 0)
-        {
-            throw new JournalStorageException(
-                ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
-        }
-
+        IReadOnlyList<JournalEnvelope> envelopes = contents.Records;
         ValidateHeader(envelopes[0], journal, draft);
 
-        var states = Enumerable
-            .Repeat(PersistedStepState.NotStarted, draft.Entries.Count)
-            .ToArray();
+        var states = Enumerable.Repeat(PersistedStepState.NotStarted, draft.Entries.Count).ToArray();
         var fingerprints = new ExecutionContentFingerprint?[draft.Entries.Count];
-
         string previousChecksum = envelopes[0].Checksum;
 
         for (int index = 1; index < envelopes.Count; index++)
@@ -470,8 +292,7 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
                 payload.Sequence < 0 ||
                 payload.Sequence >= draft.Entries.Count)
             {
-                throw new JournalStorageException(
-                    ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
+                throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
             }
 
             int sequence = payload.Sequence.Value;
@@ -481,19 +302,16 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
                 case "Started":
                     if (payload.Fingerprint is not null || !CanStart(states, sequence))
                     {
-                        throw new JournalStorageException(
-                            ExecutionJournalPersistenceFailureKind.JournalStateInvalid);
+                        throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalStateInvalid);
                     }
 
                     states[sequence] = PersistedStepState.Started;
                     break;
 
                 case "Applied":
-                    if (states[sequence] != PersistedStepState.Started ||
-                        payload.Fingerprint is null)
+                    if (states[sequence] != PersistedStepState.Started || payload.Fingerprint is null)
                     {
-                        throw new JournalStorageException(
-                            ExecutionJournalPersistenceFailureKind.JournalStateInvalid);
+                        throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalStateInvalid);
                     }
 
                     fingerprints[sequence] = ToDomainFingerprint(payload.Fingerprint);
@@ -501,19 +319,16 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
                     break;
 
                 case "Failed":
-                    if (states[sequence] != PersistedStepState.Started ||
-                        payload.Fingerprint is not null)
+                    if (states[sequence] != PersistedStepState.Started || payload.Fingerprint is not null)
                     {
-                        throw new JournalStorageException(
-                            ExecutionJournalPersistenceFailureKind.JournalStateInvalid);
+                        throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalStateInvalid);
                     }
 
                     states[sequence] = PersistedStepState.Failed;
                     break;
 
                 default:
-                    throw new JournalStorageException(
-                        ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
+                    throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
             }
 
             previousChecksum = envelope.Checksum;
@@ -523,14 +338,15 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
         for (int index = 0; index < draft.Entries.Count; index++)
         {
             ExecutionJournalEntry draftEntry = draft.Entries[index];
+
+            // A durable Started without a terminal record cannot prove what happened.
             ExecutionStepOutcome outcome = states[index] switch
             {
                 PersistedStepState.NotStarted => ExecutionStepOutcome.NotStarted,
                 PersistedStepState.Started => ExecutionStepOutcome.Uncertain,
                 PersistedStepState.Applied => ExecutionStepOutcome.Applied,
                 PersistedStepState.Failed => ExecutionStepOutcome.Failed,
-                _ => throw new JournalStorageException(
-                    ExecutionJournalPersistenceFailureKind.JournalStateInvalid),
+                _ => throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalStateInvalid),
             };
 
             steps[index] = new ExecutionJournalStep(
@@ -544,10 +360,7 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
         return new ParsedJournal(
             new ExecutionJournalSnapshot(draft.SchemaVersion, steps),
             states,
-            envelopes.Count,
-            previousChecksum,
-            validLength,
-            hasTornTail);
+            contents);
     }
 
     private static void ValidateHeader(
@@ -567,8 +380,7 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
             payload.Sequence is not null ||
             payload.Fingerprint is not null)
         {
-            throw new JournalStorageException(
-                ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
+            throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
         }
 
         for (int index = 0; index < draft.Entries.Count; index++)
@@ -583,39 +395,18 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
                 !string.Equals(actual.ExpectedKind, expected.ExpectedKind.ToString(), StringComparison.Ordinal) ||
                 !string.Equals(actual.Operation, expected.Operation.ToString(), StringComparison.Ordinal))
             {
-                throw new JournalStorageException(
-                    ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
+                throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
             }
         }
     }
 
+    // A step may start only after every earlier step is durably Applied and no later step has begun.
     private static bool CanStart(
         IReadOnlyList<PersistedStepState> states,
-        int sequence)
-    {
-        if (states[sequence] != PersistedStepState.NotStarted)
-        {
-            return false;
-        }
-
-        for (int index = 0; index < sequence; index++)
-        {
-            if (states[index] != PersistedStepState.Applied)
-            {
-                return false;
-            }
-        }
-
-        for (int index = sequence + 1; index < states.Count; index++)
-        {
-            if (states[index] != PersistedStepState.NotStarted)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+        int sequence) =>
+        states[sequence] == PersistedStepState.NotStarted &&
+        states.Take(sequence).All(state => state == PersistedStepState.Applied) &&
+        states.Skip(sequence + 1).All(state => state == PersistedStepState.NotStarted);
 
     private static ExecutionContentFingerprint ToDomainFingerprint(PersistedFingerprint fingerprint)
     {
@@ -629,386 +420,111 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
         }
         catch (ArgumentException)
         {
-            throw new JournalStorageException(
-                ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
+            throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.JournalFormatInvalid);
         }
     }
 
     private static JournalEnvelope Envelope(JournalPayload payload) =>
-        new(payload, ComputeChecksum(payload));
+        new(payload, ChecksummedJournal.Checksum(payload));
 
-    private static string ComputeChecksum(JournalPayload payload) =>
-        Convert.ToHexString(SHA256.HashData(
-            JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions)));
-
-    private static void WriteEnvelopeDurably(
-        FileStream stream,
-        JournalEnvelope envelope)
+    private static WindowsExecutionTree.HeldDirectory OpenParent(string path, uint finalAccess)
     {
-        byte[] json = JsonSerializer.SerializeToUtf8Bytes(envelope, JsonOptions);
-        stream.Write(json);
-        stream.WriteByte((byte)'\n');
-        stream.Flush(flushToDisk: true);
+        try
+        {
+            return WindowsExecutionTree.OpenDirectoryChain(path, finalAccess);
+        }
+        catch (FileSystemException error)
+        {
+            throw new JournalStorageException(MapFailure(error.Kind, missingIsInvalidReference: false));
+        }
     }
 
     private static FileStream CreateJournalFile(
-        SafeFileHandle parent,
+        WindowsExecutionTree.HeldDirectory parent,
         string fileName)
     {
-        (SafeFileHandle handle, int status) = BackupNativeMethods.OpenRelative(
-            parent,
-            fileName,
-            BackupNativeMethods.FileReadData |
-            BackupNativeMethods.FileWriteData |
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.FileWriteAttributes |
-            BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
-            BackupNativeMethods.FileCreate,
-            BackupNativeMethods.FileOpenReparsePoint |
-            BackupNativeMethods.FileOpenNoRecall |
-            BackupNativeMethods.FileSynchronousIoNonAlert);
-
-        if (status != 0)
+        try
         {
-            handle.Dispose();
-            throw MapNativeFailure(status, missingIsInvalidReference: false);
+            return ChecksummedJournal.CreateNew(parent.Root, fileName);
         }
-
-        ValidateRegularNoFollowFile(handle);
-
-        return new FileStream(
-            handle,
-            FileAccess.ReadWrite,
-            bufferSize: 4096,
-            isAsync: false);
+        catch (FileSystemException error)
+        {
+            throw new JournalStorageException(MapFailure(error.Kind, missingIsInvalidReference: false));
+        }
     }
 
     private static FileStream OpenJournalFile(
-        ExecutionJournalReference journal,
+        ExecutionJournalReference? journal,
         bool writable)
     {
-        if (!TryNormalizeReference(
-                journal,
+        if (!ChecksummedJournal.TryResolveReference(
+                journal?.JournalId,
+                journal?.JournalPath,
+                FileNamePrefix,
                 out string normalizedParent,
                 out string fileName))
         {
-            throw new JournalStorageException(
-                ExecutionJournalPersistenceFailureKind.InvalidReference);
+            throw new JournalStorageException(ExecutionJournalPersistenceFailureKind.InvalidReference);
         }
 
-        using HeldDirectory parent = OpenDirectoryChain(
-            normalizedParent,
-            writableFinal: false);
-
-        uint desiredAccess =
-            BackupNativeMethods.FileReadData |
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.Synchronize;
-        if (writable)
-        {
-            desiredAccess |=
-                BackupNativeMethods.FileWriteData |
-                BackupNativeMethods.FileWriteAttributes;
-        }
-
-        (SafeFileHandle handle, int status) = BackupNativeMethods.OpenRelative(
-            parent.Root,
-            fileName,
-            desiredAccess,
-            BackupNativeMethods.ShareRead,
-            BackupNativeMethods.FileOpen,
-            BackupNativeMethods.FileOpenReparsePoint |
-            BackupNativeMethods.FileOpenNoRecall |
-            BackupNativeMethods.FileSynchronousIoNonAlert);
-
-        if (status != 0)
-        {
-            handle.Dispose();
-            throw MapNativeFailure(status, missingIsInvalidReference: true);
-        }
-
-        ValidateRegularNoFollowFile(handle);
-
-        return new FileStream(
-            handle,
-            writable ? FileAccess.ReadWrite : FileAccess.Read,
-            bufferSize: 4096,
-            isAsync: false);
-    }
-
-    private static void ValidateRegularNoFollowFile(SafeFileHandle handle)
-    {
-        FileAttributes attributes = BackupNativeMethods.ReadAttributes(handle);
-        if (attributes.HasFlag(FileAttributes.ReparsePoint))
-        {
-            handle.Dispose();
-            throw new JournalStorageException(
-                ExecutionJournalPersistenceFailureKind.ReparsePoint);
-        }
-
-        if (attributes.HasFlag(FileAttributes.Directory))
-        {
-            handle.Dispose();
-            throw new JournalStorageException(
-                ExecutionJournalPersistenceFailureKind.InvalidReference);
-        }
-    }
-
-    private static HeldDirectory OpenDirectoryChain(
-        string path,
-        bool writableFinal)
-    {
-        string driveRoot = path[..3];
-        SafeFileHandle drive = BackupNativeMethods.CreateFileW(
-            @"\\?\" + driveRoot,
-            BackupNativeMethods.FileListDirectory |
-            BackupNativeMethods.FileTraverse |
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
-            IntPtr.Zero,
-            BackupNativeMethods.OpenExisting,
-            BackupNativeMethods.BackupSemantics |
-            BackupNativeMethods.OpenReparsePoint,
-            IntPtr.Zero);
-
-        if (drive.IsInvalid)
-        {
-            int error = Marshal.GetLastWin32Error();
-            drive.Dispose();
-            throw new JournalStorageException(error == 5
-                ? ExecutionJournalPersistenceFailureKind.AccessDenied
-                : ExecutionJournalPersistenceFailureKind.IoFailure);
-        }
-
-        var handles = new List<SafeFileHandle> { drive };
+        using WindowsExecutionTree.HeldDirectory parent =
+            OpenParent(normalizedParent, WindowsExecutionTree.ReadOnlyDirectoryAccess);
         try
         {
-            string[] components = path[3..]
-                .Split('\\', StringSplitOptions.RemoveEmptyEntries);
-
-            for (int index = 0; index < components.Length; index++)
-            {
-                bool isFinal = index == components.Length - 1;
-                uint desiredAccess =
-                    BackupNativeMethods.FileListDirectory |
-                    BackupNativeMethods.FileTraverse |
-                    BackupNativeMethods.FileReadAttributes |
-                    BackupNativeMethods.Synchronize;
-
-                if (writableFinal && isFinal)
-                {
-                    desiredAccess |=
-                        BackupNativeMethods.FileAddFile |
-                        BackupNativeMethods.FileWriteAttributes;
-                }
-
-                (SafeFileHandle next, int status) = BackupNativeMethods.OpenRelative(
-                    handles[^1],
-                    components[index],
-                    desiredAccess,
-                    BackupNativeMethods.ShareRead,
-                    BackupNativeMethods.FileOpen,
-                    BackupNativeMethods.FileOpenReparsePoint |
-                    BackupNativeMethods.FileOpenNoRecall |
-                    BackupNativeMethods.FileSynchronousIoNonAlert);
-
-                if (status != 0)
-                {
-                    next.Dispose();
-                    throw MapNativeFailure(status, missingIsInvalidReference: false);
-                }
-
-                FileAttributes attributes = BackupNativeMethods.ReadAttributes(next);
-                if (attributes.HasFlag(FileAttributes.ReparsePoint))
-                {
-                    next.Dispose();
-                    throw new JournalStorageException(
-                        ExecutionJournalPersistenceFailureKind.ReparsePoint);
-                }
-
-                if (!attributes.HasFlag(FileAttributes.Directory))
-                {
-                    next.Dispose();
-                    throw new JournalStorageException(
-                        ExecutionJournalPersistenceFailureKind.InvalidPath);
-                }
-
-                handles.Add(next);
-            }
-
-            return new HeldDirectory(handles);
+            return ChecksummedJournal.OpenExisting(parent.Root, fileName, writable);
         }
-        catch
+        catch (FileSystemException error)
         {
-            foreach (SafeFileHandle handle in handles)
-            {
-                handle.Dispose();
-            }
-
-            throw;
+            throw new JournalStorageException(MapFailure(error.Kind, missingIsInvalidReference: true));
         }
     }
 
-    private static JournalStorageException MapNativeFailure(
-        int status,
-        bool missingIsInvalidReference)
-    {
-        if (status == BackupNativeMethods.StatusReparsePointEncountered)
+    // A missing journal file is an invalid reference; a missing parent directory is an invalid path.
+    private static ExecutionJournalPersistenceFailureKind MapFailure(
+        FileSystemFailureKind kind,
+        bool missingIsInvalidReference) =>
+        kind switch
         {
-            return new JournalStorageException(
-                ExecutionJournalPersistenceFailureKind.ReparsePoint);
-        }
-
-        uint error = BackupNativeMethods.RtlNtStatusToDosError(status);
-        return new JournalStorageException(error switch
-        {
-            2 or 3 when missingIsInvalidReference =>
+            FileSystemFailureKind.ReparsePoint => ExecutionJournalPersistenceFailureKind.ReparsePoint,
+            FileSystemFailureKind.Missing when missingIsInvalidReference =>
                 ExecutionJournalPersistenceFailureKind.InvalidReference,
-            2 or 3 or 123 or 161 =>
+            FileSystemFailureKind.Missing or FileSystemFailureKind.InvalidPath =>
                 ExecutionJournalPersistenceFailureKind.InvalidPath,
-            5 => ExecutionJournalPersistenceFailureKind.AccessDenied,
+            FileSystemFailureKind.NotRegularFile => ExecutionJournalPersistenceFailureKind.InvalidReference,
+            FileSystemFailureKind.AccessDenied => ExecutionJournalPersistenceFailureKind.AccessDenied,
             _ => ExecutionJournalPersistenceFailureKind.IoFailure,
-        });
-    }
-
-    private static bool TryNormalizeReference(
-        ExecutionJournalReference? journal,
-        out string normalizedParent,
-        out string fileName)
-    {
-        normalizedParent = "";
-        fileName = "";
-
-        if (journal is null ||
-            !Guid.TryParseExact(journal.JournalId, "N", out _) ||
-            string.IsNullOrWhiteSpace(journal.JournalPath))
-        {
-            return false;
-        }
-
-        int separator = journal.JournalPath.LastIndexOf('\\');
-        if (separator <= 2 || separator == journal.JournalPath.Length - 1)
-        {
-            return false;
-        }
-
-        string parent = journal.JournalPath[..separator];
-        fileName = journal.JournalPath[(separator + 1)..];
-        string expectedName = $"mim-journal-{journal.JournalId}.jsonl";
-
-        return string.Equals(fileName, expectedName, StringComparison.OrdinalIgnoreCase) &&
-            TryNormalizeLocalDirectoryPath(parent, out normalizedParent);
-    }
-
-    private static bool TryNormalizeLocalDirectoryPath(
-        string? path,
-        out string normalized)
-    {
-        normalized = "";
-
-        if (string.IsNullOrWhiteSpace(path) ||
-            path.Length < 4 ||
-            path.Length > 32000 ||
-            !char.IsAsciiLetter(path[0]) ||
-            path[1] != ':' ||
-            path[2] != '\\')
-        {
-            return false;
-        }
-
-        string[] components = path[3..]
-            .Split('\\', StringSplitOptions.RemoveEmptyEntries);
-
-        if (components.Length == 0 ||
-            components.Any(component => !IsSingleName(component)))
-        {
-            return false;
-        }
-
-        string driveRoot = path[..3];
-        try
-        {
-            if (new DriveInfo(driveRoot).DriveType == DriveType.Network)
-            {
-                return false;
-            }
-        }
-        catch
-        {
-            return false;
-        }
-
-        normalized = driveRoot + string.Join('\\', components);
-        return true;
-    }
-
-    private static bool IsSingleName(string name) =>
-        name.Length > 0 &&
-        name is not "." and not ".." &&
-        !name.EndsWith('.') &&
-        !name.EndsWith(' ') &&
-        name.All(character =>
-            character >= 32 &&
-            !"<>:".Contains(character) &&
-            character != '"' &&
-            character != '/' &&
-            character != '\\' &&
-            character != '|' &&
-            character != '?' &&
-            character != '*');
-
-    private static bool IsSha256(string? value) =>
-        value is { Length: 64 } &&
-        value.All(character =>
-            character is >= '0' and <= '9' or
-            >= 'A' and <= 'F' or
-            >= 'a' and <= 'f');
+        };
 
     private static ExecutionJournalWriteResult InvalidWrite(
         ExecutionJournalPersistenceFailureKind kind,
         ExecutionJournalReference? journal = null) =>
-        new(
-            ExecutionJournalWriteStatus.Invalid,
-            journal,
-            kind);
+        new(ExecutionJournalWriteStatus.Invalid, journal, kind);
 
     private static ExecutionJournalReadResult InvalidRead(
         ExecutionJournalPersistenceFailureKind kind) =>
-        new(
-            ExecutionJournalReadStatus.Invalid,
-            FailureKind: kind);
+        new(ExecutionJournalReadStatus.Invalid, FailureKind: kind);
+
+    private static bool IsInvalidRatherThanFailed(ExecutionJournalPersistenceFailureKind kind) =>
+        kind is
+            ExecutionJournalPersistenceFailureKind.InvalidDraft or
+            ExecutionJournalPersistenceFailureKind.InvalidReference or
+            ExecutionJournalPersistenceFailureKind.InvalidPath or
+            ExecutionJournalPersistenceFailureKind.ReparsePoint or
+            ExecutionJournalPersistenceFailureKind.JournalFormatInvalid or
+            ExecutionJournalPersistenceFailureKind.JournalStateInvalid;
 
     private static ExecutionJournalWriteResult WriteFailure(
         ExecutionJournalPersistenceFailureKind kind,
         ExecutionJournalReference? journal) =>
-        kind is
-            ExecutionJournalPersistenceFailureKind.InvalidDraft or
-            ExecutionJournalPersistenceFailureKind.InvalidReference or
-            ExecutionJournalPersistenceFailureKind.InvalidPath or
-            ExecutionJournalPersistenceFailureKind.ReparsePoint or
-            ExecutionJournalPersistenceFailureKind.JournalFormatInvalid or
-            ExecutionJournalPersistenceFailureKind.JournalStateInvalid
+        IsInvalidRatherThanFailed(kind)
             ? InvalidWrite(kind, journal)
-            : new ExecutionJournalWriteResult(
-                ExecutionJournalWriteStatus.Failed,
-                journal,
-                kind);
+            : new ExecutionJournalWriteResult(ExecutionJournalWriteStatus.Failed, journal, kind);
 
     private static ExecutionJournalReadResult ReadFailure(
         ExecutionJournalPersistenceFailureKind kind) =>
-        kind is
-            ExecutionJournalPersistenceFailureKind.InvalidDraft or
-            ExecutionJournalPersistenceFailureKind.InvalidReference or
-            ExecutionJournalPersistenceFailureKind.InvalidPath or
-            ExecutionJournalPersistenceFailureKind.ReparsePoint or
-            ExecutionJournalPersistenceFailureKind.JournalFormatInvalid or
-            ExecutionJournalPersistenceFailureKind.JournalStateInvalid
+        IsInvalidRatherThanFailed(kind)
             ? InvalidRead(kind)
-            : new ExecutionJournalReadResult(
-                ExecutionJournalReadStatus.Failed,
-                FailureKind: kind);
+            : new ExecutionJournalReadResult(ExecutionJournalReadStatus.Failed, FailureKind: kind);
 
     private enum PersistedStepState
     {
@@ -1016,19 +532,6 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
         Started,
         Applied,
         Failed,
-    }
-
-    private sealed class HeldDirectory(List<SafeFileHandle> handles) : IDisposable
-    {
-        public SafeFileHandle Root => handles[^1];
-
-        public void Dispose()
-        {
-            foreach (SafeFileHandle handle in handles)
-            {
-                handle.Dispose();
-            }
-        }
     }
 
     private sealed class JournalStorageException(
@@ -1050,11 +553,7 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
         string Sha256)
     {
         public static PersistedFingerprint From(ExecutionContentFingerprint fingerprint) =>
-            new(
-                fingerprint.FileCount,
-                fingerprint.DirectoryCount,
-                fingerprint.TotalBytes,
-                fingerprint.Sha256);
+            new(fingerprint.FileCount, fingerprint.DirectoryCount, fingerprint.TotalBytes, fingerprint.Sha256);
     }
 
     private sealed record JournalPayload(
@@ -1074,8 +573,5 @@ public sealed class WindowsExecutionJournalStorage : IExecutionJournalStorage
     private sealed record ParsedJournal(
         ExecutionJournalSnapshot Snapshot,
         PersistedStepState[] States,
-        int NextIndex,
-        string LastChecksum,
-        int ValidLength,
-        bool HasTornTail);
+        JournalContents<JournalEnvelope> Contents);
 }

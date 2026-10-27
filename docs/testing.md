@@ -5,7 +5,7 @@
 Run from the repository root on Windows using the SDK selected by `global.json`:
 
 ```powershell
-dotnet restore
+dotnet restore --locked-mode
 dotnet build --configuration Release --no-restore
 dotnet test --configuration Release --no-build --no-restore
 dotnet format --verify-no-changes --no-restore
@@ -681,3 +681,24 @@ exercises the actual GUI workflow and asserts memory growth stays below half the
 Unit tests switch themes 100 times and require a single palette. Alias regressions share a
 nonparallel collection because drive mappings are machine-global. Workspace rejection/cancellation
 tests require zero backup calls before any file-changing work.
+
+## 2026-10 review: filesystem kernel and planning kind rule
+
+See [ADR 0003](adr/0003-filesystem-kernel-and-supply-chain.md) and the
+[review report](review/2026-10-architecture-security-review.ja.md).
+
+- `WindowsPathRulesTests` partitions path syntax by equivalence class and boundary value (drive root,
+  minimum and maximum length 32,000/32,001, UNC/device/relative syntax, traversal names, alternate data
+  streams, control characters, component-boundary overlap). It performs no IO and also runs on Linux.
+- `FingerprintFormatTests` pins the persisted fingerprint encoding with golden values computed
+  independently from the documented framing, for live, held-tree, and backup-manifest fingerprints.
+- `ExecutionJournalStorageTests.RecordShapeViolationsFailClosedWithoutTruncation` proves strict journal
+  parsing: an unknown, duplicate, or missing member fails closed even though its payload checksum matches.
+- Domain decision-table cases cover Replace, Skip, and Unresolved for a destination whose kind differs
+  from the catalog. Negative control: removing the planning rule makes both Replace cases fail.
+- `MigrationSelectionEntryViewModelTests` covers changing such a blocked Replace to Skip and Japanese text
+  for every blocked disposition.
+
+Lexical path rules, Domain, Application, and WPF-independent presentation logic can be checked on
+Linux by building with `-p:EnableWindowsTargeting=true`; Infrastructure IO, WPF, and UI smoke results
+come only from Windows runs.
