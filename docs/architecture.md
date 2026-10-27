@@ -111,6 +111,10 @@ Conflict decisions are accepted only for selected known entries that actually ha
 conflict. Unknown, unselected, stale/non-conflicting, or unsupported decisions are preserved as
 typed `ConflictDecisionIssue` values and block the aggregate plan instead of being silently ignored.
 
+A Replace decision is accepted only when the destination already has the catalog kind; otherwise the
+entry becomes `BlockedDestinationKindMismatch` (see [migration rules](migration-rules.md)). Skip remains
+valid for that entry.
+
 This phase intentionally does not define Merge behavior. Directory merge needs nested inventory,
 collision ordering, exclusion precedence, containment, backup, and rollback semantics that the
 current top-level metadata plan cannot prove.
@@ -750,3 +754,21 @@ destination before invoking the backup executor. Windows backup storage independ
 volume paths from the held destination/parent handles before creating any artifact. A drive alias cannot
 make a lexically external backup parent point inside the destination. The execution workspace guard
 continues to run immediately before execution as an independent later check.
+
+## Infrastructure filesystem kernel
+
+`Infrastructure/FileSystem` is the only place that talks to Windows filesystem APIs or interprets
+user path syntax ([ADR 0003](adr/0003-filesystem-kernel-and-supply-chain.md)):
+
+| Type | Responsibility |
+| --- | --- |
+| `NtFileApi` | Every P/Invoke: single-name `NtCreateFile` relative to a held handle with `OBJ_DONT_REPARSE`, directory enumeration, attributes, POSIX delete-by-handle, canonical volume paths, free space |
+| `WindowsPathRules` | One lexical policy for absolute local-drive paths, single names, and overlap; no IO, so it is unit-tested on any platform |
+| `FileSystemErrors` | One NTSTATUS / exception classification into `FileSystemFailureKind`; unexpected exception types still propagate |
+| `ChecksummedJournal` | Create-only no-follow journal files, strict bounded reads, torn-tail detection, SHA-256 record checksums, and flushed appends shared by both journals |
+
+`WindowsExecutionTree` is the only traversal, copy, delete, held-tree, and fingerprint implementation;
+Backup, execution, verification, rollback, and capacity adapters use it and translate
+`FileSystemFailureKind` into their own port result. The fingerprint byte encoding is a persisted contract
+pinned by golden-value tests. Each handle requests only the access its operation needs, and P/Invoke
+resolution is restricted to System32.

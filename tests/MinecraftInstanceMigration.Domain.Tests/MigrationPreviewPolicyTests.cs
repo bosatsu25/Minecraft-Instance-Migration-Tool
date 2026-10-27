@@ -19,6 +19,7 @@ public sealed class MigrationPreviewPolicyTests
     [InlineData(MigrationPlanDisposition.BlockedSourceReparsePoint, MigrationPreviewAction.Blocked)]
     [InlineData(MigrationPlanDisposition.BlockedDestinationObservation, MigrationPreviewAction.Blocked)]
     [InlineData(MigrationPlanDisposition.BlockedDestinationReparsePoint, MigrationPreviewAction.Blocked)]
+    [InlineData(MigrationPlanDisposition.BlockedDestinationKindMismatch, MigrationPreviewAction.Blocked)]
     public void MapsEveryCurrentPlanDispositionWithoutReplanning(
         MigrationPlanDisposition disposition,
         MigrationPreviewAction expectedAction)

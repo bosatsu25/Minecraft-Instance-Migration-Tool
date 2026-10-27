@@ -1,7 +1,7 @@
 using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Execution;
-using MinecraftInstanceMigration.Infrastructure.Backup;
+using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
 
@@ -31,13 +31,13 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
             throw new PlatformNotSupportedException("Execution mutation requires Windows.");
         }
 
-        if (!WindowsExecutionTree.TryNormalizeRoot(sourceRoot, out string normalizedSource) ||
-            !WindowsExecutionTree.TryNormalizeRoot(destinationRoot, out string normalizedDestination))
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(sourceRoot, out string normalizedSource) ||
+            !WindowsPathRules.TryNormalizeLocalDirectory(destinationRoot, out string normalizedDestination))
         {
             return Failed(ExecutionMutationFailureKind.InvalidPath);
         }
 
-        if (WindowsExecutionTree.RootsOverlap(normalizedSource, normalizedDestination))
+        if (WindowsPathRules.RootsOverlap(normalizedSource, normalizedDestination))
         {
             return Failed(ExecutionMutationFailureKind.OverlappingRoots);
         }
@@ -88,29 +88,9 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         {
             return Failed(error.Kind);
         }
-        catch (ExecutionTreeException error)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
-            return Failed(MapGeneralFailure(error.Kind));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Failed(ExecutionMutationFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 5)
-        {
-            return Failed(ExecutionMutationFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return Failed(ExecutionMutationFailureKind.IoFailure);
-        }
-        catch (IOException)
-        {
-            return Failed(ExecutionMutationFailureKind.IoFailure);
-        }
-        catch (BackupNativeException error)
-        {
-            return Failed(MapNativeFailure(error.Status));
+            return Failed(MapGeneralFailure(kind));
         }
     }
 
@@ -120,8 +100,8 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         {
             return WindowsExecutionTree.OpenDirectoryChain(path, writableFinal: false);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new ExecutionMutationException(ExecutionMutationFailureKind.SourceChanged);
         }
@@ -133,8 +113,8 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         {
             return WindowsExecutionTree.OpenDirectoryChain(path, writableFinal: true);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
         }
@@ -160,8 +140,8 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
                 throw;
             }
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new ExecutionMutationException(ExecutionMutationFailureKind.SourceChanged);
         }
@@ -178,10 +158,10 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
 
             throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
         }
-        catch (ExecutionTreeException error) when (error.Kind == ExecutionTreeFailureKind.Missing)
+        catch (FileSystemException error) when (error.Kind == FileSystemFailureKind.Missing)
         {
         }
-        catch (ExecutionTreeException error) when (error.Kind == ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (error.Kind == FileSystemFailureKind.Changed)
         {
             throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
         }
@@ -198,8 +178,8 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
 
             WindowsExecutionTree.EnsureExpectedKind(destination, step.ExpectedKind);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
         }
@@ -215,12 +195,12 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         {
             WindowsExecutionTree.CopyNode(source, destinationRoot, name, cancellationToken);
         }
-        catch (ExecutionTreeException error) when (error.Kind == ExecutionTreeFailureKind.Collision)
+        catch (FileSystemException error) when (error.Kind == FileSystemFailureKind.Collision)
         {
             throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new ExecutionMutationException(ExecutionMutationFailureKind.SourceChanged);
         }
@@ -250,40 +230,29 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
                 cancellationToken,
                 allowExistingDirectories: source.IsDirectory);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or
-                ExecutionTreeFailureKind.Changed or
-                ExecutionTreeFailureKind.Collision)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or
+                FileSystemFailureKind.Changed or
+                FileSystemFailureKind.Collision)
         {
             throw new ExecutionMutationException(
                 ExecutionMutationFailureKind.DestinationChanged);
         }
     }
 
-    private static ExecutionMutationFailureKind MapGeneralFailure(ExecutionTreeFailureKind kind) =>
+    private static ExecutionMutationFailureKind MapGeneralFailure(FileSystemFailureKind kind) =>
         kind switch
         {
-            ExecutionTreeFailureKind.InvalidPath => ExecutionMutationFailureKind.InvalidPath,
-            ExecutionTreeFailureKind.OverlappingRoots => ExecutionMutationFailureKind.OverlappingRoots,
-            ExecutionTreeFailureKind.ReparsePoint => ExecutionMutationFailureKind.ReparsePoint,
-            ExecutionTreeFailureKind.AccessDenied => ExecutionMutationFailureKind.AccessDenied,
-            ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed =>
+            FileSystemFailureKind.InvalidPath => ExecutionMutationFailureKind.InvalidPath,
+            FileSystemFailureKind.OverlappingRoots => ExecutionMutationFailureKind.OverlappingRoots,
+            FileSystemFailureKind.ReparsePoint => ExecutionMutationFailureKind.ReparsePoint,
+            FileSystemFailureKind.AccessDenied => ExecutionMutationFailureKind.AccessDenied,
+            FileSystemFailureKind.Missing or FileSystemFailureKind.Changed =>
                 ExecutionMutationFailureKind.SourceChanged,
-            ExecutionTreeFailureKind.Collision => ExecutionMutationFailureKind.DestinationChanged,
+            FileSystemFailureKind.Collision => ExecutionMutationFailureKind.DestinationChanged,
             _ => ExecutionMutationFailureKind.IoFailure,
         };
 
-    private static ExecutionMutationFailureKind MapNativeFailure(int status)
-    {
-        if (status == BackupNativeMethods.StatusReparsePointEncountered)
-        {
-            return ExecutionMutationFailureKind.ReparsePoint;
-        }
-
-        return BackupNativeMethods.RtlNtStatusToDosError(status) == 5
-            ? ExecutionMutationFailureKind.AccessDenied
-            : ExecutionMutationFailureKind.IoFailure;
-    }
 
     private static ExecutionMutationResult Failed(ExecutionMutationFailureKind kind) =>
         new(ExecutionMutationStatus.Failed, kind);

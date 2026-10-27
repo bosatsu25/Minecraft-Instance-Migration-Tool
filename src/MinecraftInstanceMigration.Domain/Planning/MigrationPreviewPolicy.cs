@@ -37,7 +37,8 @@ public static class MigrationPreviewPolicy
             MigrationPlanDisposition.BlockedSourceKindMismatch or
             MigrationPlanDisposition.BlockedSourceReparsePoint or
             MigrationPlanDisposition.BlockedDestinationObservation or
-            MigrationPlanDisposition.BlockedDestinationReparsePoint => MigrationPreviewAction.Blocked,
+            MigrationPlanDisposition.BlockedDestinationReparsePoint or
+            MigrationPlanDisposition.BlockedDestinationKindMismatch => MigrationPreviewAction.Blocked,
             _ => throw new InvalidOperationException($"Unsupported plan disposition: {disposition}."),
         };
 }

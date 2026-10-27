@@ -151,6 +151,58 @@ public sealed class MigrationSelectionAndConflictPolicyTests
             issue => issue.Name == "config" && issue.Kind == ConflictDecisionIssueKind.NoDestinationConflict);
     }
 
+    // The executor replaces only an entry of the catalog kind, so a mismatched Replace must be refused
+    // during planning: before any Backup IO or durable Started record could be produced.
+    [Theory]
+    [InlineData("config", EntryState.Directory, EntryState.File)]
+    [InlineData("options.txt", EntryState.File, EntryState.Directory)]
+    public void ReplaceOfDestinationWithDifferentKindIsBlockedBeforeBackup(
+        string name,
+        EntryState sourceState,
+        EntryState destinationState)
+    {
+        var plan = MigrationPlanPolicy.Create(
+            Inspection((name, sourceState)),
+            Inspection((name, destinationState)),
+            [name],
+            new Dictionary<string, DestinationConflictDecision>
+            {
+                [name] = DestinationConflictDecision.Replace,
+            });
+
+        MigrationPlanEntry entry = Entry(plan, name);
+        Assert.Equal(MigrationPlanStatus.Blocked, plan.Status);
+        Assert.Equal(MigrationPlanDisposition.BlockedDestinationKindMismatch, entry.Disposition);
+        Assert.True(entry.IsBlocked);
+        Assert.False(entry.RequiresBackup);
+        Assert.Empty(plan.ConflictDecisionIssues);
+        Assert.Equal(0, plan.ReadyForWriteCount);
+        Assert.Equal(Backup.BackupPlanStatus.Blocked, Backup.BackupPlanPolicy.Create(plan).Status);
+        Assert.Equal(Execution.ExecutionJournalStatus.Blocked, Execution.ExecutionJournalPolicy.Create(plan).Status);
+    }
+
+    [Theory]
+    [InlineData(DestinationConflictDecision.Unresolved, MigrationPlanDisposition.DestinationConflict, MigrationPlanStatus.NeedsDecision)]
+    [InlineData(DestinationConflictDecision.Skip, MigrationPlanDisposition.SkippedDestinationConflict, MigrationPlanStatus.Ready)]
+    public void DestinationWithDifferentKindCanStillBeLeftUntouched(
+        DestinationConflictDecision decision,
+        MigrationPlanDisposition expectedDisposition,
+        MigrationPlanStatus expectedStatus)
+    {
+        var plan = MigrationPlanPolicy.Create(
+            Inspection(("config", EntryState.Directory)),
+            Inspection(("config", EntryState.File)),
+            ["config"],
+            new Dictionary<string, DestinationConflictDecision>
+            {
+                ["config"] = decision,
+            });
+
+        Assert.Equal(expectedStatus, plan.Status);
+        Assert.Equal(expectedDisposition, Entry(plan, "config").Disposition);
+        Assert.Empty(plan.ConflictDecisionIssues);
+    }
+
     private static MigrationPlanEntry Entry(MigrationPlan plan, string name) =>
         Assert.Single(plan.Entries, entry => entry.Name == name);
 

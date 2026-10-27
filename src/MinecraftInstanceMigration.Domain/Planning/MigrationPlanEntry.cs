@@ -17,6 +17,7 @@ public enum MigrationPlanDisposition
     BlockedSourceReparsePoint,
     BlockedDestinationObservation,
     BlockedDestinationReparsePoint,
+    BlockedDestinationKindMismatch,
 }
 
 public sealed record MigrationPlanEntry(
@@ -34,7 +35,8 @@ public sealed record MigrationPlanEntry(
         MigrationPlanDisposition.BlockedSourceKindMismatch or
         MigrationPlanDisposition.BlockedSourceReparsePoint or
         MigrationPlanDisposition.BlockedDestinationObservation or
-        MigrationPlanDisposition.BlockedDestinationReparsePoint;
+        MigrationPlanDisposition.BlockedDestinationReparsePoint or
+        MigrationPlanDisposition.BlockedDestinationKindMismatch;
 
     public bool NeedsDecision => Disposition == MigrationPlanDisposition.DestinationConflict;
 

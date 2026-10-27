@@ -1,7 +1,7 @@
 using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Execution;
-using MinecraftInstanceMigration.Infrastructure.Backup;
+using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
 
@@ -31,13 +31,13 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
             throw new PlatformNotSupportedException("Post-write verification requires Windows.");
         }
 
-        if (!WindowsExecutionTree.TryNormalizeRoot(sourceRoot, out string normalizedSource) ||
-            !WindowsExecutionTree.TryNormalizeRoot(destinationRoot, out string normalizedDestination))
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(sourceRoot, out string normalizedSource) ||
+            !WindowsPathRules.TryNormalizeLocalDirectory(destinationRoot, out string normalizedDestination))
         {
             return Failed(ExecutionPostWriteVerificationFailureKind.InvalidPath);
         }
 
-        if (WindowsExecutionTree.RootsOverlap(normalizedSource, normalizedDestination))
+        if (WindowsPathRules.RootsOverlap(normalizedSource, normalizedDestination))
         {
             return Failed(ExecutionPostWriteVerificationFailureKind.OverlappingRoots);
         }
@@ -91,29 +91,9 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
         {
             return Failed(error.Kind);
         }
-        catch (ExecutionTreeException error)
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
         {
-            return Failed(MapGeneralFailure(error.Kind));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Failed(ExecutionPostWriteVerificationFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 5)
-        {
-            return Failed(ExecutionPostWriteVerificationFailureKind.AccessDenied);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return Failed(ExecutionPostWriteVerificationFailureKind.IoFailure);
-        }
-        catch (IOException)
-        {
-            return Failed(ExecutionPostWriteVerificationFailureKind.IoFailure);
-        }
-        catch (BackupNativeException error)
-        {
-            return Failed(MapNativeFailure(error.Status));
+            return Failed(MapGeneralFailure(kind));
         }
     }
 
@@ -123,8 +103,8 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
         {
             return WindowsExecutionTree.OpenDirectoryChain(path, writableFinal: false);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new ExecutionVerificationException(
                 ExecutionPostWriteVerificationFailureKind.SourceChanged);
@@ -137,8 +117,8 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
         {
             return WindowsExecutionTree.OpenDirectoryChain(path, writableFinal: false);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new ExecutionVerificationException(
                 ExecutionPostWriteVerificationFailureKind.DestinationMissing);
@@ -158,8 +138,8 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
                 step.ExpectedKind,
                 cancellationToken);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new ExecutionVerificationException(
                 ExecutionPostWriteVerificationFailureKind.SourceChanged);
@@ -186,8 +166,8 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
                 throw;
             }
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
         {
             throw new ExecutionVerificationException(
                 ExecutionPostWriteVerificationFailureKind.SourceChanged);
@@ -213,8 +193,8 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
                     throw;
                 }
             }
-            catch (ExecutionTreeException error) when (
-                error.Kind is ExecutionTreeFailureKind.Missing or ExecutionTreeFailureKind.Changed)
+            catch (FileSystemException error) when (
+                error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
             {
                 throw new ExecutionVerificationException(
                     ExecutionPostWriteVerificationFailureKind.DestinationMissing);
@@ -243,12 +223,12 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
                 step.ExpectedKind,
                 cancellationToken);
         }
-        catch (ExecutionTreeException error) when (error.Kind == ExecutionTreeFailureKind.Missing)
+        catch (FileSystemException error) when (error.Kind == FileSystemFailureKind.Missing)
         {
             throw new ExecutionVerificationException(
                 ExecutionPostWriteVerificationFailureKind.DestinationMissing);
         }
-        catch (ExecutionTreeException error) when (error.Kind == ExecutionTreeFailureKind.Changed)
+        catch (FileSystemException error) when (error.Kind == FileSystemFailureKind.Changed)
         {
             throw new ExecutionVerificationException(
                 ExecutionPostWriteVerificationFailureKind.VerificationMismatch);
@@ -256,35 +236,24 @@ public sealed class WindowsExecutionPostWriteVerifier : IExecutionPostWriteVerif
     }
 
     private static ExecutionPostWriteVerificationFailureKind MapGeneralFailure(
-        ExecutionTreeFailureKind kind) =>
+        FileSystemFailureKind kind) =>
         kind switch
         {
-            ExecutionTreeFailureKind.InvalidPath =>
+            FileSystemFailureKind.InvalidPath =>
                 ExecutionPostWriteVerificationFailureKind.InvalidPath,
-            ExecutionTreeFailureKind.OverlappingRoots =>
+            FileSystemFailureKind.OverlappingRoots =>
                 ExecutionPostWriteVerificationFailureKind.OverlappingRoots,
-            ExecutionTreeFailureKind.ReparsePoint =>
+            FileSystemFailureKind.ReparsePoint =>
                 ExecutionPostWriteVerificationFailureKind.ReparsePoint,
-            ExecutionTreeFailureKind.AccessDenied =>
+            FileSystemFailureKind.AccessDenied =>
                 ExecutionPostWriteVerificationFailureKind.AccessDenied,
-            ExecutionTreeFailureKind.Missing =>
+            FileSystemFailureKind.Missing =>
                 ExecutionPostWriteVerificationFailureKind.DestinationMissing,
-            ExecutionTreeFailureKind.Changed or ExecutionTreeFailureKind.Collision =>
+            FileSystemFailureKind.Changed or FileSystemFailureKind.Collision =>
                 ExecutionPostWriteVerificationFailureKind.VerificationMismatch,
             _ => ExecutionPostWriteVerificationFailureKind.IoFailure,
         };
 
-    private static ExecutionPostWriteVerificationFailureKind MapNativeFailure(int status)
-    {
-        if (status == BackupNativeMethods.StatusReparsePointEncountered)
-        {
-            return ExecutionPostWriteVerificationFailureKind.ReparsePoint;
-        }
-
-        return BackupNativeMethods.RtlNtStatusToDosError(status) == 5
-            ? ExecutionPostWriteVerificationFailureKind.AccessDenied
-            : ExecutionPostWriteVerificationFailureKind.IoFailure;
-    }
 
     private static ExecutionPostWriteVerificationResult Failed(
         ExecutionPostWriteVerificationFailureKind kind) =>

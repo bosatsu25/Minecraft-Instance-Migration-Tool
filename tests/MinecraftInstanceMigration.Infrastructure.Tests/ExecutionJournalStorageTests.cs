@@ -202,6 +202,59 @@ public sealed class ExecutionJournalStorageTests
             loaded.FailureKind);
     }
 
+    // Each corruption keeps the payload checksum valid, so only strict record parsing rejects it.
+    [Theory]
+    [InlineData("unknown-field")]
+    [InlineData("duplicate-property")]
+    [InlineData("missing-property")]
+    public async Task RecordShapeViolationsFailClosedWithoutTruncation(string corruption)
+    {
+        using var fixture = new InspectionFixture();
+        ExecutionJournalDraft draft = OneStepDraft();
+        ExecutionJournalReference journal = await Create(fixture, draft);
+        WindowsExecutionJournalStorage storage = Store();
+        Assert.True((await storage.MarkStepStartedAsync(
+            journal,
+            draft,
+            0,
+            TestContext.Current.CancellationToken)).IsSuccess);
+
+        string[] lines = File.ReadAllLines(journal.JournalPath);
+        switch (corruption)
+        {
+            case "unknown-field":
+                lines[0] = lines[0].Insert(1, "\"unexpected\":true,");
+                break;
+            case "duplicate-property":
+                lines[1] = lines[1].Replace(
+                    "\"kind\":\"Started\"",
+                    "\"kind\":\"Failed\",\"kind\":\"Started\"",
+                    StringComparison.Ordinal);
+                break;
+            case "missing-property":
+                lines[0] = lines[0].Replace("\"index\":0,", "", StringComparison.Ordinal);
+                break;
+        }
+
+        File.WriteAllText(journal.JournalPath, string.Join('\n', lines) + "\n");
+        byte[] corruptBytes = File.ReadAllBytes(journal.JournalPath);
+
+        ExecutionJournalReadResult loaded = await storage.LoadAsync(
+            journal,
+            draft,
+            TestContext.Current.CancellationToken);
+        ExecutionJournalWriteResult append = await storage.MarkStepFailedAsync(
+            journal,
+            draft,
+            0,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionJournalReadStatus.Invalid, loaded.Status);
+        Assert.Equal(ExecutionJournalPersistenceFailureKind.JournalFormatInvalid, loaded.FailureKind);
+        Assert.Equal(ExecutionJournalWriteStatus.Invalid, append.Status);
+        Assert.Equal(corruptBytes, File.ReadAllBytes(journal.JournalPath));
+    }
+
     [Fact]
     public async Task CannotStartLaterStepBeforePriorStepIsDurablyApplied()
     {

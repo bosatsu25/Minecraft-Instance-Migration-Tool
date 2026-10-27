@@ -1,5 +1,6 @@
 using MinecraftInstanceMigration.Application.Capacity;
 using MinecraftInstanceMigration.Domain.Inspection;
+using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
 
@@ -26,7 +27,7 @@ public sealed class WindowsMigrationCapacityProbe : ILogicalSizeProbe, IVolumeCa
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!WindowsExecutionTree.TryNormalizeRoot(root, out string normalized))
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(root, out string normalized))
         {
             return new LogicalSizeProbeResult(LogicalSizeProbeStatus.Unavailable);
         }
@@ -46,7 +47,7 @@ public sealed class WindowsMigrationCapacityProbe : ILogicalSizeProbe, IVolumeCa
         {
             throw;
         }
-        catch (ExecutionTreeException error)
+        catch (FileSystemException error)
         {
             return new LogicalSizeProbeResult(MapSizeStatus(error.Kind));
         }
@@ -61,7 +62,7 @@ public sealed class WindowsMigrationCapacityProbe : ILogicalSizeProbe, IVolumeCa
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!WindowsExecutionTree.TryNormalizeRoot(path, out string normalized))
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(path, out string normalized))
         {
             return new VolumeCapacityProbeResult(VolumeCapacityProbeStatus.InvalidPath);
         }
@@ -69,9 +70,9 @@ public sealed class WindowsMigrationCapacityProbe : ILogicalSizeProbe, IVolumeCa
         try
         {
             using WindowsExecutionTree.HeldDirectory directory = WindowsExecutionTree.OpenDirectoryChain(normalized, writableFinal: false);
-            string canonicalPath = ExecutionNativeMethods.GetCanonicalVolumePath(directory.Root);
+            string canonicalPath = NtFileApi.GetCanonicalVolumePath(directory.Root);
             string volumeIdentity = GetVolumeIdentity(canonicalPath);
-            long availableBytes = ExecutionNativeMethods.GetAvailableBytes(canonicalPath);
+            long availableBytes = NtFileApi.GetAvailableBytes(canonicalPath);
             return new VolumeCapacityProbeResult(
                 VolumeCapacityProbeStatus.Available,
                 volumeIdentity,
@@ -81,7 +82,7 @@ public sealed class WindowsMigrationCapacityProbe : ILogicalSizeProbe, IVolumeCa
         {
             throw;
         }
-        catch (ExecutionTreeException error)
+        catch (FileSystemException error)
         {
             return new VolumeCapacityProbeResult(MapVolumeStatus(error.Kind));
         }
@@ -108,22 +109,22 @@ public sealed class WindowsMigrationCapacityProbe : ILogicalSizeProbe, IVolumeCa
         return canonicalPath[..separator];
     }
 
-    private static LogicalSizeProbeStatus MapSizeStatus(ExecutionTreeFailureKind kind) =>
+    private static LogicalSizeProbeStatus MapSizeStatus(FileSystemFailureKind kind) =>
         kind switch
         {
-            ExecutionTreeFailureKind.Missing => LogicalSizeProbeStatus.Missing,
-            ExecutionTreeFailureKind.ReparsePoint => LogicalSizeProbeStatus.ReparsePoint,
-            ExecutionTreeFailureKind.AccessDenied => LogicalSizeProbeStatus.AccessDenied,
+            FileSystemFailureKind.Missing => LogicalSizeProbeStatus.Missing,
+            FileSystemFailureKind.ReparsePoint => LogicalSizeProbeStatus.ReparsePoint,
+            FileSystemFailureKind.AccessDenied => LogicalSizeProbeStatus.AccessDenied,
             _ => LogicalSizeProbeStatus.Unavailable,
         };
 
-    private static VolumeCapacityProbeStatus MapVolumeStatus(ExecutionTreeFailureKind kind) =>
+    private static VolumeCapacityProbeStatus MapVolumeStatus(FileSystemFailureKind kind) =>
         kind switch
         {
-            ExecutionTreeFailureKind.InvalidPath or ExecutionTreeFailureKind.Missing =>
+            FileSystemFailureKind.InvalidPath or FileSystemFailureKind.Missing =>
                 VolumeCapacityProbeStatus.InvalidPath,
-            ExecutionTreeFailureKind.ReparsePoint => VolumeCapacityProbeStatus.ReparsePoint,
-            ExecutionTreeFailureKind.AccessDenied => VolumeCapacityProbeStatus.AccessDenied,
+            FileSystemFailureKind.ReparsePoint => VolumeCapacityProbeStatus.ReparsePoint,
+            FileSystemFailureKind.AccessDenied => VolumeCapacityProbeStatus.AccessDenied,
             _ => VolumeCapacityProbeStatus.Unavailable,
         };
 }

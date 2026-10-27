@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
@@ -8,79 +7,30 @@ using MinecraftInstanceMigration.Domain.Backup;
 using MinecraftInstanceMigration.Domain.Execution;
 using MinecraftInstanceMigration.Domain.Inspection;
 using MinecraftInstanceMigration.Domain.Rules;
-using MinecraftInstanceMigration.Infrastructure.Backup;
+using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
 
-internal enum ExecutionTreeFailureKind
-{
-    InvalidPath,
-    OverlappingRoots,
-    Missing,
-    Changed,
-    Collision,
-    ReparsePoint,
-    AccessDenied,
-    IoFailure,
-}
-
-internal sealed class ExecutionTreeException(
-    ExecutionTreeFailureKind kind) : Exception
-{
-    internal ExecutionTreeFailureKind Kind { get; } = kind;
-}
-
+// Handle-relative, no-follow tree operations shared by backup, execution, verification, rollback
+// and capacity measurement. There is exactly one copy and one fingerprint algorithm.
 internal static class WindowsExecutionTree
 {
+    internal const uint ReadOnlyDirectoryAccess = 0;
+
+    // Final-component rights needed to create, replace and delete children in a migration root.
+    internal const uint MutableDirectoryAccess =
+        NtFileApi.FileAddFile |
+        NtFileApi.FileAddSubdirectory |
+        NtFileApi.FileDeleteChild |
+        NtFileApi.FileWriteAttributes;
+
     private const int BufferSize = 128 * 1024;
 
-    internal static bool TryNormalizeRoot(
-        string? path,
-        out string normalized)
-    {
-        normalized = "";
-
-        if (string.IsNullOrWhiteSpace(path) ||
-            path.Length < 4 ||
-            path.Length > 32000 ||
-            !char.IsAsciiLetter(path[0]) ||
-            path[1] != ':' ||
-            path[2] != '\\')
-        {
-            return false;
-        }
-
-        string[] components = path[3..]
-            .Split('\\', StringSplitOptions.RemoveEmptyEntries);
-
-        if (components.Length == 0 ||
-            components.Any(component => !IsSingleName(component)))
-        {
-            return false;
-        }
-
-        string driveRoot = path[..3];
-        try
-        {
-            if (new DriveInfo(driveRoot).DriveType == DriveType.Network)
-            {
-                return false;
-            }
-        }
-        catch
-        {
-            return false;
-        }
-
-        normalized = driveRoot + string.Join('\\', components);
-        return true;
-    }
-
-    internal static bool RootsOverlap(
-        string first,
-        string second) =>
-        IsEqualOrDescendant(first, second) ||
-        IsEqualOrDescendant(second, first);
+    private const uint TraverseDirectoryAccess =
+        NtFileApi.FileListDirectory |
+        NtFileApi.FileTraverse |
+        NtFileApi.FileReadAttributes |
+        NtFileApi.Synchronize;
 
     internal static bool PhysicalRootsOverlap(
         HeldDirectory first,
@@ -88,99 +38,64 @@ internal static class WindowsExecutionTree
         IsPhysicalEqualOrDescendant(first.Root, second.Root) ||
         IsPhysicalEqualOrDescendant(second.Root, first.Root);
 
+    // Compares canonical volume paths of held handles so SUBST or other aliases cannot hide overlap.
     internal static bool IsPhysicalEqualOrDescendant(
         SafeFileHandle candidate,
-        SafeFileHandle root)
-    {
-        string candidatePath =
-            ExecutionNativeMethods.GetCanonicalVolumePath(candidate);
-        string rootPath =
-            ExecutionNativeMethods.GetCanonicalVolumePath(root);
-
-        return IsEqualOrDescendant(candidatePath, rootPath);
-    }
+        SafeFileHandle root) =>
+        WindowsPathRules.IsEqualOrDescendant(
+            NtFileApi.GetCanonicalVolumePath(candidate),
+            NtFileApi.GetCanonicalVolumePath(root));
 
     internal static HeldDirectory OpenDirectoryChain(
         string path,
-        bool writableFinal)
-    {
-        string driveRoot = path[..3];
-        SafeFileHandle drive = BackupNativeMethods.CreateFileW(
-            @"\\?\" + driveRoot,
-            BackupNativeMethods.FileListDirectory |
-            BackupNativeMethods.FileTraverse |
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
-            IntPtr.Zero,
-            BackupNativeMethods.OpenExisting,
-            BackupNativeMethods.BackupSemantics |
-            BackupNativeMethods.OpenReparsePoint,
-            IntPtr.Zero);
+        bool writableFinal) =>
+        OpenDirectoryChain(path, writableFinal ? MutableDirectoryAccess : ReadOnlyDirectoryAccess);
 
+    // Opens the drive root, then each component relative to the previous held handle. Every
+    // ancestor stays open (denying rename/delete sharing) until the returned chain is disposed.
+    internal static HeldDirectory OpenDirectoryChain(
+        string path,
+        uint finalAccess)
+    {
+        (SafeFileHandle drive, int error) = NtFileApi.OpenDriveRoot(path[..3], TraverseDirectoryAccess);
         if (drive.IsInvalid)
         {
-            int error = Marshal.GetLastWin32Error();
             drive.Dispose();
-            throw new ExecutionTreeException(error == 5
-                ? ExecutionTreeFailureKind.AccessDenied
-                : ExecutionTreeFailureKind.IoFailure);
+            throw new FileSystemException(FileSystemErrors.ForWin32Error(error));
         }
 
         var handles = new List<SafeFileHandle> { drive };
         try
         {
-            string[] components = path[3..]
-                .Split('\\', StringSplitOptions.RemoveEmptyEntries);
-
+            string[] components = path[3..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
             for (int index = 0; index < components.Length; index++)
             {
                 bool isFinal = index == components.Length - 1;
-                uint desiredAccess =
-                    BackupNativeMethods.FileListDirectory |
-                    BackupNativeMethods.FileTraverse |
-                    BackupNativeMethods.FileReadAttributes |
-                    BackupNativeMethods.Synchronize;
-
-                if (writableFinal && isFinal)
-                {
-                    desiredAccess |=
-                        BackupNativeMethods.FileAddFile |
-                        BackupNativeMethods.FileAddSubdirectory |
-                        ExecutionNativeMethods.FileDeleteChild |
-                        BackupNativeMethods.FileWriteAttributes;
-                }
-
-                (SafeFileHandle next, int status) = BackupNativeMethods.OpenRelative(
+                (SafeFileHandle next, int status) = NtFileApi.OpenRelative(
                     handles[^1],
                     components[index],
-                    desiredAccess,
-                    BackupNativeMethods.ShareRead,
-                    BackupNativeMethods.FileOpen,
-                    BackupNativeMethods.FileOpenReparsePoint |
-                    BackupNativeMethods.FileOpenNoRecall |
-                    BackupNativeMethods.FileSynchronousIoNonAlert);
+                    TraverseDirectoryAccess | (isFinal ? finalAccess : 0),
+                    NtFileApi.ShareRead,
+                    NtFileApi.FileOpen,
+                    NtFileApi.NoFollowOpenOptions);
 
                 if (status != 0)
                 {
                     next.Dispose();
-                    throw MapNativeFailure(status);
+                    throw FileSystemErrors.ForOpen(status);
                 }
 
-                FileAttributes attributes = BackupNativeMethods.ReadAttributes(next);
+                handles.Add(next);
+                FileAttributes attributes = NtFileApi.ReadAttributes(next);
                 if (attributes.HasFlag(FileAttributes.ReparsePoint))
                 {
-                    next.Dispose();
-                    throw new ExecutionTreeException(ExecutionTreeFailureKind.ReparsePoint);
+                    throw new FileSystemException(FileSystemFailureKind.ReparsePoint);
                 }
 
                 if (!attributes.HasFlag(FileAttributes.Directory))
                 {
-                    next.Dispose();
-                    throw new ExecutionTreeException(ExecutionTreeFailureKind.InvalidPath);
+                    throw new FileSystemException(FileSystemFailureKind.InvalidPath);
                 }
-
-                handles.Add(next);
             }
 
             return new HeldDirectory(handles);
@@ -203,100 +118,86 @@ internal static class WindowsExecutionTree
     {
         ValidateSingleName(name);
 
-        uint shareAccess = BackupNativeMethods.ShareRead |
-            (forDelete ? BackupNativeMethods.ShareDelete : 0);
-
-        (SafeFileHandle metadata, int metadataStatus) = BackupNativeMethods.OpenRelative(
+        uint shareAccess = NtFileApi.ShareRead | (forDelete ? NtFileApi.ShareDelete : 0);
+        (SafeFileHandle metadata, int metadataStatus) = NtFileApi.OpenRelative(
             parent,
             name,
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.Synchronize,
+            NtFileApi.FileReadAttributes | NtFileApi.Synchronize,
             shareAccess,
-            BackupNativeMethods.FileOpen,
-            BackupNativeMethods.FileOpenReparsePoint |
-            BackupNativeMethods.FileOpenNoRecall |
-            BackupNativeMethods.FileSynchronousIoNonAlert);
+            NtFileApi.FileOpen,
+            NtFileApi.NoFollowOpenOptions);
 
         if (metadataStatus != 0)
         {
             metadata.Dispose();
-            throw MapNativeFailure(metadataStatus);
+            throw FileSystemErrors.ForOpen(metadataStatus);
         }
 
         bool directory;
         using (metadata)
         {
-            FileAttributes attributes = BackupNativeMethods.ReadAttributes(metadata);
+            FileAttributes attributes = NtFileApi.ReadAttributes(metadata);
             if (attributes.HasFlag(FileAttributes.ReparsePoint))
             {
-                throw new ExecutionTreeException(ExecutionTreeFailureKind.ReparsePoint);
+                throw new FileSystemException(FileSystemFailureKind.ReparsePoint);
             }
 
             directory = attributes.HasFlag(FileAttributes.Directory);
         }
 
-        uint desiredAccess =
-                BackupNativeMethods.FileReadAttributes |
-                BackupNativeMethods.Synchronize;
-
+        uint desiredAccess = NtFileApi.FileReadAttributes | NtFileApi.Synchronize |
+            (directory
+                ? NtFileApi.FileListDirectory | NtFileApi.FileTraverse
+                : NtFileApi.FileReadData);
         if (forDelete)
         {
-            desiredAccess |= ExecutionNativeMethods.DeleteAccess;
-            desiredAccess |= directory
-                ? BackupNativeMethods.FileListDirectory |
-                    BackupNativeMethods.FileTraverse |
-                    ExecutionNativeMethods.FileDeleteChild
-                : BackupNativeMethods.FileReadData;
-        }
-        else
-        {
-            desiredAccess |= directory
-                ? BackupNativeMethods.FileListDirectory |
-                    BackupNativeMethods.FileTraverse
-                : BackupNativeMethods.FileReadData;
+            desiredAccess |= NtFileApi.DeleteAccess | (directory ? NtFileApi.FileDeleteChild : 0);
         }
 
-        (SafeFileHandle data, int status) = BackupNativeMethods.OpenRelative(
-                parent,
-                name,
-                desiredAccess,
-                BackupNativeMethods.ShareRead,
-                BackupNativeMethods.FileOpen,
-                BackupNativeMethods.FileOpenReparsePoint |
-                BackupNativeMethods.FileOpenNoRecall |
-                BackupNativeMethods.FileSynchronousIoNonAlert);
+        (SafeFileHandle data, int status) = NtFileApi.OpenRelative(
+            parent,
+            name,
+            desiredAccess,
+            NtFileApi.ShareRead,
+            NtFileApi.FileOpen,
+            NtFileApi.NoFollowOpenOptions);
 
         if (status != 0)
         {
             data.Dispose();
-            throw MapNativeFailure(status);
+            throw FileSystemErrors.ForOpen(status);
         }
 
-        FileAttributes confirmed = BackupNativeMethods.ReadAttributes(data);
-        if (confirmed.HasFlag(FileAttributes.ReparsePoint))
+        try
+        {
+            // The object may have been swapped between the two opens; confirm it on the held handle.
+            FileAttributes confirmed = NtFileApi.ReadAttributes(data);
+            if (confirmed.HasFlag(FileAttributes.ReparsePoint))
+            {
+                throw new FileSystemException(FileSystemFailureKind.ReparsePoint);
+            }
+
+            if (confirmed.HasFlag(FileAttributes.Directory) != directory)
+            {
+                throw new FileSystemException(FileSystemFailureKind.Changed);
+            }
+
+            return new OpenedNode(data, directory);
+        }
+        catch
         {
             data.Dispose();
-            throw new ExecutionTreeException(ExecutionTreeFailureKind.ReparsePoint);
+            throw;
         }
-
-        bool confirmedDirectory = confirmed.HasFlag(FileAttributes.Directory);
-        if (confirmedDirectory != directory)
-        {
-            data.Dispose();
-            throw new ExecutionTreeException(ExecutionTreeFailureKind.Changed);
-        }
-
-        return new OpenedNode(data, directory);
     }
 
     internal static void EnsureExpectedKind(
         OpenedNode node,
         ExpectedEntryKind expectedKind)
     {
-        bool expectedDirectory = expectedKind == ExpectedEntryKind.Directory;
-        if (node.IsDirectory != expectedDirectory)
+        if (node.IsDirectory != (expectedKind == ExpectedEntryKind.Directory))
         {
-            throw new ExecutionTreeException(ExecutionTreeFailureKind.Changed);
+            throw new FileSystemException(FileSystemFailureKind.Changed);
         }
     }
 
@@ -309,8 +210,7 @@ internal static class WindowsExecutionTree
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!source.IsDirectory &&
-            KnownMigrationContentRules.IsExcludedFileName(name))
+        if (!source.IsDirectory && KnownMigrationContentRules.IsExcludedFileName(name))
         {
             return;
         }
@@ -321,17 +221,11 @@ internal static class WindowsExecutionTree
                 ? CreateOrOpenDirectory(destinationParent, name)
                 : CreateDirectory(destinationParent, name);
 
-            foreach (string childName in BackupNativeMethods.EnumerateNames(source.Handle))
+            foreach (string childName in NtFileApi.EnumerateNames(source.Handle))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                ValidateSingleName(childName);
                 using OpenedNode child = OpenExistingNode(source.Handle, childName);
-                CopyNode(
-                    child,
-                    destination,
-                    childName,
-                    cancellationToken,
-                    allowExistingDirectories);
+                CopyNode(child, destination, childName, cancellationToken, allowExistingDirectories);
             }
 
             return;
@@ -359,15 +253,14 @@ internal static class WindowsExecutionTree
 
         if (node.IsDirectory)
         {
-            foreach (string childName in BackupNativeMethods.EnumerateNames(node.Handle))
+            foreach (string childName in NtFileApi.EnumerateNames(node.Handle))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                ValidateSingleName(childName);
                 DeleteNode(node.Handle, childName, cancellationToken);
             }
         }
 
-        ExecutionNativeMethods.DeleteByHandle(node.Handle);
+        NtFileApi.DeleteByHandle(node.Handle);
     }
 
     // Retain every descendant handle from fingerprinting until deletion or restore is complete.
@@ -383,7 +276,7 @@ internal static class WindowsExecutionTree
         {
             if (node.IsDirectory)
             {
-                foreach (string childName in BackupNativeMethods.EnumerateNames(node.Handle))
+                foreach (string childName in NtFileApi.EnumerateNames(node.Handle))
                 {
                     children.Add(OpenHeldTree(node.Handle, childName, forDelete));
                 }
@@ -405,70 +298,20 @@ internal static class WindowsExecutionTree
 
     internal static TreeFingerprint FingerprintHeldTree(
         HeldNodeTree tree,
-        CancellationToken cancellationToken)
-    {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        int files = 0;
-        int directories = 0;
-        long totalBytes = 0;
-        AppendHeldFingerprint(tree, tree.Name, hash,
-            ref files, ref directories, ref totalBytes, cancellationToken);
-        return new TreeFingerprint(files, directories, totalBytes,
-            Convert.ToHexString(hash.GetHashAndReset()));
-    }
+        CancellationToken cancellationToken) =>
+        FingerprintHeldBackupPlan([tree], cancellationToken);
 
     internal static TreeFingerprint FingerprintHeldBackupPlan(
         IReadOnlyList<HeldNodeTree> trees,
         CancellationToken cancellationToken)
     {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        int files = 0;
-        int directories = 0;
-        long totalBytes = 0;
+        using var builder = new FingerprintBuilder();
         foreach (HeldNodeTree tree in trees)
         {
-            AppendHeldFingerprint(tree, tree.Name, hash,
-                ref files, ref directories, ref totalBytes, cancellationToken);
+            AppendHeldFingerprint(tree, tree.Name, builder, cancellationToken);
         }
 
-        return new TreeFingerprint(files, directories, totalBytes,
-            Convert.ToHexString(hash.GetHashAndReset()));
-    }
-
-    private static void AppendHeldFingerprint(
-        HeldNodeTree tree,
-        string relativePath,
-        IncrementalHash hash,
-        ref int files,
-        ref int directories,
-        ref long totalBytes,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        AppendRecordPrefix(hash, tree.Node.IsDirectory ? (byte)1 : (byte)2,
-            relativePath);
-        if (tree.Node.IsDirectory)
-        {
-            directories++;
-            foreach (HeldNodeTree child in tree.Children)
-            {
-                if (!child.Node.IsDirectory &&
-                    KnownMigrationContentRules.IsExcludedFileName(child.Name))
-                {
-                    continue;
-                }
-
-                AppendHeldFingerprint(child, relativePath + "/" + child.Name,
-                    hash, ref files, ref directories, ref totalBytes,
-                    cancellationToken);
-            }
-
-            return;
-        }
-
-        files++;
-        AppendFileContent(tree.Node.Handle, hash, ref totalBytes,
-            cancellationToken);
+        return builder.Build();
     }
 
     internal static void DeleteHeldTree(
@@ -478,12 +321,221 @@ internal static class WindowsExecutionTree
         DeleteHeldTreeCore(tree, deleted);
     }
 
+    internal static void CopyHeldTree(
+        HeldNodeTree source,
+        SafeFileHandle destinationParent,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (source.Node.IsDirectory)
+        {
+            using SafeFileHandle destination = CreateOrOpenDirectory(destinationParent, source.Name);
+            foreach (HeldNodeTree child in source.Children)
+            {
+                if (!IsExcludedFile(child))
+                {
+                    CopyHeldTree(child, destination, cancellationToken);
+                }
+            }
+
+            return;
+        }
+
+        using SafeFileHandle destinationFile = CreateFile(destinationParent, source.Name);
+        CopyFileBytes(source.Node.Handle, destinationFile, cancellationToken);
+    }
+
+    internal static TreeFingerprint FingerprintNode(
+        SafeFileHandle root,
+        string name,
+        ExpectedEntryKind expectedKind,
+        CancellationToken cancellationToken)
+    {
+        using OpenedNode node = OpenExistingNode(root, name);
+        EnsureExpectedKind(node, expectedKind);
+        return FingerprintOpenedNode(node, name, cancellationToken);
+    }
+
+    // Fingerprints planned backup entries in plan order. Kinds are not enforced: a Replace may back
+    // up a destination whose kind differs from the catalog, and the digest itself records the kind.
+    internal static TreeFingerprint FingerprintBackupEntries(
+        SafeFileHandle root,
+        BackupPlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        using var builder = new FingerprintBuilder();
+        foreach (BackupPlanEntry entry in plan.Entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using OpenedNode node = OpenExistingNode(root, entry.Name);
+            AppendFingerprint(node, entry.Name, builder, cancellationToken);
+        }
+
+        return builder.Build();
+    }
+
+    internal static TreeFingerprint FingerprintOpenedNode(
+        OpenedNode node,
+        string relativeName,
+        CancellationToken cancellationToken)
+    {
+        using var builder = new FingerprintBuilder();
+        AppendFingerprint(node, relativeName, builder, cancellationToken);
+        return builder.Build();
+    }
+
+    // Replace preserves excluded destination files and the directories that contain them, so a
+    // verified destination may legitimately hold extra content made only of excluded files.
+    internal static bool MigrationPayloadMatches(
+        OpenedNode source,
+        OpenedNode destination,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (source.IsDirectory != destination.IsDirectory)
+        {
+            return false;
+        }
+
+        if (!source.IsDirectory)
+        {
+            return FileContentMatches(source.Handle, destination.Handle, cancellationToken);
+        }
+
+        // Names arrive sorted case-insensitively; keeping the first match preserves linear-search
+        // semantics while avoiding a quadratic scan of large directories such as world saves.
+        var destinationNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string name in NtFileApi.EnumerateNames(destination.Handle))
+        {
+            destinationNames.TryAdd(name, name);
+        }
+
+        var remainingDestinationNames = new HashSet<string>(destinationNames.Values, StringComparer.OrdinalIgnoreCase);
+
+        foreach (string sourceName in NtFileApi.EnumerateNames(source.Handle))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using OpenedNode sourceChild = OpenExistingNode(source.Handle, sourceName);
+            if (!sourceChild.IsDirectory && KnownMigrationContentRules.IsExcludedFileName(sourceName))
+            {
+                continue;
+            }
+
+            if (!destinationNames.TryGetValue(sourceName, out string? destinationName))
+            {
+                return false;
+            }
+
+            using OpenedNode destinationChild = OpenExistingNode(destination.Handle, destinationName);
+            if (!MigrationPayloadMatches(sourceChild, destinationChild, cancellationToken))
+            {
+                return false;
+            }
+
+            remainingDestinationNames.Remove(destinationName);
+        }
+
+        foreach (string destinationName in remainingDestinationNames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using OpenedNode destinationChild = OpenExistingNode(destination.Handle, destinationName);
+            if (!ContainsOnlyExcludedContent(destinationChild, destinationName, cancellationToken))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    internal static long MeasureLogicalBytes(
+        OpenedNode node,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!node.IsDirectory)
+        {
+            return KnownMigrationContentRules.IsExcludedFileName(name)
+                ? 0
+                : RandomAccess.GetLength(node.Handle);
+        }
+
+        long totalBytes = 0;
+        foreach (string childName in NtFileApi.EnumerateNames(node.Handle))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using OpenedNode child = OpenExistingNode(node.Handle, childName);
+            totalBytes = checked(totalBytes + MeasureLogicalBytes(child, childName, cancellationToken));
+        }
+
+        return totalBytes;
+    }
+
+    internal static SafeFileHandle CreateDirectory(
+        SafeFileHandle parent,
+        string name)
+    {
+        ValidateSingleName(name);
+
+        (SafeFileHandle handle, int status) = NtFileApi.OpenRelative(
+            parent,
+            name,
+            NtFileApi.FileListDirectory |
+            NtFileApi.FileAddFile |
+            NtFileApi.FileAddSubdirectory |
+            NtFileApi.FileTraverse |
+            NtFileApi.FileReadAttributes |
+            NtFileApi.FileWriteAttributes |
+            NtFileApi.Synchronize,
+            NtFileApi.ShareRead,
+            NtFileApi.FileCreate,
+            NtFileApi.FileDirectoryFile | NtFileApi.FileSynchronousIoNonAlert);
+
+        if (status != 0)
+        {
+            handle.Dispose();
+            throw FileSystemErrors.ForCreate(status);
+        }
+
+        return handle;
+    }
+
+    // Create-only: an existing name, including a pre-planted hard link, is a collision, never a target.
+    internal static SafeFileHandle CreateFile(
+        SafeFileHandle parent,
+        string name)
+    {
+        ValidateSingleName(name);
+
+        (SafeFileHandle handle, int status) = NtFileApi.OpenRelative(
+            parent,
+            name,
+            NtFileApi.FileReadData |
+            NtFileApi.FileWriteData |
+            NtFileApi.FileReadAttributes |
+            NtFileApi.FileWriteAttributes |
+            NtFileApi.Synchronize,
+            NtFileApi.ShareRead,
+            NtFileApi.FileCreate,
+            NtFileApi.FileNonDirectoryFile | NtFileApi.FileSynchronousIoNonAlert);
+
+        if (status != 0)
+        {
+            handle.Dispose();
+            throw FileSystemErrors.ForCreate(status);
+        }
+
+        return handle;
+    }
+
     private static bool DeleteHeldTreeCore(
         HeldNodeTree tree,
         Action deleted)
     {
-        if (!tree.Node.IsDirectory &&
-            KnownMigrationContentRules.IsExcludedFileName(tree.Name))
+        if (IsExcludedFile(tree))
         {
             return false;
         }
@@ -500,184 +552,61 @@ internal static class WindowsExecutionTree
             return false;
         }
 
-        ExecutionNativeMethods.DeleteByHandle(tree.Node.Handle);
+        NtFileApi.DeleteByHandle(tree.Node.Handle);
         deleted();
         return true;
     }
 
-    internal static void CopyHeldTree(
-        HeldNodeTree source,
-        SafeFileHandle destinationParent,
+    private static void AppendHeldFingerprint(
+        HeldNodeTree tree,
+        string relativePath,
+        FingerprintBuilder builder,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (source.Node.IsDirectory)
+        if (!tree.Node.IsDirectory)
         {
-            using SafeFileHandle destination =
-                CreateOrOpenDirectory(destinationParent, source.Name);
-            foreach (HeldNodeTree child in source.Children)
-            {
-                if (!child.Node.IsDirectory &&
-                    KnownMigrationContentRules.IsExcludedFileName(child.Name))
-                {
-                    continue;
-                }
-
-                CopyHeldTree(child, destination, cancellationToken);
-            }
-
+            builder.AppendFile(relativePath, tree.Node.Handle, cancellationToken);
             return;
         }
 
-        using SafeFileHandle destinationFile =
-            CreateFile(destinationParent, source.Name);
-        CopyFileBytes(source.Node.Handle, destinationFile, cancellationToken);
-    }
-
-    internal static TreeFingerprint FingerprintNode(
-        SafeFileHandle root,
-        string name,
-        ExpectedEntryKind expectedKind,
-        CancellationToken cancellationToken)
-    {
-        using OpenedNode node = OpenExistingNode(root, name);
-        EnsureExpectedKind(node, expectedKind);
-        return FingerprintOpenedNode(node, name, cancellationToken);
-    }
-
-    internal static TreeFingerprint FingerprintBackupPlan(
-        SafeFileHandle root,
-        BackupPlan plan,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(plan);
-
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        int files = 0;
-        int directories = 0;
-        long totalBytes = 0;
-
-        foreach (BackupPlanEntry entry in plan.Entries)
+        builder.AppendDirectory(relativePath);
+        foreach (HeldNodeTree child in tree.Children)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            using OpenedNode node = OpenExistingNode(root, entry.Name);
-            EnsureExpectedKind(node, entry.ExpectedKind);
-            AppendFingerprint(
-                node,
-                entry.Name,
-                hash,
-                ref files,
-                ref directories,
-                ref totalBytes,
-                cancellationToken);
+            if (!IsExcludedFile(child))
+            {
+                AppendHeldFingerprint(child, relativePath + "/" + child.Name, builder, cancellationToken);
+            }
         }
-
-        return new TreeFingerprint(
-            files,
-            directories,
-            totalBytes,
-            Convert.ToHexString(hash.GetHashAndReset()));
     }
 
-    internal static TreeFingerprint FingerprintOpenedNode(
+    // The child is opened before the exclusion check so an excluded name that is a reparse point
+    // still fails closed instead of being skipped.
+    private static void AppendFingerprint(
         OpenedNode node,
-        string relativeName,
-        CancellationToken cancellationToken)
-    {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        int files = 0;
-        int directories = 0;
-        long totalBytes = 0;
-
-        AppendFingerprint(
-            node,
-            relativeName,
-            hash,
-            ref files,
-            ref directories,
-            ref totalBytes,
-            cancellationToken);
-
-        return new TreeFingerprint(
-            files,
-            directories,
-            totalBytes,
-            Convert.ToHexString(hash.GetHashAndReset()));
-    }
-
-    internal static bool MigrationPayloadMatches(
-        OpenedNode source,
-        OpenedNode destination,
+        string relativePath,
+        FingerprintBuilder builder,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (source.IsDirectory != destination.IsDirectory)
+        if (!node.IsDirectory)
         {
-            return false;
+            builder.AppendFile(relativePath, node.Handle, cancellationToken);
+            return;
         }
 
-        if (!source.IsDirectory)
-        {
-            return FileContentMatches(
-                source.Handle,
-                destination.Handle,
-                cancellationToken);
-        }
-
-        IReadOnlyList<string> destinationNames =
-            BackupNativeMethods.EnumerateNames(destination.Handle);
-        var remainingDestinationNames = new HashSet<string>(
-            destinationNames,
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (string sourceName in BackupNativeMethods.EnumerateNames(source.Handle))
+        builder.AppendDirectory(relativePath);
+        foreach (string childName in NtFileApi.EnumerateNames(node.Handle))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ValidateSingleName(sourceName);
-            using OpenedNode sourceChild = OpenExistingNode(source.Handle, sourceName);
-            if (!sourceChild.IsDirectory &&
-                KnownMigrationContentRules.IsExcludedFileName(sourceName))
+            using OpenedNode child = OpenExistingNode(node.Handle, childName);
+            if (!child.IsDirectory && KnownMigrationContentRules.IsExcludedFileName(childName))
             {
                 continue;
             }
 
-            string? destinationName = destinationNames.FirstOrDefault(name =>
-                string.Equals(name, sourceName, StringComparison.OrdinalIgnoreCase));
-            if (destinationName is null)
-            {
-                return false;
-            }
-
-            ValidateSingleName(destinationName);
-            using OpenedNode destinationChild =
-                OpenExistingNode(destination.Handle, destinationName);
-            if (!MigrationPayloadMatches(
-                    sourceChild,
-                    destinationChild,
-                    cancellationToken))
-            {
-                return false;
-            }
-
-            remainingDestinationNames.Remove(destinationName);
+            AppendFingerprint(child, relativePath + "/" + childName, builder, cancellationToken);
         }
-
-        foreach (string destinationName in remainingDestinationNames)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ValidateSingleName(destinationName);
-            using OpenedNode destinationChild =
-                OpenExistingNode(destination.Handle, destinationName);
-            if (!ContainsOnlyExcludedContent(
-                    destinationChild,
-                    destinationName,
-                    cancellationToken))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private static bool ContainsOnlyExcludedContent(
@@ -692,10 +621,9 @@ internal static class WindowsExecutionTree
         }
 
         bool foundExcludedFile = false;
-        foreach (string childName in BackupNativeMethods.EnumerateNames(node.Handle))
+        foreach (string childName in NtFileApi.EnumerateNames(node.Handle))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ValidateSingleName(childName);
             using OpenedNode child = OpenExistingNode(node.Handle, childName);
             if (!ContainsOnlyExcludedContent(child, childName, cancellationToken))
             {
@@ -728,18 +656,11 @@ internal static class WindowsExecutionTree
             while (offset < sourceLength)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                int sourceRead = RandomAccess.Read(
-                    source,
-                    sourceBuffer.AsSpan(0, BufferSize),
-                    offset);
-                int destinationRead = RandomAccess.Read(
-                    destination,
-                    destinationBuffer.AsSpan(0, BufferSize),
-                    offset);
+                int sourceRead = RandomAccess.Read(source, sourceBuffer.AsSpan(0, BufferSize), offset);
+                int destinationRead = RandomAccess.Read(destination, destinationBuffer.AsSpan(0, BufferSize), offset);
                 if (sourceRead == 0 ||
                     sourceRead != destinationRead ||
-                    !sourceBuffer.AsSpan(0, sourceRead).SequenceEqual(
-                        destinationBuffer.AsSpan(0, destinationRead)))
+                    !sourceBuffer.AsSpan(0, sourceRead).SequenceEqual(destinationBuffer.AsSpan(0, destinationRead)))
                 {
                     return false;
                 }
@@ -757,143 +678,6 @@ internal static class WindowsExecutionTree
         }
     }
 
-    internal static long MeasureLogicalBytes(
-        OpenedNode node,
-        string name,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (!node.IsDirectory &&
-            KnownMigrationContentRules.IsExcludedFileName(name))
-        {
-            return 0;
-        }
-
-        if (!node.IsDirectory)
-        {
-            return RandomAccess.GetLength(node.Handle);
-        }
-
-        long totalBytes = 0;
-        foreach (string childName in BackupNativeMethods.EnumerateNames(node.Handle))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ValidateSingleName(childName);
-            using OpenedNode child = OpenExistingNode(node.Handle, childName);
-            totalBytes = checked(totalBytes + MeasureLogicalBytes(
-                child,
-                childName,
-                cancellationToken));
-        }
-
-        return totalBytes;
-    }
-
-    private static void AppendFingerprint(
-        OpenedNode node,
-        string relativePath,
-        IncrementalHash hash,
-        ref int files,
-        ref int directories,
-        ref long totalBytes,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        AppendRecordPrefix(hash, node.IsDirectory ? (byte)1 : (byte)2, relativePath);
-
-        if (node.IsDirectory)
-        {
-            directories++;
-            foreach (string childName in BackupNativeMethods.EnumerateNames(node.Handle))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                ValidateSingleName(childName);
-                using OpenedNode child = OpenExistingNode(node.Handle, childName);
-                if (!child.IsDirectory &&
-                    KnownMigrationContentRules.IsExcludedFileName(childName))
-                {
-                    continue;
-                }
-
-                AppendFingerprint(
-                    child,
-                    relativePath + "/" + childName,
-                    hash,
-                    ref files,
-                    ref directories,
-                    ref totalBytes,
-                    cancellationToken);
-            }
-
-            return;
-        }
-
-        files++;
-        AppendFileContent(node.Handle, hash, ref totalBytes,
-            cancellationToken);
-    }
-
-    private static void AppendFileContent(
-        SafeFileHandle handle,
-        IncrementalHash hash,
-        ref long totalBytes,
-        CancellationToken cancellationToken)
-    {
-        long length = RandomAccess.GetLength(handle);
-        totalBytes = checked(totalBytes + length);
-
-        Span<byte> lengthBytes = stackalloc byte[8];
-        BinaryPrimitives.WriteInt64LittleEndian(lengthBytes, length);
-        hash.AppendData(lengthBytes);
-
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
-        try
-        {
-            long offset = 0;
-            while (offset < length)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int read = RandomAccess.Read(
-                    handle,
-                    buffer.AsSpan(0, BufferSize),
-                    offset);
-
-                if (read == 0)
-                {
-                    throw new ExecutionTreeException(ExecutionTreeFailureKind.Changed);
-                }
-
-                hash.AppendData(buffer.AsSpan(0, read));
-                offset += read;
-            }
-
-            if (RandomAccess.GetLength(handle) != length)
-            {
-                throw new ExecutionTreeException(ExecutionTreeFailureKind.Changed);
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer, clearArray: false);
-        }
-    }
-
-    private static void AppendRecordPrefix(
-        IncrementalHash hash,
-        byte type,
-        string relativePath)
-    {
-        Span<byte> typeBytes = stackalloc byte[1];
-        typeBytes[0] = type;
-        hash.AppendData(typeBytes);
-
-        byte[] path = Encoding.UTF8.GetBytes(relativePath);
-        Span<byte> pathLength = stackalloc byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(pathLength, path.Length);
-        hash.AppendData(pathLength);
-        hash.AppendData(path);
-    }
-
     private static void CopyFileBytes(
         SafeFileHandle source,
         SafeFileHandle destination,
@@ -906,20 +690,13 @@ internal static class WindowsExecutionTree
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                int read = RandomAccess.Read(
-                    source,
-                    buffer.AsSpan(0, BufferSize),
-                    offset);
-
+                int read = RandomAccess.Read(source, buffer.AsSpan(0, BufferSize), offset);
                 if (read == 0)
                 {
                     break;
                 }
 
-                RandomAccess.Write(
-                    destination,
-                    buffer.AsSpan(0, read),
-                    offset);
+                RandomAccess.Write(destination, buffer.AsSpan(0, read), offset);
                 offset += read;
             }
 
@@ -931,36 +708,6 @@ internal static class WindowsExecutionTree
         }
     }
 
-    private static SafeFileHandle CreateDirectory(
-        SafeFileHandle parent,
-        string name)
-    {
-        ValidateSingleName(name);
-
-        (SafeFileHandle handle, int status) = BackupNativeMethods.OpenRelative(
-            parent,
-            name,
-            BackupNativeMethods.FileListDirectory |
-            BackupNativeMethods.FileAddFile |
-            BackupNativeMethods.FileAddSubdirectory |
-            BackupNativeMethods.FileTraverse |
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.FileWriteAttributes |
-            BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
-            BackupNativeMethods.FileCreate,
-            BackupNativeMethods.FileDirectoryFile |
-            BackupNativeMethods.FileSynchronousIoNonAlert);
-
-        if (status != 0)
-        {
-            handle.Dispose();
-            throw MapCreateFailure(status);
-        }
-
-        return handle;
-    }
-
     private static SafeFileHandle CreateOrOpenDirectory(
         SafeFileHandle parent,
         string name)
@@ -969,140 +716,59 @@ internal static class WindowsExecutionTree
         {
             return CreateDirectory(parent, name);
         }
-        catch (ExecutionTreeException error) when (
-            error.Kind == ExecutionTreeFailureKind.Collision)
+        catch (FileSystemException error) when (error.Kind == FileSystemFailureKind.Collision)
         {
-            ValidateSingleName(name);
-            (SafeFileHandle handle, int status) = BackupNativeMethods.OpenRelative(
+            (SafeFileHandle handle, int status) = NtFileApi.OpenRelative(
                 parent,
                 name,
-                BackupNativeMethods.FileListDirectory |
-                BackupNativeMethods.FileAddFile |
-                BackupNativeMethods.FileAddSubdirectory |
-                BackupNativeMethods.FileTraverse |
-                BackupNativeMethods.FileReadAttributes |
-                BackupNativeMethods.FileWriteAttributes |
-                BackupNativeMethods.Synchronize,
-                BackupNativeMethods.ShareRead,
-                BackupNativeMethods.FileOpen,
-                BackupNativeMethods.FileOpenReparsePoint |
-                BackupNativeMethods.FileOpenNoRecall |
-                BackupNativeMethods.FileSynchronousIoNonAlert);
+                NtFileApi.FileListDirectory |
+                NtFileApi.FileAddFile |
+                NtFileApi.FileAddSubdirectory |
+                NtFileApi.FileTraverse |
+                NtFileApi.FileReadAttributes |
+                NtFileApi.FileWriteAttributes |
+                NtFileApi.Synchronize,
+                NtFileApi.ShareRead,
+                NtFileApi.FileOpen,
+                NtFileApi.NoFollowOpenOptions);
 
             if (status != 0)
             {
                 handle.Dispose();
-                throw MapNativeFailure(status);
+                throw FileSystemErrors.ForOpen(status);
             }
 
-            FileAttributes attributes = BackupNativeMethods.ReadAttributes(handle);
-            if (attributes.HasFlag(FileAttributes.ReparsePoint) ||
-                !attributes.HasFlag(FileAttributes.Directory))
+            try
+            {
+                FileAttributes attributes = NtFileApi.ReadAttributes(handle);
+                if (attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    throw new FileSystemException(FileSystemFailureKind.ReparsePoint);
+                }
+
+                if (!attributes.HasFlag(FileAttributes.Directory))
+                {
+                    throw new FileSystemException(FileSystemFailureKind.Collision);
+                }
+
+                return handle;
+            }
+            catch
             {
                 handle.Dispose();
-                throw new ExecutionTreeException(
-                    attributes.HasFlag(FileAttributes.ReparsePoint)
-                        ? ExecutionTreeFailureKind.ReparsePoint
-                        : ExecutionTreeFailureKind.Collision);
+                throw;
             }
-
-            return handle;
         }
     }
 
-    private static SafeFileHandle CreateFile(
-        SafeFileHandle parent,
-        string name)
-    {
-        ValidateSingleName(name);
-
-        (SafeFileHandle handle, int status) = BackupNativeMethods.OpenRelative(
-            parent,
-            name,
-            BackupNativeMethods.FileReadData |
-            BackupNativeMethods.FileWriteData |
-            BackupNativeMethods.FileReadAttributes |
-            BackupNativeMethods.FileWriteAttributes |
-            BackupNativeMethods.Synchronize,
-            BackupNativeMethods.ShareRead,
-            BackupNativeMethods.FileCreate,
-            BackupNativeMethods.FileNonDirectoryFile |
-            BackupNativeMethods.FileSynchronousIoNonAlert);
-
-        if (status != 0)
-        {
-            handle.Dispose();
-            throw MapCreateFailure(status);
-        }
-
-        return handle;
-    }
-
-    private static ExecutionTreeException MapCreateFailure(int status)
-    {
-        if (status == BackupNativeMethods.StatusReparsePointEncountered)
-        {
-            return new ExecutionTreeException(ExecutionTreeFailureKind.ReparsePoint);
-        }
-
-        uint error = BackupNativeMethods.RtlNtStatusToDosError(status);
-        return error is 80 or 183
-            ? new ExecutionTreeException(ExecutionTreeFailureKind.Collision)
-            : MapNativeFailure(status);
-    }
-
-    private static ExecutionTreeException MapNativeFailure(int status)
-    {
-        if (status == BackupNativeMethods.StatusReparsePointEncountered)
-        {
-            return new ExecutionTreeException(ExecutionTreeFailureKind.ReparsePoint);
-        }
-
-        uint error = BackupNativeMethods.RtlNtStatusToDosError(status);
-        return new ExecutionTreeException(error switch
-        {
-            2 or 3 => ExecutionTreeFailureKind.Missing,
-            5 => ExecutionTreeFailureKind.AccessDenied,
-            80 or 183 => ExecutionTreeFailureKind.Changed,
-            123 or 161 or 206 => ExecutionTreeFailureKind.InvalidPath,
-            _ => ExecutionTreeFailureKind.IoFailure,
-        });
-    }
-
-    private static bool IsEqualOrDescendant(
-        string candidate,
-        string root)
-    {
-        if (string.Equals(candidate, root, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return candidate.StartsWith(
-            root.TrimEnd('\\') + "\\",
-            StringComparison.OrdinalIgnoreCase);
-    }
-
-    internal static bool IsSingleName(string? name) =>
-        !string.IsNullOrEmpty(name) &&
-        name is not "." and not ".." &&
-        !name.EndsWith('.') &&
-        !name.EndsWith(' ') &&
-        name.All(character =>
-            character >= 32 &&
-            !"<>:".Contains(character) &&
-            character != '"' &&
-            character != '/' &&
-            character != '\\' &&
-            character != '|' &&
-            character != '?' &&
-            character != '*');
+    private static bool IsExcludedFile(HeldNodeTree tree) =>
+        !tree.Node.IsDirectory && KnownMigrationContentRules.IsExcludedFileName(tree.Name);
 
     private static void ValidateSingleName(string name)
     {
-        if (!IsSingleName(name))
+        if (!WindowsPathRules.IsSingleName(name))
         {
-            throw new ExecutionTreeException(ExecutionTreeFailureKind.InvalidPath);
+            throw new FileSystemException(FileSystemFailureKind.InvalidPath);
         }
     }
 
@@ -1161,5 +827,80 @@ internal static class WindowsExecutionTree
     {
         internal ExecutionContentFingerprint ToDomain() =>
             new(FileCount, DirectoryCount, TotalBytes, Sha256);
+    }
+
+    // Path-free tree digest persisted in journals and backup manifests. The encoding must stay
+    // byte-for-byte stable: [type: 1 = directory, 2 = file][int32 LE UTF-8 path length][path], and
+    // for files [int64 LE length][default-stream bytes]. Changing it invalidates existing evidence.
+    private sealed class FingerprintBuilder : IDisposable
+    {
+        private readonly IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        private int files;
+        private int directories;
+        private long totalBytes;
+
+        internal void AppendDirectory(string relativePath)
+        {
+            AppendRecordPrefix(1, relativePath);
+            directories++;
+        }
+
+        internal void AppendFile(string relativePath, SafeFileHandle handle, CancellationToken cancellationToken)
+        {
+            AppendRecordPrefix(2, relativePath);
+            files++;
+
+            long length = RandomAccess.GetLength(handle);
+            totalBytes = checked(totalBytes + length);
+
+            Span<byte> lengthBytes = stackalloc byte[8];
+            BinaryPrimitives.WriteInt64LittleEndian(lengthBytes, length);
+            hash.AppendData(lengthBytes);
+
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+            try
+            {
+                long offset = 0;
+                while (offset < length)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    int read = RandomAccess.Read(handle, buffer.AsSpan(0, BufferSize), offset);
+                    if (read == 0)
+                    {
+                        throw new FileSystemException(FileSystemFailureKind.Changed);
+                    }
+
+                    hash.AppendData(buffer.AsSpan(0, read));
+                    offset += read;
+                }
+
+                if (RandomAccess.GetLength(handle) != length)
+                {
+                    throw new FileSystemException(FileSystemFailureKind.Changed);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer, clearArray: false);
+            }
+        }
+
+        internal TreeFingerprint Build() =>
+            new(files, directories, totalBytes, Convert.ToHexString(hash.GetHashAndReset()));
+
+        public void Dispose() => hash.Dispose();
+
+        private void AppendRecordPrefix(byte type, string relativePath)
+        {
+            Span<byte> typeBytes = stackalloc byte[1];
+            typeBytes[0] = type;
+            hash.AppendData(typeBytes);
+
+            byte[] path = Encoding.UTF8.GetBytes(relativePath);
+            Span<byte> pathLength = stackalloc byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian(pathLength, path.Length);
+            hash.AppendData(pathLength);
+            hash.AppendData(path);
+        }
     }
 }
