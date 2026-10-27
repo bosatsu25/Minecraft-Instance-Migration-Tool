@@ -34,7 +34,7 @@ jobs:
           test -n "$OCR_LLM_MODEL" || { echo "::error::OCR_LLM_MODEL variable is required when OCR_ENABLED=true"; exit 1; }
 
       - name: Run OpenCodeReview
-        uses: alibaba/open-code-review@bccbc15f785269400735d5255540c231e6c02b6d # v1.12.9
+        uses: alibaba/open-code-review@375f64cd6f67a48a135da83cfcf59c52669a09cb # v1.13.3
         with:
           ocr_version: '1.12.9'
           llm_url: ${{ secrets.OCR_LLM_URL }}
