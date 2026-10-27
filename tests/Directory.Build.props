@@ -7,6 +7,13 @@
     <IsTestProject>true</IsTestProject>
     <!-- Only test projects consume third-party packages; CI restores them with locked mode. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!--
+      xunit.v3 4.x hosts tests on Microsoft.Testing.Platform v2 by default. The .NET 10 SDK rejects
+      such projects under the VSTest-based `dotnet test` used by CI and docs, and the MTP host would
+      also activate the bundled usage-telemetry extension. Keep the VSTest runner until a deliberate
+      migration (global.json test runner, CLI arguments, telemetry opt-out) is decided.
+    -->
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
