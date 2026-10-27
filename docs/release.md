@@ -51,7 +51,7 @@ Inno Setup's compiler download is pinned to 6.7.3 and verified by SHA-256 and Au
   After changing a test package version, regenerate the lock files with `dotnet restore` and commit them.
 - Job outputs reach PowerShell only through environment variables, never by template expansion.
 - Signing secrets are scoped to the signing build step; installer, clean-machine, and packaged UI steps
-  never receive them.
+  never receive them. Inside that step, the build script clears them before launching the application.
 - Version-tag drafts attach a build-provenance attestation for the ZIP and installer before
   `gh release create`. Distributors can verify it as described in [install](install.md).
 - The optional OpenCodeReview workflow never runs for fork pull requests, so fork content is not sent
@@ -87,8 +87,9 @@ chooses `signed`. Its private key stays outside the repository. Configure the pr
   (the thumbprint may also be an environment secret).
 
 Missing signed-mode configuration or signature failure aborts that mode; it never silently
-downgrades to unsigned. The app and installer are verified before final checksums. Workflow cleanup
-removes temporary client authentication material after the build; isolation of cloud-signing credentials
-from build-time application smoke launches has not been validated by the unsigned release.
+downgrades to unsigned. The app and installer are verified before final checksums. After the last
+signature, `Build-Release.ps1` removes the cloud-signing variables from its process environment, so the
+application smoke launches and package verification that follow do not inherit them. Workflow cleanup
+then deletes the temporary client certificate file and clears the job environment.
 Self-signing is not accepted as evidence. This optional mode has not been production validated and
 is outside the completed member-edition scope.

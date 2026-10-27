@@ -130,6 +130,13 @@ function Remove-TemporarySigningCertificate {
 
     $env:MIM_SIGNING_CERTIFICATE_PASSWORD = $null
     $env:SIGNING_CERTIFICATE_PATH = $null
+    # Cloud HSM credentials are only needed by SignTool. The launch smoke and package verification
+    # start the application as a child process, which would otherwise inherit them. Assign through
+    # $env: so the change reaches child processes on every platform.
+    $env:SM_API_KEY = $null
+    $env:SM_CLIENT_CERT_PASSWORD = $null
+    $env:SM_CLIENT_CERT_FILE = $null
+    $env:SM_HOST = $null
     if (-not [string]::IsNullOrWhiteSpace($SigningCertificatePath)) {
         $temporaryRoot = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP) + [System.IO.Path]::DirectorySeparatorChar
         $certificate = [System.IO.Path]::GetFullPath($SigningCertificatePath)

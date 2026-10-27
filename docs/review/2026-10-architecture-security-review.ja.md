@@ -39,7 +39,7 @@
 | D2a | 中 | 複製間の**実際のずれ**：バックアップのルート処理だけ非ディレクトリ要素を拒否しない／Inspector だけドライブ判定の例外を捕捉しない／実行ジャーナルだけ JSON 厳格検証なし | 各コピーの比較（確実） | 単一実装で解消。厳格化は旧ジャーナルの読込互換を維持 |
 | D3 | 低（潜在） | ロールバックの復元で宛先削除**後**にキャンセルされると「GuardRejected＝宛先未変更」と誤報告される経路 | `RestoreFromBackup` に OCE の捕捉なし（確実）。現状は呼び出し側が `CancellationToken.None` を渡すため到達不能（確実） | 削除開始後のキャンセルは RecoveryRequired として報告 |
 | D4 | 中（サプライチェーン） | Actions 未ピン留め14件、認証情報の永続化7件、テンプレート注入3件、`pull_request_target` で fork PR の内容を外部 LLM に送る経路 | zizmor 25件（確実） | SHA ピン留め、`persist-credentials: false`、環境変数経由、fork 除外。zizmor 0件 |
-| D5 | 中 | 署名用シークレットを `GITHUB_ENV` に書き出し、後続のテスト（サードパーティ依存を実行）にも露出 | release.yml（確実） | 署名ステップのみに限定 |
+| D5 | 中 | 署名用シークレットを `GITHUB_ENV` に書き出し、後続のテスト（サードパーティ依存を実行）にも露出。署名ステップ内でも、署名後のアプリ起動確認が環境変数を継承 | release.yml、`Build-Release.ps1`（確実） | 署名ステップのみに限定し、`Build-Release.ps1` が最後の署名後・アプリ起動前に除去 |
 | D6 | 低 | NuGet ロックファイルなし・取得元未固定（依存関係の取り違え余地） | リポジトリ構成（確実） | テスト5プロジェクトにロック＋`--locked-mode`、`nuget.config` で nuget.org のみに固定、Dependabot |
 | D7 | 低 | 日本語 UI で Blocked 系の理由が英語識別子のまま表示 | `UiText.Translate` の語境界規則（確実） | 全 Blocked 系に日本語を追加しテストで網羅 |
 | D8 | 低（性能） | 検証時のディレクトリ名照合が O(n²)（大きな `saves` で遅い） | `MigrationPayloadMatches`（確実） | 辞書照合に変更（同順位の選択規則は維持） |
