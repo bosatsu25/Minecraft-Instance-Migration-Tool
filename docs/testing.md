@@ -221,6 +221,18 @@ ADR 0004 step 3 adds the Windows Merge IO (`MergeIntegrationTests`, owned tempor
 - an orchestrated Merge is journaled as Applied and its guarded rollback restores the exact pre-merge fingerprint;
 - capacity counts source plus destination bytes as Merge writes.
 
+ADR 0004 step 4 exposes Merge in the workflow and UI:
+
+- the workflow inspects only entries waiting for evidence, replans Ready with it, turns an inspector failure or
+  a missing inspector into a blocked Merge, keeps the plan waiting on cancellation, and discards evidence when
+  choices are reconfigured;
+- the selection row offers Merge only for candidates with a merge unit (not `options.txt` or `saves`) and keeps
+  the choice editable in every Merge state;
+- applying a Merge choice compares before the preview, shows the counts for the row, and the confirmed run
+  backs up before executing; the confirmation and Report count Merge;
+- FlaUI `ExecutesConfirmedMergeKeepingDestinationOnlyFiles` runs a real Merge through the packaged UI and checks
+  the merged files, the backup, and the Report.
+
 
 ## Phase 2.2: Preview / Dry Run
 

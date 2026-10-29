@@ -40,7 +40,10 @@ public sealed record MigrationReportMigrationSummary(
     int ExcludedCount,
     int SourceMissingCount,
     int BlockedCount,
-    IReadOnlyList<string> ContentRuleSummaries);
+    IReadOnlyList<string> ContentRuleSummaries)
+{
+    public int MergeCount { get; init; }
+}
 
 public sealed record MigrationReportExecutionSummary(
     int PlannedWriteCount,

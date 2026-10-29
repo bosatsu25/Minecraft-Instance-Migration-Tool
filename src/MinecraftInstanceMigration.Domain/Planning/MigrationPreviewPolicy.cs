@@ -13,7 +13,10 @@ public static class MigrationPreviewPolicy
             entry.DestinationState,
             ToPreviewAction(entry.Disposition),
             entry.Disposition,
-            entry.RequiresBackup));
+            entry.RequiresBackup)
+        {
+            MergeInspection = entry.MergeInspection,
+        });
 
         return new MigrationPreview(
             plan.Status,

@@ -1,6 +1,6 @@
 # ADR 0004: Merge into existing destination directories
 
-- Status: Accepted (owner decisions recorded below, 2026-10-29)
+- Status: Accepted (owner decisions recorded below, 2026-10-29); implemented in steps 1–4
 - Date: 2026-10-29
 - Related: [migration rules](../migration-rules.md), [ModPackTransfer compatibility](../modpacktransfer-compatibility.md),
   [backup](../backup.md), [execution journal](../execution-journal.md), [rollback](../rollback.md)
@@ -188,7 +188,8 @@ Each step is its own pull request with its own tests, and each step keeps the pr
    integration tests on owned fixtures. Implemented with the rebuild described in section 4; Application gains
    `IMergeInspector`, `MergeAsync`, and `VerifyMergeAsync`, and capacity counts the rebuild's writes.
 4. **Application and App**: three-way choice, counts in Preview, confirmation, and Report, Japanese and English
-   text, documentation, and a FlaUI Merge smoke test.
+   text, documentation, and a FlaUI Merge smoke test. Implemented; the workflow runs the inspection when choices
+   are applied (`InspectMergesAsync`), and a missing or failing inspector blocks only that Merge.
 
 ## Verification strategy
 

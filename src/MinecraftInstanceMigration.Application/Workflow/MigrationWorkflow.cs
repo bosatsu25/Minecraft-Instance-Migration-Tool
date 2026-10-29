@@ -5,6 +5,7 @@ using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Application.Inspection;
 using MinecraftInstanceMigration.Application.Planning;
 using MinecraftInstanceMigration.Domain.Backup;
+using MinecraftInstanceMigration.Domain.Inspection;
 using MinecraftInstanceMigration.Domain.Planning;
 
 namespace MinecraftInstanceMigration.Application.Workflow;
@@ -17,7 +18,8 @@ public sealed class MigrationWorkflow(
     IBackupPlanner backupPlanner,
     IBackupExecutor backupExecutor,
     IExecutionOrchestrator executionOrchestrator,
-    IExecutionWorkspaceSafetyValidator workspaceSafetyValidator) : IMigrationWorkflow
+    IExecutionWorkspaceSafetyValidator workspaceSafetyValidator,
+    IMergeInspector? mergeInspector = null) : IMigrationWorkflow
 {
     private readonly IInstanceInspector inspector =
         inspector ?? throw new ArgumentNullException(nameof(inspector));
@@ -163,6 +165,8 @@ public sealed class MigrationWorkflow(
                 State = MigrationWorkflowState.Preview,
                 SelectedEntryNames = Array.AsReadOnly(selected),
                 ConflictDecisions = new ReadOnlyDictionary<string, DestinationConflictDecision>(decisions),
+                MergeInspections = new ReadOnlyDictionary<string, MergeInspectionResult>(
+                    new Dictionary<string, MergeInspectionResult>(StringComparer.Ordinal)),
                 MigrationPlan = plan,
                 MigrationPreview = null,
                 CapacityEstimate = null,
@@ -178,6 +182,107 @@ public sealed class MigrationWorkflow(
         catch (Exception)
         {
             return Failure(session, MigrationWorkflowFailureKind.PlanFailed);
+        }
+    }
+
+    public async Task<MigrationWorkflowSession> InspectMergesAsync(
+        MigrationWorkflowSession session,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        if (session.State != MigrationWorkflowState.Preview ||
+            session.MigrationPlan is null ||
+            session.SourceInspection is null ||
+            session.DestinationInspection is null ||
+            session.SourceRoot is null ||
+            session.DestinationRoot is null)
+        {
+            return Failure(session, MigrationWorkflowFailureKind.InvalidState);
+        }
+
+        string[] pending = session.MigrationPlan.Entries
+            .Where(entry => entry.NeedsMergeInspection)
+            .Select(entry => entry.Name)
+            .ToArray();
+        if (pending.Length == 0)
+        {
+            return session;
+        }
+
+        var inspections = new Dictionary<string, MergeInspectionResult>(
+            session.MergeInspections,
+            StringComparer.Ordinal);
+        try
+        {
+            foreach (string name in pending)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                inspections[name] = await InspectMergeAsync(
+                    session.SourceRoot,
+                    session.DestinationRoot,
+                    name,
+                    cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return Failure(session, MigrationWorkflowFailureKind.Cancelled);
+        }
+
+        try
+        {
+            MigrationPlan plan = planner.CreatePlan(
+                session.SourceInspection,
+                session.DestinationInspection,
+                session.SelectedEntryNames,
+                session.ConflictDecisions,
+                inspections);
+
+            return session with
+            {
+                MergeInspections = new ReadOnlyDictionary<string, MergeInspectionResult>(inspections),
+                MigrationPlan = plan,
+                MigrationPreview = null,
+                CapacityEstimate = null,
+                CapacityWorkspaceRoot = null,
+                FailureKind = null,
+            };
+        }
+        catch (Exception)
+        {
+            return Failure(session, MigrationWorkflowFailureKind.PlanFailed);
+        }
+    }
+
+    // Any failure to inspect becomes Unavailable evidence, which blocks the Merge but keeps
+    // Skip and Replace available for that entry.
+    private async Task<MergeInspectionResult> InspectMergeAsync(
+        string sourceRoot,
+        string destinationRoot,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        MergeUnit unit = KnownEntryCatalog.All
+            .Single(candidate => string.Equals(candidate.Name, name, StringComparison.Ordinal))
+            .MergeUnit;
+        var unavailable = new MergeInspectionResult(name, unit, MergeInspectionStatus.Unavailable, 0, 0, 0, 0);
+        if (mergeInspector is null)
+        {
+            return unavailable;
+        }
+
+        try
+        {
+            return await mergeInspector.InspectAsync(sourceRoot, destinationRoot, name, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return unavailable;
         }
     }
 

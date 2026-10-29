@@ -27,6 +27,10 @@ public sealed class MigrationSelectionEntryViewModel : INotifyPropertyChanged
         Action = entry.Action;
         PlanDisposition = entry.PlanDisposition;
         RequiresBackup = entry.RequiresBackup;
+        MergeInspection = entry.MergeInspection;
+        MergeUnit = KnownEntryCatalog.All
+            .SingleOrDefault(candidate => string.Equals(candidate.Name, Name, StringComparison.Ordinal))
+            ?.MergeUnit ?? MergeUnit.NotOffered;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -52,6 +56,7 @@ public sealed class MigrationSelectionEntryViewModel : INotifyPropertyChanged
 
             Notify();
             Notify(nameof(CanChooseConflict));
+            Notify(nameof(CanChooseMerge));
             changed();
         }
     }
@@ -62,7 +67,8 @@ public sealed class MigrationSelectionEntryViewModel : INotifyPropertyChanged
         set
         {
             if (conflictDecision == value ||
-                (!CanChooseConflict && value != DestinationConflictDecision.Unresolved))
+                (!CanChooseConflict && value != DestinationConflictDecision.Unresolved) ||
+                (value == DestinationConflictDecision.Merge && !CanChooseMerge))
             {
                 return;
             }
@@ -79,7 +85,17 @@ public sealed class MigrationSelectionEntryViewModel : INotifyPropertyChanged
             MigrationPlanDisposition.DestinationConflict or
             MigrationPlanDisposition.SkippedDestinationConflict or
             MigrationPlanDisposition.ReadyToReplace or
-            MigrationPlanDisposition.BlockedDestinationKindMismatch;
+            MigrationPlanDisposition.BlockedDestinationKindMismatch or
+            MigrationPlanDisposition.ReadyToMerge or
+            MigrationPlanDisposition.MergeInspectionRequired or
+            MigrationPlanDisposition.BlockedMergeConflict;
+
+    // Merge is offered only where the catalog defines a merge unit (ADR 0004).
+    public bool CanChooseMerge => CanChooseConflict && MergeUnit != MergeUnit.NotOffered;
+
+    public MergeUnit MergeUnit { get; }
+
+    public MergeInspectionResult? MergeInspection { get; }
 
     public EntryState? SourceState { get; }
 

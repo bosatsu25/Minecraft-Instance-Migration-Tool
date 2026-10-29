@@ -56,7 +56,8 @@ public partial class MainWindow : Window
                 journalPersistence,
                 new WindowsExecutionMutationPort(),
                 new WindowsExecutionPostWriteVerifier()),
-            new WindowsExecutionWorkspaceSafetyValidator());
+            new WindowsExecutionWorkspaceSafetyValidator(),
+            new WindowsMergeInspector());
 
         var inspectorModel = new InspectorViewModel(
             inspector,

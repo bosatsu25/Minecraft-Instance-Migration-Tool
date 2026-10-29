@@ -31,6 +31,9 @@ public sealed class UiTextTests
     [InlineData("Unknown", "不明")]
     [InlineData("True", "はい")]
     [InlineData("Copy: 2; Replace: 1; Skip: 0", "コピー: 2; 置換: 1; スキップ: 0")]
+    [InlineData("Replace: 1; Merge: 2; Skip: 0", "置換: 1; 統合: 2; スキップ: 0")]
+    [InlineData("Merge adds 2, overwrites 1, keeps 3.", "統合で追加 2, 上書き 1, 保持 3.")]
+    [InlineData("ReadyToMerge", "バックアップ後に統合できます")]
     public void JapaneseTranslatesOutcomesAndCountSummaries(string english, string japanese)
     {
         Assert.Equal(japanese, UiText.Translate(english, japanese: true));

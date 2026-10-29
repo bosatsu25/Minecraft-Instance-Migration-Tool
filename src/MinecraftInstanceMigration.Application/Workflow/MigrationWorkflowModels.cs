@@ -52,6 +52,8 @@ public sealed record MigrationWorkflowSession
         ConflictDecisions = new ReadOnlyDictionary<string, DestinationConflictDecision>(
             new Dictionary<string, DestinationConflictDecision>(
                 StringComparer.OrdinalIgnoreCase));
+        MergeInspections = new ReadOnlyDictionary<string, MergeInspectionResult>(
+            new Dictionary<string, MergeInspectionResult>(StringComparer.Ordinal));
     }
 
     public MigrationWorkflowState State { get; internal init; }
@@ -71,6 +73,9 @@ public sealed record MigrationWorkflowSession
     public IReadOnlyList<string> SelectedEntryNames { get; internal init; }
 
     public IReadOnlyDictionary<string, DestinationConflictDecision> ConflictDecisions { get; internal init; }
+
+    // Read-only Merge evidence for the current choices; cleared whenever the plan is reconfigured.
+    public IReadOnlyDictionary<string, MergeInspectionResult> MergeInspections { get; internal init; }
 
     public MigrationPlan? MigrationPlan { get; internal init; }
 

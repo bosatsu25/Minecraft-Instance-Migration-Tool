@@ -9,8 +9,9 @@ public sealed class MigrationPlanner : IMigrationPlanner
         InstanceInspectionResult source,
         InstanceInspectionResult destination,
         IEnumerable<string> selectedEntryNames,
-        IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null) =>
-        MigrationPlanPolicy.Create(source, destination, selectedEntryNames, conflictDecisions);
+        IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null,
+        IReadOnlyDictionary<string, MergeInspectionResult>? mergeInspections = null) =>
+        MigrationPlanPolicy.Create(source, destination, selectedEntryNames, conflictDecisions, mergeInspections);
 
     public MigrationPlan CreateRecommendedPlan(
         InstanceInspectionResult source,

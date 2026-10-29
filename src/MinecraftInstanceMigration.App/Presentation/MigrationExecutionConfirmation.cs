@@ -7,7 +7,10 @@ public sealed record MigrationExecutionConfirmation(
     int CopyCount,
     int ReplaceCount,
     int SkipCount,
-    bool BackupRequired);
+    bool BackupRequired)
+{
+    public int MergeCount { get; init; }
+}
 
 public interface IMigrationExecutionConfirmation
 {

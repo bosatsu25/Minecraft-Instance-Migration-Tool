@@ -9,7 +9,8 @@ public interface IMigrationPlanner
         InstanceInspectionResult source,
         InstanceInspectionResult destination,
         IEnumerable<string> selectedEntryNames,
-        IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null);
+        IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null,
+        IReadOnlyDictionary<string, MergeInspectionResult>? mergeInspections = null);
 
     MigrationPlan CreateRecommendedPlan(
         InstanceInspectionResult source,

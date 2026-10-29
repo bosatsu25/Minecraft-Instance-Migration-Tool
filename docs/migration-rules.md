@@ -4,9 +4,8 @@ Phase 2.1 introduced the legacy selection defaults and explicit top-level confli
 Phase 1 observes the eleven known names. Phase 2 plans explicit selections. Phase 2.1 adds a
 Recommended selection preset and typed Skip / Replace decisions for existing destinations.
 Phase 4.6 adds the first known nested content exclusion after inspecting the reference implementation.
-Compatibility analysis remains out of scope. Merge is being added in steps per
-[ADR 0004](adr/0004-merge-existing-destination-directories.md); the Domain rules below exist, but the UI
-does not offer Merge yet and no Merge IO exists.
+Compatibility analysis remains out of scope. Merge is the third conflict decision for directory candidates
+([ADR 0004](adr/0004-merge-existing-destination-directories.md)).
 
 | Instance-relative candidate | Legacy intent | Recommended preset direction |
 | --- | --- | --- |
@@ -45,7 +44,7 @@ rollback restoration, and capacity measurement. Preview and Report expose a boun
 During Replace, a matching destination file is preserved in place and is neither put in the backup nor
 restored from it. See the [compatibility matrix](modpacktransfer-compatibility.md) for reference evidence.
 
-## Merge (Domain rules, not yet offered in the UI)
+## Merge
 
 `Merge` is a third explicit decision for an existing destination directory. Each candidate's merge unit is
 Domain-owned in `KnownEntryCatalog`:
@@ -62,6 +61,10 @@ A Merge decision on a destination of the catalog kind needs read-only merge insp
 - clean evidence for the same entry and unit makes it `ReadyToMerge`, which requires a whole-entry backup;
 - evidence that reports a kind conflict, a reparse point, or an unreadable tree, or that names another entry
   or unit, makes it `BlockedMergeConflict`.
+
+When choices are applied, the workflow runs the read-only merge inspection for every entry waiting for
+evidence and replans; the UI shows the added, overwritten, and kept counts for the selected row. An inspection
+that cannot read both trees completely is `Unavailable` and blocks only that Merge.
 
 A Merge of a destination with a different kind is `BlockedDestinationKindMismatch`, as for Replace. Evidence
 supplied without a Merge decision is ignored. A `ReadyToMerge` entry becomes a `Merge` journal step only with

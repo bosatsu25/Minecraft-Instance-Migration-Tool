@@ -208,6 +208,10 @@
                          Text="{ui:Text Key='Conflict:'}" FontWeight="SemiBold" />
               <Button Content="{ui:Text Key='Skip'}" Padding="16,5" Command="{Binding SkipConflictCommand}"
                       AutomationProperties.AutomationId="SkipSelectedConflict" />
+              <Button Content="{ui:Text Key='Merge'}" Padding="16,5" Margin="8,0,0,0"
+                      Command="{Binding MergeConflictCommand}"
+                      ToolTip="{ui:Text Key='Keep files that exist only in the destination and overwrite the rest with the source. The destination is backed up first.'}"
+                      AutomationProperties.AutomationId="MergeSelectedConflict" />
               <Button Content="{ui:Text Key='Replace'}" Padding="16,5" Margin="8,0,0,0"
                       Command="{Binding ReplaceConflictCommand}"
                       AutomationProperties.AutomationId="ReplaceSelectedConflict" />

@@ -40,6 +40,8 @@ public sealed class MigrationPreview
 
     public int ReplaceCount => Entries.Count(entry => entry.Action == MigrationPreviewAction.Replace);
 
+    public int MergeCount => Entries.Count(entry => entry.Action == MigrationPreviewAction.Merge);
+
     public int SkipCount => Entries.Count(entry => entry.Action == MigrationPreviewAction.Skip);
 
     public int NoSourceCount => Entries.Count(entry => entry.Action == MigrationPreviewAction.NoSource);

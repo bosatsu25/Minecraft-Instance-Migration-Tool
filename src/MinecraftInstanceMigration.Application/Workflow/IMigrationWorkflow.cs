@@ -25,6 +25,12 @@ public interface IMigrationWorkflow
         IEnumerable<string> selectedEntryNames,
         IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null);
 
+    // Compares source and destination for every entry whose Merge decision still lacks evidence,
+    // then replans with that evidence. No files are changed.
+    Task<MigrationWorkflowSession> InspectMergesAsync(
+        MigrationWorkflowSession session,
+        CancellationToken cancellationToken = default);
+
     MigrationWorkflowSession CreatePreview(MigrationWorkflowSession session);
 
     Task<MigrationWorkflowSession> EvaluateCapacityAsync(
