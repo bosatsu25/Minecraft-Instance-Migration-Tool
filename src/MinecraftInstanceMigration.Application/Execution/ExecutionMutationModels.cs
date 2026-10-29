@@ -29,9 +29,40 @@ public sealed record ExecutionMutationResult(
 
 public interface IExecutionMutationPort
 {
+    // A Replace must name the destination fingerprint proven equal to its backup; the port
+    // refuses to delete a destination that no longer matches it. Copy passes null.
     Task<ExecutionMutationResult> ApplyAsync(
         string sourceRoot,
         string destinationRoot,
+        ExecutionJournalEntry step,
+        ExecutionContentFingerprint? expectedDestination,
+        CancellationToken cancellationToken);
+}
+
+public enum ExecutionPreStateStatus
+{
+    Matches,
+    Changed,
+    Failed,
+    Cancelled,
+}
+
+public sealed record ExecutionPreStateResult(
+    ExecutionPreStateStatus Status,
+    ExecutionContentFingerprint? Fingerprint = null)
+{
+    public bool IsMatch =>
+        Status == ExecutionPreStateStatus.Matches &&
+        Fingerprint is not null;
+}
+
+// Proves, before Started, that a Replace destination still holds exactly the content its
+// validated backup preserved. Otherwise a change made after Backup would be deleted unrecoverably.
+public interface IExecutionPreStateProbe
+{
+    Task<ExecutionPreStateResult> CompareWithBackupAsync(
+        string destinationRoot,
+        string backupRoot,
         ExecutionJournalEntry step,
         CancellationToken cancellationToken);
 }

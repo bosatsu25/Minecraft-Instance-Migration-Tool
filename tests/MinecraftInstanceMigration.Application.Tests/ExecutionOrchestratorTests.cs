@@ -28,12 +28,73 @@ public sealed class ExecutionOrchestratorTests
                 "journal:create",
                 "live:0",
                 "backup",
+                "prestate:0",
                 "journal:started:0",
                 "mutation:0",
                 "verify:0",
                 "journal:applied:0",
             },
             events);
+        Assert.Equal(fixture.PreState.Result.Fingerprint, fixture.Mutation.ExpectedDestination);
+    }
+
+    [Fact]
+    public async Task DestinationChangedSinceBackupBlocksBeforeStartedAndMutation()
+    {
+        var events = new List<string>();
+        MigrationPlan plan = ReplacePlan();
+        Fixture fixture = CreateFixture(events, plan);
+        fixture.PreState.Result = new ExecutionPreStateResult(ExecutionPreStateStatus.Changed);
+
+        ExecutionOrchestrationResult result = await fixture.Orchestrator.ExecuteAsync(
+            Request(plan, "backup"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionOrchestrationStatus.Blocked, result.Status);
+        Assert.Equal(
+            ExecutionOrchestrationFailureKind.DestinationChangedSinceBackup,
+            result.FailureKind);
+        Assert.Contains("prestate:0", events);
+        Assert.DoesNotContain(events, entry => entry.StartsWith("journal:started", StringComparison.Ordinal));
+        Assert.DoesNotContain(events, entry => entry.StartsWith("mutation:", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(ExecutionPreStateStatus.Failed)]
+    [InlineData(ExecutionPreStateStatus.Matches)]
+    public async Task UnprovenPreStateBlocksBeforeStartedAndMutation(ExecutionPreStateStatus status)
+    {
+        // Matches without a fingerprint is not proof either.
+        var events = new List<string>();
+        MigrationPlan plan = ReplacePlan();
+        Fixture fixture = CreateFixture(events, plan);
+        fixture.PreState.Result = new ExecutionPreStateResult(status);
+
+        ExecutionOrchestrationResult result = await fixture.Orchestrator.ExecuteAsync(
+            Request(plan, "backup"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionOrchestrationStatus.Blocked, result.Status);
+        Assert.Equal(ExecutionOrchestrationFailureKind.LiveStateChanged, result.FailureKind);
+        Assert.DoesNotContain(events, entry => entry.StartsWith("journal:started", StringComparison.Ordinal));
+        Assert.DoesNotContain(events, entry => entry.StartsWith("mutation:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CancelledPreStateStopsBeforeStarted()
+    {
+        var events = new List<string>();
+        MigrationPlan plan = ReplacePlan();
+        Fixture fixture = CreateFixture(events, plan);
+        fixture.PreState.Result = new ExecutionPreStateResult(ExecutionPreStateStatus.Cancelled);
+
+        ExecutionOrchestrationResult result = await fixture.Orchestrator.ExecuteAsync(
+            Request(plan, "backup"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionOrchestrationStatus.Cancelled, result.Status);
+        Assert.Equal(0, result.AppliedSteps);
+        Assert.DoesNotContain(events, entry => entry.StartsWith("journal:started", StringComparison.Ordinal));
     }
 
 
@@ -71,6 +132,8 @@ public sealed class ExecutionOrchestratorTests
 
         Assert.Equal(ExecutionOrchestrationStatus.Completed, result.Status);
         Assert.DoesNotContain("backup", events);
+        Assert.DoesNotContain(events, entry => entry.StartsWith("prestate:", StringComparison.Ordinal));
+        Assert.Null(fixture.Mutation.ExpectedDestination);
     }
 
     [Fact]
@@ -252,6 +315,7 @@ public sealed class ExecutionOrchestratorTests
     {
         var live = new StubLive(events);
         var backup = new StubBackupValidator(events);
+        var preState = new StubPreState(events);
         var workspace = new StubWorkspace(events);
         var journal = new StubJournal(events);
         var mutation = new StubMutation(events);
@@ -262,6 +326,7 @@ public sealed class ExecutionOrchestratorTests
             live,
             new BackupPlanner(),
             backup,
+            preState,
             workspace,
             journal,
             mutation,
@@ -271,6 +336,7 @@ public sealed class ExecutionOrchestratorTests
             orchestrator,
             live,
             backup,
+            preState,
             workspace,
             journal,
             mutation,
@@ -350,6 +416,7 @@ public sealed class ExecutionOrchestratorTests
         ExecutionOrchestrator Orchestrator,
         StubLive Live,
         StubBackupValidator Backup,
+        StubPreState PreState,
         StubWorkspace Workspace,
         StubJournal Journal,
         StubMutation Mutation,
@@ -394,6 +461,28 @@ public sealed class ExecutionOrchestratorTests
         }
     }
 
+
+    private sealed class StubPreState(List<string> events) : IExecutionPreStateProbe
+    {
+        public ExecutionPreStateResult Result { get; set; } =
+            new(
+                ExecutionPreStateStatus.Matches,
+                new ExecutionContentFingerprint(
+                    1,
+                    1,
+                    10,
+                    new string('C', 64)));
+
+        public Task<ExecutionPreStateResult> CompareWithBackupAsync(
+            string destinationRoot,
+            string backupRoot,
+            ExecutionJournalEntry step,
+            CancellationToken cancellationToken)
+        {
+            events.Add($"prestate:{step.Sequence}");
+            return Task.FromResult(Result);
+        }
+    }
 
     private sealed class StubWorkspace(List<string> events)
         : IExecutionWorkspaceSafetyValidator
@@ -495,13 +584,17 @@ public sealed class ExecutionOrchestratorTests
         public ExecutionMutationResult Result { get; set; } =
             new(ExecutionMutationStatus.Applied);
 
+        public ExecutionContentFingerprint? ExpectedDestination { get; private set; }
+
         public Task<ExecutionMutationResult> ApplyAsync(
             string sourceRoot,
             string destinationRoot,
             ExecutionJournalEntry step,
+            ExecutionContentFingerprint? expectedDestination,
             CancellationToken cancellationToken)
         {
             events.Add($"mutation:{step.Sequence}");
+            ExpectedDestination = expectedDestination;
             return Task.FromResult(Result);
         }
     }

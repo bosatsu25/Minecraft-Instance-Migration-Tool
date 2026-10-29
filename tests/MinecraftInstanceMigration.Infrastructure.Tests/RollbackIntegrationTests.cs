@@ -32,7 +32,7 @@ public sealed class RollbackIntegrationTests
             ExpectedEntryKind.File, ExecutionOperationKind.Copy);
         var token = TestContext.Current.CancellationToken;
         Assert.True((await new WindowsExecutionMutationPort().ApplyAsync(
-            source, destination, step, token)).IsApplied);
+            source, destination, step, null, token)).IsApplied);
         var verified = await new WindowsExecutionPostWriteVerifier().VerifyAsync(
             source, destination, step, token);
         Assert.True(verified.IsVerified);
@@ -287,6 +287,7 @@ public sealed class RollbackIntegrationTests
             source,
             destination,
             step,
+            null,
             TestContext.Current.CancellationToken)).IsApplied);
 
         ExecutionPostWriteVerificationResult verification =
@@ -338,6 +339,7 @@ public sealed class RollbackIntegrationTests
             source,
             destination,
             step,
+            null,
             TestContext.Current.CancellationToken)).IsApplied);
 
         ExecutionPostWriteVerificationResult verification =
@@ -426,6 +428,7 @@ public sealed class RollbackIntegrationTests
             source,
             destination,
             step,
+            PreStateFingerprints.Current(destination, step),
             TestContext.Current.CancellationToken)).IsApplied);
         Assert.Equal(
             "destination-preserved",
@@ -551,6 +554,7 @@ public sealed class RollbackIntegrationTests
             source,
             destination,
             step,
+            PreStateFingerprints.Current(destination, step),
             TestContext.Current.CancellationToken)).IsApplied);
 
         ExecutionPostWriteVerificationResult verification =
@@ -635,6 +639,7 @@ public sealed class RollbackIntegrationTests
             source,
             destination,
             step,
+            PreStateFingerprints.Current(destination, step),
             TestContext.Current.CancellationToken)).IsApplied);
         ExecutionPostWriteVerificationResult verification =
             await new WindowsExecutionPostWriteVerifier().VerifyAsync(

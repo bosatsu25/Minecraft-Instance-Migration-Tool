@@ -131,8 +131,8 @@ Inside the mutation, the destination tree is held with no-follow handles, as rol
 same comparison is repeated before the first write. A mismatch there is a race inside a narrow window; it fails
 closed as `Failed`, and the untouched backup remains the recovery source.
 
-This applies to Replace as well, and closes the gap described in Context. It should ship before Merge, as its own
-change.
+This applies to Replace as well, and closes the gap described in Context. It ships before Merge, as its own
+change; the Replace part is implemented (see [execution journal](../execution-journal.md#replace-pre-state-guard)).
 
 ### 7. Journals and compatibility
 
@@ -160,7 +160,8 @@ change.
   destination `saves`.
 - Besides Backup, Merge reads the entry up to four more times: inspection, pre-state guard, mutation, and
   verification.
-- The pre-state guard adds one destination read to Replace, but removes a silent data-loss window.
+- The pre-state guard adds reads of the destination entry and its backup entry before Started, and one more
+  destination read under held handles, but removes a silent data-loss window.
 - Infrastructure gains two new pieces, an overlay writer and an overlay verifier. Both are built on the existing
   `WindowsExecutionTree` primitives; no new P/Invoke surface is expected.
 - The compatibility matrix marks Overwrite as "Intentionally changed" until Merge ships, then as covered by Merge.
@@ -170,7 +171,7 @@ change.
 
 Each step is its own pull request with its own tests, and each step keeps the product shippable:
 
-1. **Pre-state guard** for Replace (section 6). Independent of Merge.
+1. **Pre-state guard** for Replace (section 6). Independent of Merge. Implemented.
 2. **Domain**: decision, dispositions, catalog merge units, and plan, preview, backup, journal, live-validation,
    and rollback policies. Merge is not selectable in the UI yet.
 3. **Infrastructure**: merge inspection, overlay writer, overlay verifier, and rollback-attempt acceptance, with

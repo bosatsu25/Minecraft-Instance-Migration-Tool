@@ -371,10 +371,13 @@ Coverage includes:
 - unsafe roots are rejected;
 - journal-step operation must match the reviewed write intent;
 - Application live validation inspects source then destination immediately before a step;
-- Replace ordering is exactly journal-create -> live revalidate -> backup revalidate -> durable Started
-  -> mutation port -> post-write verify -> durable Applied;
-- Copy does not require backup validation;
+- Replace ordering is exactly journal-create -> live revalidate -> backup revalidate -> pre-state proof
+  -> durable Started -> mutation port -> post-write verify -> durable Applied, and the mutation port
+  receives the fingerprint the pre-state proof returned;
+- Copy does not require backup validation or a pre-state proof and passes no expected fingerprint;
 - live-state drift or invalid backup prevents Started and mutation;
+- a destination that changed since Backup is `DestinationChangedSinceBackup`; an unproven or failed
+  comparison is `LiveStateChanged`; a cancelled comparison stops before Started;
 - a failed Started journal write prevents mutation;
 - mutation failure attempts durable Failed and returns RecoveryRequired;
 - post-write verification failure attempts durable Failed and returns RecoveryRequired;
@@ -399,6 +402,10 @@ Coverage includes:
 - Copy refuses an already existing destination instead of overwriting it;
 - nested source junctions fail closed and their target payload is not copied;
 - Replace recursively removes the reviewed destination tree and copies the source payload;
+- Replace deletes nothing when the held destination no longer matches its proven pre-state fingerprint,
+  or when no fingerprint is supplied;
+- a destination edited after Backup is refused before Started and kept, while an excluded file added
+  after Backup neither blocks Replace nor is removed;
 - nested destination junctions fail closed without following or modifying the junction target;
 - equal/ancestor/descendant source/destination roots are rejected before mutation;
 - physical overlap through a SUBST alias is rejected after canonical handle-path comparison;
