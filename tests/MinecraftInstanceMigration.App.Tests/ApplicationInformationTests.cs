@@ -12,7 +12,7 @@ public sealed class ApplicationInformationTests
         ApplicationInformation information = ApplicationInformation.Current;
 
         Assert.Equal("Minecraft Instance Migration Tool", information.ProductName);
-        Assert.Equal("1.0.1", information.Version);
+        Assert.Equal("1.1.0", information.Version);
         Assert.Equal("Windows x64", information.Platform);
         Assert.Equal("bosatsuKing", information.Author);
     }
