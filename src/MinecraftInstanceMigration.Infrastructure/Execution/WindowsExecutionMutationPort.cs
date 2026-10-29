@@ -11,12 +11,13 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         string sourceRoot,
         string destinationRoot,
         ExecutionJournalEntry step,
+        ExecutionContentFingerprint? expectedDestination,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(step);
 
         return Task.Run(
-            () => Apply(sourceRoot, destinationRoot, step, cancellationToken),
+            () => Apply(sourceRoot, destinationRoot, step, expectedDestination, cancellationToken),
             CancellationToken.None);
     }
 
@@ -24,6 +25,7 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         string sourceRoot,
         string destinationRoot,
         ExecutionJournalEntry step,
+        ExecutionContentFingerprint? expectedDestination,
         CancellationToken cancellationToken)
     {
         if (!OperatingSystem.IsWindows())
@@ -66,11 +68,18 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
             }
             else if (step.Operation == ExecutionOperationKind.Replace)
             {
+                if (expectedDestination is null)
+                {
+                    // Without proof that the backup covers the destination, nothing may be deleted.
+                    return Failed(ExecutionMutationFailureKind.DestinationChanged);
+                }
+
                 EnsureReplaceDestination(destination.Root, step);
                 ReplaceFromSource(
                     sourceNode,
                     destination.Root,
                     step.Name,
+                    expectedDestination,
                     cancellationToken);
             }
             else
@@ -210,6 +219,7 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         WindowsExecutionTree.OpenedNode source,
         SafeFileHandle destinationRoot,
         string name,
+        ExecutionContentFingerprint expectedDestination,
         CancellationToken cancellationToken)
     {
         try
@@ -220,6 +230,15 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
                     name,
                     forDelete: true))
             {
+                // The held handles deny new writers, so this is the content that will be deleted.
+                // Anything other than what the backup was proven to cover must not be removed.
+                if (WindowsExecutionTree.FingerprintHeldTree(destination, cancellationToken).ToDomain() !=
+                    expectedDestination)
+                {
+                    throw new ExecutionMutationException(
+                        ExecutionMutationFailureKind.DestinationChanged);
+                }
+
                 WindowsExecutionTree.DeleteHeldTree(destination, () => { });
             }
 

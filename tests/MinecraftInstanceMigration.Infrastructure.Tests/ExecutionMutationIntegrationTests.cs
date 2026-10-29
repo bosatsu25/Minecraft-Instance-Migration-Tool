@@ -11,6 +11,9 @@ namespace MinecraftInstanceMigration.Infrastructure.Tests;
 [Collection("Drive aliases")]
 public sealed class ExecutionMutationIntegrationTests
 {
+    private static readonly ExecutionContentFingerprint UnrelatedFingerprint =
+        new(0, 0, 0, new string('0', 64));
+
     [Fact]
     public async Task CopyFileIsCreateOnlyAndVerifierMatchesSource()
     {
@@ -32,6 +35,7 @@ public sealed class ExecutionMutationIntegrationTests
                 source,
                 destination,
                 step,
+                null,
                 TestContext.Current.CancellationToken);
 
         Assert.True(mutation.IsApplied);
@@ -80,7 +84,7 @@ public sealed class ExecutionMutationIntegrationTests
             0, "config", ExpectedEntryKind.Directory, ExecutionOperationKind.Copy);
 
         ExecutionMutationResult mutation = await new WindowsExecutionMutationPort().ApplyAsync(
-            source, destination, step, TestContext.Current.CancellationToken);
+            source, destination, step, null, TestContext.Current.CancellationToken);
         ExecutionPostWriteVerificationResult verification =
             await new WindowsExecutionPostWriteVerifier().VerifyAsync(
                 source, destination, step, TestContext.Current.CancellationToken);
@@ -121,7 +125,7 @@ public sealed class ExecutionMutationIntegrationTests
             0, "config", ExpectedEntryKind.Directory, ExecutionOperationKind.Replace);
 
         ExecutionMutationResult mutation = await new WindowsExecutionMutationPort().ApplyAsync(
-            source, destination, step, TestContext.Current.CancellationToken);
+            source, destination, step, PreStateFingerprints.Current(destination, step), TestContext.Current.CancellationToken);
         ExecutionPostWriteVerificationResult verification =
             await new WindowsExecutionPostWriteVerifier().VerifyAsync(
                 source, destination, step, TestContext.Current.CancellationToken);
@@ -156,6 +160,7 @@ public sealed class ExecutionMutationIntegrationTests
                     "options.txt",
                     ExpectedEntryKind.File,
                     ExecutionOperationKind.Copy),
+                null,
                 TestContext.Current.CancellationToken);
 
         Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
@@ -188,6 +193,7 @@ public sealed class ExecutionMutationIntegrationTests
                     "config",
                     ExpectedEntryKind.Directory,
                     ExecutionOperationKind.Copy),
+                null,
                 TestContext.Current.CancellationToken);
 
         Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
@@ -229,6 +235,7 @@ public sealed class ExecutionMutationIntegrationTests
                 source,
                 destination,
                 step,
+                PreStateFingerprints.Current(destination, step),
                 TestContext.Current.CancellationToken);
 
         Assert.True(mutation.IsApplied);
@@ -269,11 +276,63 @@ public sealed class ExecutionMutationIntegrationTests
                     "config",
                     ExpectedEntryKind.Directory,
                     ExecutionOperationKind.Replace),
+                UnrelatedFingerprint,
                 TestContext.Current.CancellationToken);
 
         Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
         Assert.Equal(ExecutionMutationFailureKind.ReparsePoint, result.FailureKind);
         Assert.Equal("keep-me", File.ReadAllText(fixture.At("outside/secret.txt")));
+    }
+
+    [Fact]
+    public async Task ReplaceRefusesToDeleteDestinationThatNoLongerMatchesItsProvenPreState()
+    {
+        using var fixture = new InspectionFixture();
+        string source = fixture.At("source");
+        string destination = fixture.At("destination");
+        Directory.CreateDirectory(Path.Combine(source, "config"));
+        Directory.CreateDirectory(Path.Combine(destination, "config"));
+        File.WriteAllText(Path.Combine(source, "config", "new.json"), "new");
+        File.WriteAllText(Path.Combine(destination, "config", "old.json"), "old");
+        var step = new ExecutionJournalEntry(
+            0, "config", ExpectedEntryKind.Directory, ExecutionOperationKind.Replace);
+        ExecutionContentFingerprint provenBeforeEdit = PreStateFingerprints.Current(destination, step);
+        File.WriteAllText(Path.Combine(destination, "config", "edited-after-backup.json"), "member-change");
+
+        ExecutionMutationResult result = await new WindowsExecutionMutationPort().ApplyAsync(
+            source, destination, step, provenBeforeEdit, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
+        Assert.Equal(ExecutionMutationFailureKind.DestinationChanged, result.FailureKind);
+        Assert.Equal("old", File.ReadAllText(Path.Combine(destination, "config", "old.json")));
+        Assert.Equal("member-change", File.ReadAllText(Path.Combine(
+            destination, "config", "edited-after-backup.json")));
+        Assert.False(File.Exists(Path.Combine(destination, "config", "new.json")));
+    }
+
+    [Fact]
+    public async Task ReplaceWithoutProvenPreStateDeletesNothing()
+    {
+        using var fixture = new InspectionFixture();
+        string source = fixture.At("source");
+        string destination = fixture.At("destination");
+        Directory.CreateDirectory(Path.Combine(source, "config"));
+        Directory.CreateDirectory(Path.Combine(destination, "config"));
+        File.WriteAllText(Path.Combine(source, "config", "new.json"), "new");
+        File.WriteAllText(Path.Combine(destination, "config", "old.json"), "old");
+
+        ExecutionMutationResult result = await new WindowsExecutionMutationPort().ApplyAsync(
+            source,
+            destination,
+            new ExecutionJournalEntry(
+                0, "config", ExpectedEntryKind.Directory, ExecutionOperationKind.Replace),
+            null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
+        Assert.Equal(ExecutionMutationFailureKind.DestinationChanged, result.FailureKind);
+        Assert.Equal("old", File.ReadAllText(Path.Combine(destination, "config", "old.json")));
+        Assert.False(File.Exists(Path.Combine(destination, "config", "new.json")));
     }
 
     [Fact]
@@ -294,6 +353,7 @@ public sealed class ExecutionMutationIntegrationTests
                     "options.txt",
                     ExpectedEntryKind.File,
                     ExecutionOperationKind.Copy),
+                null,
                 TestContext.Current.CancellationToken);
 
         Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
@@ -321,6 +381,7 @@ public sealed class ExecutionMutationIntegrationTests
                     "options.txt",
                     ExpectedEntryKind.File,
                     ExecutionOperationKind.Copy),
+                null,
                 TestContext.Current.CancellationToken);
 
         Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
@@ -347,6 +408,7 @@ public sealed class ExecutionMutationIntegrationTests
                     "options.txt",
                     ExpectedEntryKind.File,
                     ExecutionOperationKind.Copy),
+                null,
                 TestContext.Current.CancellationToken);
 
         Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
@@ -377,6 +439,7 @@ public sealed class ExecutionMutationIntegrationTests
                         "options.txt",
                         ExpectedEntryKind.File,
                         ExecutionOperationKind.Copy),
+                    null,
                     TestContext.Current.CancellationToken);
 
             Assert.Equal(ExecutionMutationStatus.Failed, result.Status);
@@ -411,6 +474,7 @@ public sealed class ExecutionMutationIntegrationTests
             source,
             destination,
             step,
+            null,
             TestContext.Current.CancellationToken)).IsApplied);
 
         File.WriteAllText(Path.Combine(destination, "options.txt"), "tampered");

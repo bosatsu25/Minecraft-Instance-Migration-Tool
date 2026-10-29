@@ -9,6 +9,7 @@ public sealed class ExecutionOrchestrator(
     IExecutionLiveValidator liveValidator,
     IBackupPlanner backupPlanner,
     IBackupArtifactValidator backupValidator,
+    IExecutionPreStateProbe preStateProbe,
     IExecutionWorkspaceSafetyValidator workspaceSafetyValidator,
     IExecutionJournalPersistence journalPersistence,
     IExecutionMutationPort mutationPort,
@@ -22,6 +23,8 @@ public sealed class ExecutionOrchestrator(
         backupPlanner ?? throw new ArgumentNullException(nameof(backupPlanner));
     private readonly IBackupArtifactValidator backupValidator =
         backupValidator ?? throw new ArgumentNullException(nameof(backupValidator));
+    private readonly IExecutionPreStateProbe preStateProbe =
+        preStateProbe ?? throw new ArgumentNullException(nameof(preStateProbe));
     private readonly IExecutionWorkspaceSafetyValidator workspaceSafetyValidator =
         workspaceSafetyValidator ?? throw new ArgumentNullException(nameof(workspaceSafetyValidator));
     private readonly IExecutionJournalPersistence journalPersistence =
@@ -171,6 +174,7 @@ public sealed class ExecutionOrchestrator(
                     appliedSteps);
             }
 
+            ExecutionContentFingerprint? expectedDestination = null;
             if (step.Operation == ExecutionOperationKind.Replace)
             {
                 BackupArtifactValidationResult backupValidation;
@@ -203,6 +207,56 @@ public sealed class ExecutionOrchestrator(
                         journal,
                         appliedSteps);
                 }
+
+                ExecutionPreStateResult preState;
+                try
+                {
+                    preState = await preStateProbe.CompareWithBackupAsync(
+                        request.DestinationRoot,
+                        request.BackupRoot!,
+                        step,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return new ExecutionOrchestrationResult(
+                        ExecutionOrchestrationStatus.Cancelled,
+                        Journal: journal,
+                        AppliedSteps: appliedSteps);
+                }
+                catch (Exception)
+                {
+                    return BeforeStartFailure(
+                        ExecutionOrchestrationFailureKind.LiveStateChanged,
+                        journal,
+                        appliedSteps);
+                }
+
+                if (preState.Status == ExecutionPreStateStatus.Cancelled)
+                {
+                    return new ExecutionOrchestrationResult(
+                        ExecutionOrchestrationStatus.Cancelled,
+                        Journal: journal,
+                        AppliedSteps: appliedSteps);
+                }
+
+                if (preState.Status == ExecutionPreStateStatus.Changed)
+                {
+                    return BeforeStartFailure(
+                        ExecutionOrchestrationFailureKind.DestinationChangedSinceBackup,
+                        journal,
+                        appliedSteps);
+                }
+
+                if (!preState.IsMatch)
+                {
+                    return BeforeStartFailure(
+                        ExecutionOrchestrationFailureKind.LiveStateChanged,
+                        journal,
+                        appliedSteps);
+                }
+
+                expectedDestination = preState.Fingerprint;
             }
 
             ExecutionJournalWriteResult started;
@@ -242,6 +296,7 @@ public sealed class ExecutionOrchestrator(
                     request.SourceRoot,
                     request.DestinationRoot,
                     step,
+                    expectedDestination,
                     cancellationToken);
             }
             catch (Exception)

@@ -109,7 +109,9 @@ planned tree fingerprint. Any nested reparse point or fingerprint mismatch inval
 
 The validator never repairs or rewrites the backup. A valid artifact is necessary recovery evidence,
 but it is not sufficient to start destructive Execute: the future workflow must still revalidate the
-live migration inputs and bind the validated backup to an execution journal.
+live migration inputs and bind the validated backup to an execution journal. Replace also proves that the
+live destination entry still equals its backup entry before Started; see the
+[Replace pre-state guard](execution-journal.md#replace-pre-state-guard).
 
 
 ## Relationship to execution journal / rollback

@@ -78,7 +78,7 @@ and report tests exercise the common pipeline; the catalog-order regression prev
 | `options.txt` copy | `Form1.cs` 79-86 | Reviewed create-only Copy or explicit Replace | `CopyFileIsCreateOnlyAndVerifierMatchesSource` | Covered with safer behavior |
 | Recursive directory copy | `Form1.cs` 133-172 | Handle-relative no-follow traversal | `CopyDirectoryExcludesHanemodClientAtEveryDepthAndVerifierUsesSameRule`; reparse tests | Covered with safer behavior |
 | `hanemod-client.json` exclusion | `Form1.cs` 152-164 | Domain-owned known rule used by every payload adapter | `KnownMigrationContentRulesTests`; Infrastructure integration tests | Covered with safer behavior |
-| Overwrite | `Form1.cs` 163 | explicit Replace, verified backup, live revalidation, journal, verification, guarded rollback | execution/backup/rollback integration suites | Covered with safer behavior |
+| Overwrite (overlay: shared files overwritten, destination-only files kept) | `Form1.cs` 163 | explicit Replace of the whole entry, verified backup, live revalidation, journal, verification, guarded rollback; overlay itself is not available ([ADR 0004](adr/0004-merge-existing-destination-directories.md) proposes Merge) | execution/backup/rollback integration suites | Intentionally changed |
 | Missing selected source throws | fixed calls at `Form1.cs` 91-130 | typed `SourceMissing` no-op or blocked stale evidence | planner/workflow tests | Covered with safer behavior |
 | Final folder-name warning | `Form1.cs` 31-43 | absolute local path, overlap, canonical-handle, containment and reparse checks before writes | workspace safety and integration tests | Intentionally changed |
 | No-selection warning | `Form1.cs` 44-46 | valid zero-write Preview/report, no mutation | selection, workflow, report tests | Covered with safer behavior |
@@ -108,7 +108,8 @@ All non-excluded content continues to use reviewed Replace semantics.
 
 ## Intentional safer differences
 
-- unconditional overwrite becomes explicit Skip or Replace;
+- unconditional overwrite becomes explicit Skip or Replace. Replace swaps the whole entry, so files that exist
+  only in the destination move to the backup instead of staying, unlike the reference overlay;
 - Replace requires a validated backup, live revalidation, durable journal, independent verification,
   and fingerprint-guarded rollback;
 - simple path recursion becomes handle-relative no-follow traversal;
@@ -124,7 +125,7 @@ All non-excluded content continues to use reviewed Replace semantics.
 These items are separate from ModPackTransfer feature parity:
 
 - automatic rollback resume;
-- Merge semantics;
+- Merge semantics (proposed in [ADR 0004](adr/0004-merge-existing-destination-directories.md), not implemented);
 - Minecraft/mod/loader compatibility analysis;
 - exact NTFS metadata cloning;
 - report persistence/export;

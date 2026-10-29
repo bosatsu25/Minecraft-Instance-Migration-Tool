@@ -51,6 +51,7 @@ public partial class MainWindow : Window
                 new ExecutionLiveValidator(inspector),
                 backupPlanner,
                 backupValidator,
+                new WindowsExecutionPreStateProbe(),
                 new WindowsExecutionWorkspaceSafetyValidator(),
                 journalPersistence,
                 new WindowsExecutionMutationPort(),

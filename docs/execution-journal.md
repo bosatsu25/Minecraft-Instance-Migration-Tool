@@ -189,6 +189,23 @@ fails, the orchestrator persists Failed where possible and returns RecoveryRequi
 Rollback IO remains separate work and must use the journal fingerprint guard before deleting or
 restoring any destination content.
 
+### Replace pre-state guard
+
+A valid backup artifact proves only that the backup itself is intact. Replace also needs proof that the
+backup still covers what it is about to delete, otherwise a change made after Backup would be removed
+without a copy (review finding D9, [ADR 0004](adr/0004-merge-existing-destination-directories.md) §6).
+
+Before durable Started, `IExecutionPreStateProbe` fingerprints the live destination entry and the same entry
+inside the validated backup, using the shared fingerprint encoding and exclusion rule. A difference is
+`DestinationChangedSinceBackup`; an unproven or failed comparison is `LiveStateChanged`. Both stop before
+Started, so nothing is written and the journal step stays NotStarted.
+
+The proven fingerprint is passed to the mutation port. After holding the destination tree for deletion,
+the port fingerprints the held tree again and deletes nothing unless it still matches. That second check
+closes the race between the probe and the mutation; a mismatch there happens after Started and is reported
+as a Failed step, with the untouched backup as the recovery source. A Replace without a proven fingerprint is
+refused the same way.
+
 
 ## Phase 3.7 rollback binding
 

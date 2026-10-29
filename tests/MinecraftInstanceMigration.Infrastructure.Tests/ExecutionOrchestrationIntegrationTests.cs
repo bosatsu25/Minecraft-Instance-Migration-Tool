@@ -155,6 +155,80 @@ public sealed class ExecutionOrchestrationIntegrationTests
     }
 
     [Fact]
+    public async Task DestinationEditedAfterBackupIsRefusedBeforeStartedAndKept()
+    {
+        using var fixture = new InspectionFixture();
+        ReplaceSetup setup = await PrepareReplaceWithBackupAsync(fixture);
+        File.WriteAllText(
+            Path.Combine(setup.Destination, "config", "edited-after-backup.json"),
+            "member-change");
+
+        var safety = new ExecutionSafetyPlanner();
+        var journal = new ExecutionJournalPersistence(
+            new WindowsExecutionJournalStorage());
+        ExecutionOrchestrationResult result = await CreateOrchestrator(safety, journal).ExecuteAsync(
+            new ExecutionOrchestrationRequest(
+                setup.Source,
+                setup.Destination,
+                setup.Journals,
+                setup.BackupRoot,
+                setup.Plan),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionOrchestrationStatus.Blocked, result.Status);
+        Assert.Equal(
+            ExecutionOrchestrationFailureKind.DestinationChangedSinceBackup,
+            result.FailureKind);
+        Assert.Equal(0, result.AppliedSteps);
+        Assert.Equal(
+            "member-change",
+            File.ReadAllText(Path.Combine(setup.Destination, "config", "edited-after-backup.json")));
+        Assert.Equal(
+            "old-value",
+            File.ReadAllText(Path.Combine(setup.Destination, "config", "old.json")));
+        Assert.False(File.Exists(Path.Combine(setup.Destination, "config", "new.json")));
+
+        ExecutionJournalReadResult loaded = await journal.LoadAsync(
+            result.Journal!,
+            safety.CreateJournalDraft(setup.Plan),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(loaded.IsLoaded);
+        Assert.Equal(
+            ExecutionStepOutcome.NotStarted,
+            Assert.Single(loaded.Snapshot!.Steps).Outcome);
+    }
+
+    [Fact]
+    public async Task ExcludedFileAddedAfterBackupDoesNotBlockReplaceAndIsPreserved()
+    {
+        using var fixture = new InspectionFixture();
+        ReplaceSetup setup = await PrepareReplaceWithBackupAsync(fixture);
+        File.WriteAllText(
+            Path.Combine(setup.Destination, "config", "hanemod-client.json"),
+            "account-specific");
+
+        ExecutionOrchestrationResult result = await CreateOrchestrator(
+            new ExecutionSafetyPlanner(),
+            new ExecutionJournalPersistence(new WindowsExecutionJournalStorage())).ExecuteAsync(
+                new ExecutionOrchestrationRequest(
+                    setup.Source,
+                    setup.Destination,
+                    setup.Journals,
+                    setup.BackupRoot,
+                    setup.Plan),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionOrchestrationStatus.Completed, result.Status);
+        Assert.Equal(
+            "account-specific",
+            File.ReadAllText(Path.Combine(setup.Destination, "config", "hanemod-client.json")));
+        Assert.Equal(
+            "new-value",
+            File.ReadAllText(Path.Combine(setup.Destination, "config", "new.json")));
+    }
+
+    [Fact]
     public async Task NestedSourceReparseAfterLiveInspectionBecomesDurableFailedRecoveryEvidence()
     {
         using var fixture = new InspectionFixture();
@@ -220,6 +294,53 @@ public sealed class ExecutionOrchestrationIntegrationTests
             File.ReadAllText(fixture.At("outside/secret.txt")));
     }
 
+    private static async Task<ReplaceSetup> PrepareReplaceWithBackupAsync(InspectionFixture fixture)
+    {
+        string source = fixture.At("source");
+        string destination = fixture.At("destination");
+        string backups = fixture.At("backups");
+        string journals = fixture.At("journals");
+        Directory.CreateDirectory(Path.Combine(source, "config"));
+        Directory.CreateDirectory(Path.Combine(destination, "config"));
+        Directory.CreateDirectory(backups);
+        Directory.CreateDirectory(journals);
+        File.WriteAllText(Path.Combine(source, "config", "new.json"), "new-value");
+        File.WriteAllText(Path.Combine(destination, "config", "old.json"), "old-value");
+
+        MigrationPlan plan = new(
+            EntryState.Directory,
+            EntryState.Directory,
+            [
+                new MigrationPlanEntry(
+                    "config",
+                    ExpectedEntryKind.Directory,
+                    EntryState.Directory,
+                    EntryState.Directory,
+                    true,
+                    MigrationPlanDisposition.ReadyToReplace),
+            ],
+            []);
+
+        var backupPlanner = new BackupPlanner();
+        BackupExecutionResult backup = await new BackupExecutor(
+            new WindowsBackupStorage(),
+            backupPlanner).ExecuteAsync(
+                destination,
+                backups,
+                backupPlanner.CreateBackupPlan(plan),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(BackupExecutionStatus.Completed, backup.Status);
+        return new ReplaceSetup(source, destination, journals, backup.BackupRootPath!, plan);
+    }
+
+    private sealed record ReplaceSetup(
+        string Source,
+        string Destination,
+        string Journals,
+        string BackupRoot,
+        MigrationPlan Plan);
+
     private static ExecutionOrchestrator CreateOrchestrator(
         IExecutionSafetyPlanner safety,
         IExecutionJournalPersistence journal)
@@ -232,6 +353,7 @@ public sealed class ExecutionOrchestrationIntegrationTests
             new ExecutionLiveValidator(inspector),
             new BackupPlanner(),
             new BackupArtifactValidator(backupStorage),
+            new WindowsExecutionPreStateProbe(),
             new WindowsExecutionWorkspaceSafetyValidator(),
             journal,
             new WindowsExecutionMutationPort(),
