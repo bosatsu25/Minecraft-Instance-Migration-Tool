@@ -45,7 +45,7 @@ public sealed class WindowsRollbackStorage : IRollbackStorage
             action.Action == RollbackActionKind.DeleteCreatedEntry &&
                 action.Operation != ExecutionOperationKind.Copy ||
             action.Action == RollbackActionKind.RestoreFromBackup &&
-                action.Operation != ExecutionOperationKind.Replace)
+                action.Operation is not (ExecutionOperationKind.Replace or ExecutionOperationKind.Merge))
         {
             return GuardRejected(RollbackStorageFailureKind.InvalidPlan);
         }

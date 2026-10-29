@@ -39,7 +39,7 @@ public sealed class ExecutionOrchestratorTests
     }
 
     [Fact]
-    public async Task MergeStepRequiresBackupValidationAndPreStateProofLikeReplace()
+    public async Task MergeStepIsProvenLikeReplaceThenMergedAndVerifiedAgainstTheBackup()
     {
         var events = new List<string>();
         MigrationPlan plan = MergePlan();
@@ -59,8 +59,8 @@ public sealed class ExecutionOrchestratorTests
                 "backup",
                 "prestate:0",
                 "journal:started:0",
-                "mutation:0",
-                "verify:0",
+                "merge:0:backup",
+                "verify-merge:0:backup",
                 "journal:applied:0",
             },
             events);
@@ -650,6 +650,19 @@ public sealed class ExecutionOrchestratorTests
             ExpectedDestination = expectedDestination;
             return Task.FromResult(Result);
         }
+
+        public Task<ExecutionMutationResult> MergeAsync(
+            string sourceRoot,
+            string destinationRoot,
+            string backupRoot,
+            ExecutionJournalEntry step,
+            ExecutionContentFingerprint expectedDestination,
+            CancellationToken cancellationToken)
+        {
+            events.Add($"merge:{step.Sequence}:{backupRoot}");
+            ExpectedDestination = expectedDestination;
+            return Task.FromResult(Result);
+        }
     }
 
     private sealed class StubVerifier(List<string> events) : IExecutionPostWriteVerifier
@@ -670,6 +683,17 @@ public sealed class ExecutionOrchestratorTests
             CancellationToken cancellationToken)
         {
             events.Add($"verify:{step.Sequence}");
+            return Task.FromResult(Result);
+        }
+
+        public Task<ExecutionPostWriteVerificationResult> VerifyMergeAsync(
+            string sourceRoot,
+            string destinationRoot,
+            string backupRoot,
+            ExecutionJournalEntry step,
+            CancellationToken cancellationToken)
+        {
+            events.Add($"verify-merge:{step.Sequence}:{backupRoot}");
             return Task.FromResult(Result);
         }
     }

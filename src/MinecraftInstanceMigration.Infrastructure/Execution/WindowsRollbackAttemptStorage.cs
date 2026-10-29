@@ -483,7 +483,8 @@ public sealed class WindowsRollbackAttemptStorage : IRollbackAttemptStorage
             bool validAction = entry.Action switch
             {
                 RollbackActionKind.DeleteCreatedEntry => entry.Operation == ExecutionOperationKind.Copy,
-                RollbackActionKind.RestoreFromBackup => entry.Operation == ExecutionOperationKind.Replace,
+                RollbackActionKind.RestoreFromBackup =>
+                    entry.Operation is ExecutionOperationKind.Replace or ExecutionOperationKind.Merge,
                 _ => false,
             };
 

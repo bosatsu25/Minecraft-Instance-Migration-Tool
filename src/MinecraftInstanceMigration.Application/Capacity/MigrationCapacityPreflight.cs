@@ -67,6 +67,12 @@ public sealed class MigrationCapacityPreflight(
                 }
 
                 backupBytes = checked(backupBytes + destinationBytes);
+                if (entry.IsReadyToMerge)
+                {
+                    // Merge rebuilds the entry from the backup's kept units plus the source, so it may
+                    // write the destination's bytes again on top of the source's.
+                    replaceWriteBytes = checked(replaceWriteBytes + destinationBytes);
+                }
             }
 
             VolumeCapacityProbeResult destinationVolume = await volumeCapacityProbe.ProbeAsync(

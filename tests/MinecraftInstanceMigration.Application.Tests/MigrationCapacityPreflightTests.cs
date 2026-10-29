@@ -28,6 +28,26 @@ public sealed class MigrationCapacityPreflightTests
     }
 
     [Fact]
+    public async Task MergeCountsSourceAndRebuiltDestinationBytesAsWritesAndBacksUpTheDestination()
+    {
+        var sizes = new StubSizeProbe(new Dictionary<(string, string), long>
+        {
+            [("source", "config")] = 20,
+            [("destination", "config")] = 30,
+        });
+        var subject = new MigrationCapacityPreflight(sizes, Volumes(100_000_000, 100_000_000));
+
+        MigrationCapacityEstimate result = await subject.EvaluateAsync(
+            Request(Plan(Entry("config", MigrationPlanDisposition.ReadyToMerge, EntryState.Directory))),
+            TestContext.Current.CancellationToken);
+
+        // The rebuild writes the source plus, at most, every kept destination byte again.
+        Assert.Equal(MigrationCapacityStatus.Ready, result.Status);
+        Assert.Equal(50, result.ReplaceWriteBytes);
+        Assert.Equal(30, result.BackupBytes);
+    }
+
+    [Fact]
     public async Task SkippedAndExcludedEntriesAreNotMeasured()
     {
         var sizes = new StubSizeProbe(new Dictionary<(string Root, string Name), long>());

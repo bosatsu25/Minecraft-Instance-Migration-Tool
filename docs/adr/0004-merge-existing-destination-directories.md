@@ -95,9 +95,9 @@ No relative or absolute path leaves the inspection.
 | --- | --- | --- |
 | Plan disposition | `ReadyToReplace` | `ReadyToMerge`, or `BlockedMergeConflict` |
 | Backup | whole destination entry | whole destination entry (same `BackupPlan` shape) |
-| Capacity | writes = source bytes; backup = destination bytes | same formula; never subtracts overwritten bytes |
+| Capacity | writes = source bytes; backup = destination bytes | writes = source + destination bytes (the rebuild rewrites kept units); backup = destination bytes |
 | Journal operation | `Replace` | `Merge`; record shape unchanged |
-| Mutation | delete entry, copy source | overlay by the entry's merge unit |
+| Mutation | delete entry, copy source | delete the held entry, then rebuild it create-only from the backup's kept units and the source |
 | Verification | destination equals source | destination equals overlay(validated backup, source) |
 | Applied fingerprint | whole destination entry | whole destination entry |
 | Rollback | `RestoreFromBackup`, guarded by the Applied fingerprint | identical |
@@ -105,6 +105,15 @@ No relative or absolute path leaves the inspection.
 Backing up the whole entry costs as much space as Replace already does. In exchange, restore, backup validation,
 capacity estimation, and the rollback guard need no new destructive code. A smaller delta backup is listed
 under Alternatives.
+
+**Implementation note (step 3).** The overlay is produced by rebuilding, not by overwriting in place. The
+mutation holds the backup entry and the destination entry, proves both equal the pre-state fingerprint,
+re-runs the inspection against the held backup (a new kind conflict is refused before anything is deleted),
+deletes the held destination exactly as Replace does, and writes the result create-only: kept units from the
+held backup, then source units. In-place overwrite was rejected because the held destination handles deny other
+writers, so writing through separate handles is impossible while the tree is held, and widening those handles
+would add a new class of destructive primitive. The rebuild uses only the existing create-only, no-follow
+primitives, and its partial-failure state is the same as Replace's, recovered by the same whole-entry restore.
 
 ### 5. Independent verification against an expected overlay
 
@@ -176,7 +185,8 @@ Each step is its own pull request with its own tests, and each step keeps the pr
    and rollback policies. Merge is not selectable in the UI yet. Implemented; Application already routes a
    Merge step through backup validation and the pre-state proof, which refuses it until step 3.
 3. **Infrastructure**: merge inspection, overlay writer, overlay verifier, and rollback-attempt acceptance, with
-   integration tests on owned fixtures.
+   integration tests on owned fixtures. Implemented with the rebuild described in section 4; Application gains
+   `IMergeInspector`, `MergeAsync`, and `VerifyMergeAsync`, and capacity counts the rebuild's writes.
 4. **Application and App**: three-way choice, counts in Preview, confirmation, and Report, Japanese and English
    text, documentation, and a FlaUI Merge smoke test.
 

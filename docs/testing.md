@@ -208,6 +208,19 @@ ADR 0004 step 2 adds the Domain Merge model (`MergePolicyTests`, Domain-only, no
 - removing the evidence/unit consistency or the merge-unit support check fails four of these tests;
 - Application routes a Merge step through backup validation and the pre-state proof, like Replace.
 
+ADR 0004 step 3 adds the Windows Merge IO (`MergeIntegrationTests`, owned temporary fixtures):
+
+- File unit: shared files take the source content and spelling, destination-only files and nested excluded
+  files stay, a source excluded file is not written, and inspection counts added/replaced/kept units and the
+  rebuild's bytes;
+- Top-level child unit: a shared child is replaced as a whole and other children are kept;
+- the verifier rejects a missing kept file, an edited kept file, a missing source file, and an extra file;
+- a kind conflict is reported by inspection and refused by the mutation before anything is deleted;
+- a destination changed after its pre-state proof is refused and kept;
+- a nested reparse point is reported without being followed;
+- an orchestrated Merge is journaled as Applied and its guarded rollback restores the exact pre-merge fingerprint;
+- capacity counts source plus destination bytes as Merge writes.
+
 
 ## Phase 2.2: Preview / Dry Run
 
