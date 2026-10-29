@@ -11,7 +11,10 @@ Skip entries contribute no bytes.
 
 - Copy bytes: source logical bytes for `ReadyToCopy` entries.
 - Replace write bytes: source logical bytes for `ReadyToReplace` entries.
-- Backup bytes: current destination logical bytes for `ReadyToReplace` entries.
+- Backup bytes: current destination logical bytes for `ReadyToReplace` and `ReadyToMerge` entries.
+- Merge write bytes: source logical bytes plus current destination logical bytes for `ReadyToMerge` entries,
+  because Merge rebuilds the entry from the backup's kept units and the source (ADR 0004). Kept units are a
+  subset of the destination, so this is an upper bound.
 
 The estimator never subtracts space that Replace may later release. Regular-file default-stream lengths
 are summed with checked 64-bit arithmetic. Directory metadata, ACLs, alternate data streams, NTFS cluster

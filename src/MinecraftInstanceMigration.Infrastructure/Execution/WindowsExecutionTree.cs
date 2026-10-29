@@ -609,7 +609,7 @@ internal static class WindowsExecutionTree
         }
     }
 
-    private static bool ContainsOnlyExcludedContent(
+    internal static bool ContainsOnlyExcludedContent(
         OpenedNode node,
         string name,
         CancellationToken cancellationToken)
@@ -708,7 +708,7 @@ internal static class WindowsExecutionTree
         }
     }
 
-    private static SafeFileHandle CreateOrOpenDirectory(
+    internal static SafeFileHandle CreateOrOpenDirectory(
         SafeFileHandle parent,
         string name)
     {
@@ -761,7 +761,7 @@ internal static class WindowsExecutionTree
         }
     }
 
-    private static bool IsExcludedFile(HeldNodeTree tree) =>
+    internal static bool IsExcludedFile(HeldNodeTree tree) =>
         !tree.Node.IsDirectory && KnownMigrationContentRules.IsExcludedFileName(tree.Name);
 
     private static void ValidateSingleName(string name)

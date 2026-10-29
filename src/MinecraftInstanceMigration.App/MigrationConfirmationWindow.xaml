@@ -45,6 +45,7 @@
                AutomationProperties.AutomationId="ConfirmationCounts">
       <Run Text="{ui:Text Key='Copy: '}" /><Run Text="{Binding CopyCount, Mode=OneWay}" />
       <Run Text="{ui:Text Key='   Replace: '}" /><Run Text="{Binding ReplaceCount, Mode=OneWay}" />
+      <Run Text="{ui:Text Key='   Merge: '}" /><Run Text="{Binding MergeCount, Mode=OneWay}" />
       <Run Text="{ui:Text Key='   Skip: '}" /><Run Text="{Binding SkipCount, Mode=OneWay}" />
     </TextBlock>
 

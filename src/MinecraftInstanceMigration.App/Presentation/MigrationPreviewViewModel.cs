@@ -60,7 +60,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
                 !string.IsNullOrWhiteSpace(SourcePath) &&
                 !string.IsNullOrWhiteSpace(DestinationPath));
         ApplyChoicesCommand = new RelayCommand(
-            ApplyChoices,
+            async () => await ApplyChoicesAsync(),
             () => CanEditChoices && preview is not null && hasPendingChoices);
         ResetRecommendedCommand = new RelayCommand(
             ResetRecommended,
@@ -83,6 +83,9 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ReplaceConflictCommand = new RelayCommand(
             () => SetSelectedConflict(DestinationConflictDecision.Replace),
             CanSetSelectedConflict);
+        MergeConflictCommand = new RelayCommand(
+            () => SetSelectedConflict(DestinationConflictDecision.Merge),
+            () => CanSetSelectedConflict() && SelectedChoice?.CanChooseMerge == true);
         ClearConflictCommand = new RelayCommand(
             () => SetSelectedConflict(DestinationConflictDecision.Unresolved),
             () => CanSetSelectedConflict() &&
@@ -126,6 +129,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
     public RelayCommand ReplaceConflictCommand { get; }
 
     public RelayCommand ClearConflictCommand { get; }
+
+    public RelayCommand MergeConflictCommand { get; }
 
     public RelayCommand CheckCapacityCommand { get; }
 
@@ -212,7 +217,11 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             string conflict = choice.CanChooseConflict
                 ? choice.ConflictDecision.ToString()
                 : "Not applicable";
-            return $"{choice.Name}: {selection}; conflict: {conflict}.";
+            MergeInspectionResult? merge = choice.MergeInspection;
+            return merge is null
+                ? $"{choice.Name}: {selection}; conflict: {conflict}."
+                : $"{choice.Name}: {selection}; conflict: {conflict}. " +
+                  $"Merge adds {merge.UnitsAdded}, overwrites {merge.UnitsReplaced}, keeps {merge.UnitsKept}.";
         }
     }
 
@@ -252,7 +261,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             }
             if (preview.Status == MigrationPlanStatus.NeedsDecision)
             {
-                return "Select conflict rows, choose Skip or Replace, then Apply choices.";
+                return "Select conflict rows, choose Skip, Merge, or Replace, then Apply choices.";
             }
             if (preview.Status != MigrationPlanStatus.Ready || session?.FailureKind is not null)
             {
@@ -398,7 +407,10 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
                 preview.CopyCount,
                 preview.ReplaceCount,
                 preview.SkipCount,
-                preview.RequiresBackup);
+                preview.RequiresBackup)
+            {
+                MergeCount = preview.MergeCount,
+            };
             if (!executionConfirmation.Confirm(request))
             {
                 status = "Migration was not started. No files were changed.";
@@ -635,7 +647,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             session.ExecutionResult.Journal);
     }
 
-    private void ApplyChoices()
+    // Completes synchronously unless a Merge decision needs its read-only comparison first.
+    private async Task ApplyChoicesAsync()
     {
         if (session is null || preview is null || IsBusy)
         {
@@ -673,6 +686,18 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
                 return;
             }
 
+            if (current.MigrationPlan.MergeInspectionRequiredCount > 0)
+            {
+                current = await InspectMergesAsync(current);
+                if (current.FailureKind is not null || current.MigrationPlan is null)
+                {
+                    session = current;
+                    status = WorkflowFailureStatus(current, "Merge comparison did not finish.");
+                    Notify(nameof(Status));
+                    return;
+                }
+            }
+
             current = workflow.CreatePreview(current);
             session = current;
             PublishPreview(current, choicesApplied: true);
@@ -681,6 +706,25 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         {
             status = $"Applying choices failed ({error.GetType().Name}). Previous preview retained.";
             Notify(nameof(Status));
+        }
+    }
+
+    private async Task<MigrationWorkflowSession> InspectMergesAsync(MigrationWorkflowSession current)
+    {
+        using var operation = new CancellationTokenSource();
+        cancellation = operation;
+        status = "Comparing folders for Merge. No files are changed.";
+        NotifyBusy();
+        Notify(nameof(Status));
+
+        try
+        {
+            return await workflow.InspectMergesAsync(current, operation.Token);
+        }
+        finally
+        {
+            cancellation = null;
+            NotifyBusy();
         }
     }
 
@@ -701,7 +745,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             }
         }
 
-        ApplyChoices();
+        _ = ApplyChoicesAsync();
     }
 
     private void SelectAll()
@@ -717,7 +761,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             choice.Selected = all.Contains(choice.Name);
         }
 
-        ApplyChoices();
+        _ = ApplyChoicesAsync();
     }
 
     private void SelectNone()
@@ -733,7 +777,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             choice.ConflictDecision = DestinationConflictDecision.Unresolved;
         }
 
-        ApplyChoices();
+        _ = ApplyChoicesAsync();
     }
 
     private void SetSelectedIncluded(bool included)
@@ -784,7 +828,8 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         {
             MigrationWorkflowState.Completed =>
                 $"Migration completed. Copied: {preview?.CopyCount ?? 0}; " +
-                $"Replaced: {preview?.ReplaceCount ?? 0}; Skipped: {preview?.SkipCount ?? 0}. " +
+                $"Replaced: {preview?.ReplaceCount ?? 0}; Merged: {preview?.MergeCount ?? 0}; " +
+                $"Skipped: {preview?.SkipCount ?? 0}. " +
                 "Verification succeeded.",
             MigrationWorkflowState.Cancelled =>
                 "Migration cancelled before execution completed. No further work was started.",
@@ -852,7 +897,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
             MigrationPlanStatus.Ready =>
                 "Dry-run preview ready. Select a row to edit migration choices. No files were changed.",
             MigrationPlanStatus.NeedsDecision =>
-                "Dry-run preview needs conflict decisions. Select a conflict row, choose Skip or Replace, then apply choices. No files were changed.",
+                "Dry-run preview needs conflict decisions. Select a conflict row, choose Skip, Merge, or Replace, then apply choices. No files were changed.",
             _ =>
                 "Dry-run preview is blocked. Review the listed states; no files were changed.",
         };
@@ -981,6 +1026,7 @@ public sealed class MigrationPreviewViewModel : INotifyPropertyChanged
         ExcludeSelectedCommand.Refresh();
         SkipConflictCommand.Refresh();
         ReplaceConflictCommand.Refresh();
+        MergeConflictCommand.Refresh();
         ClearConflictCommand.Refresh();
         CheckCapacityCommand.Refresh();
         ExecuteMigrationCommand.Refresh();

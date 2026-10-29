@@ -10,10 +10,10 @@ public sealed class ReleaseConfigurationTests
     {
         XDocument props = XDocument.Load(FindRepositoryFile("Directory.Build.props"));
 
-        Assert.Equal("1.0.1", SingleValue(props, "Version"));
-        Assert.Equal("1.0.1.0", SingleValue(props, "AssemblyVersion"));
-        Assert.Equal("1.0.1.0", SingleValue(props, "FileVersion"));
-        Assert.Equal("1.0.1", SingleValue(props, "InformationalVersion"));
+        Assert.Equal("1.1.0", SingleValue(props, "Version"));
+        Assert.Equal("1.1.0.0", SingleValue(props, "AssemblyVersion"));
+        Assert.Equal("1.1.0.0", SingleValue(props, "FileVersion"));
+        Assert.Equal("1.1.0", SingleValue(props, "InformationalVersion"));
         Assert.Equal("false", SingleValue(props, "IncludeSourceRevisionInInformationalVersion"));
         Assert.Equal("Minecraft Instance Migration Tool", SingleValue(props, "Product"));
         Assert.Equal("bosatsuKing", SingleValue(props, "Authors"));

@@ -174,8 +174,9 @@ public sealed class ExecutionOrchestrator(
                     appliedSteps);
             }
 
+            // Merge, like Replace, needs a validated backup and proof that it still covers the destination.
             ExecutionContentFingerprint? expectedDestination = null;
-            if (step.Operation == ExecutionOperationKind.Replace)
+            if (step.Operation is ExecutionOperationKind.Replace or ExecutionOperationKind.Merge)
             {
                 BackupArtifactValidationResult backupValidation;
                 try
@@ -292,12 +293,20 @@ public sealed class ExecutionOrchestrator(
             ExecutionMutationResult mutation;
             try
             {
-                mutation = await mutationPort.ApplyAsync(
-                    request.SourceRoot,
-                    request.DestinationRoot,
-                    step,
-                    expectedDestination,
-                    cancellationToken);
+                mutation = step.Operation == ExecutionOperationKind.Merge
+                    ? await mutationPort.MergeAsync(
+                        request.SourceRoot,
+                        request.DestinationRoot,
+                        request.BackupRoot!,
+                        step,
+                        expectedDestination!,
+                        cancellationToken)
+                    : await mutationPort.ApplyAsync(
+                        request.SourceRoot,
+                        request.DestinationRoot,
+                        step,
+                        expectedDestination,
+                        cancellationToken);
             }
             catch (Exception)
             {
@@ -322,11 +331,18 @@ public sealed class ExecutionOrchestrator(
             ExecutionPostWriteVerificationResult verification;
             try
             {
-                verification = await postWriteVerifier.VerifyAsync(
-                    request.SourceRoot,
-                    request.DestinationRoot,
-                    step,
-                    CancellationToken.None);
+                verification = step.Operation == ExecutionOperationKind.Merge
+                    ? await postWriteVerifier.VerifyMergeAsync(
+                        request.SourceRoot,
+                        request.DestinationRoot,
+                        request.BackupRoot!,
+                        step,
+                        CancellationToken.None)
+                    : await postWriteVerifier.VerifyAsync(
+                        request.SourceRoot,
+                        request.DestinationRoot,
+                        step,
+                        CancellationToken.None);
             }
             catch (Exception)
             {

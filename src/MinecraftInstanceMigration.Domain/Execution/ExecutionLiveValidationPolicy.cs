@@ -32,7 +32,8 @@ public static class ExecutionLiveValidationPolicy
             !planned.IsReadyForWrite ||
             planned.ExpectedKind != step.ExpectedKind ||
             planned.IsReadyToCopy != (step.Operation == ExecutionOperationKind.Copy) ||
-            planned.IsReadyToReplace != (step.Operation == ExecutionOperationKind.Replace))
+            planned.IsReadyToReplace != (step.Operation == ExecutionOperationKind.Replace) ||
+            planned.IsReadyToMerge != (step.Operation == ExecutionOperationKind.Merge))
         {
             issues.Add(new ExecutionLiveValidationIssue(
                 ExecutionLiveValidationIssueKind.JournalStepMismatch,

@@ -52,7 +52,9 @@ public static class RollbackPlanPolicy
                         break;
                     }
 
-                    if (step.Operation == ExecutionOperationKind.Replace && !validatedBackupAvailable)
+                    // Replace and Merge both back up the whole entry, so both restore from it.
+                    if (step.Operation is ExecutionOperationKind.Replace or ExecutionOperationKind.Merge &&
+                        !validatedBackupAvailable)
                     {
                         rollbackEntries.Add(Manual(
                             rollbackEntries.Count,

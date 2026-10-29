@@ -37,6 +37,16 @@ public interface IExecutionMutationPort
         ExecutionJournalEntry step,
         ExecutionContentFingerprint? expectedDestination,
         CancellationToken cancellationToken);
+
+    // Merge empties the proven destination entry and rebuilds it create-only from the validated
+    // backup's kept units and the source (ADR 0004), so the backup root is required.
+    Task<ExecutionMutationResult> MergeAsync(
+        string sourceRoot,
+        string destinationRoot,
+        string backupRoot,
+        ExecutionJournalEntry step,
+        ExecutionContentFingerprint expectedDestination,
+        CancellationToken cancellationToken);
 }
 
 public enum ExecutionPreStateStatus
@@ -101,6 +111,14 @@ public interface IExecutionPostWriteVerifier
     Task<ExecutionPostWriteVerificationResult> VerifyAsync(
         string sourceRoot,
         string destinationRoot,
+        ExecutionJournalEntry step,
+        CancellationToken cancellationToken);
+
+    // A merged destination must equal the overlay of the validated backup and the source.
+    Task<ExecutionPostWriteVerificationResult> VerifyMergeAsync(
+        string sourceRoot,
+        string destinationRoot,
+        string backupRoot,
         ExecutionJournalEntry step,
         CancellationToken cancellationToken);
 }

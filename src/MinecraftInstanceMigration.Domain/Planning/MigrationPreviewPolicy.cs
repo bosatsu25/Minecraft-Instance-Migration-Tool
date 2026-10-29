@@ -13,7 +13,10 @@ public static class MigrationPreviewPolicy
             entry.DestinationState,
             ToPreviewAction(entry.Disposition),
             entry.Disposition,
-            entry.RequiresBackup));
+            entry.RequiresBackup)
+        {
+            MergeInspection = entry.MergeInspection,
+        });
 
         return new MigrationPreview(
             plan.Status,
@@ -31,6 +34,9 @@ public static class MigrationPreviewPolicy
             MigrationPlanDisposition.DestinationConflict => MigrationPreviewAction.NeedsDecision,
             MigrationPlanDisposition.SkippedDestinationConflict => MigrationPreviewAction.Skip,
             MigrationPlanDisposition.ReadyToReplace => MigrationPreviewAction.Replace,
+            MigrationPlanDisposition.ReadyToMerge => MigrationPreviewAction.Merge,
+            // The decision is made, but the plan cannot proceed until merge inspection evidence exists.
+            MigrationPlanDisposition.MergeInspectionRequired => MigrationPreviewAction.NeedsDecision,
             MigrationPlanDisposition.BlockedSourceRoot or
             MigrationPlanDisposition.BlockedDestinationRoot or
             MigrationPlanDisposition.BlockedSourceObservation or
@@ -38,7 +44,8 @@ public static class MigrationPreviewPolicy
             MigrationPlanDisposition.BlockedSourceReparsePoint or
             MigrationPlanDisposition.BlockedDestinationObservation or
             MigrationPlanDisposition.BlockedDestinationReparsePoint or
-            MigrationPlanDisposition.BlockedDestinationKindMismatch => MigrationPreviewAction.Blocked,
+            MigrationPlanDisposition.BlockedDestinationKindMismatch or
+            MigrationPlanDisposition.BlockedMergeConflict => MigrationPreviewAction.Blocked,
             _ => throw new InvalidOperationException($"Unsupported plan disposition: {disposition}."),
         };
 }

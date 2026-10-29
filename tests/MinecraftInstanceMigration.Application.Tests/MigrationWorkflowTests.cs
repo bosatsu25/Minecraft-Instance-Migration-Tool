@@ -385,6 +385,118 @@ public sealed class MigrationWorkflowTests
         Assert.False(session.CanPrepareBackup);
     }
 
+    [Fact]
+    public async Task MergeDecisionIsInspectedReadOnlyThenPlannedReadyWithItsEvidence()
+    {
+        var inspector = new StubMergeInspector(name => new MergeInspectionResult(
+            name, MergeUnit.File, MergeInspectionStatus.Clean, 2, 1, 3, 100));
+        MigrationWorkflow workflow = MergeWorkflow(inspector);
+
+        MigrationWorkflowSession session = await MergeConfiguredSession(workflow);
+        Assert.Equal(1, session.MigrationPlan!.MergeInspectionRequiredCount);
+
+        session = await workflow.InspectMergesAsync(session, TestContext.Current.CancellationToken);
+        session = workflow.CreatePreview(session);
+
+        Assert.Equal(["config"], inspector.Inspected);
+        Assert.Null(session.FailureKind);
+        Assert.Equal(MigrationWorkflowState.ReadyForBackup, session.State);
+        MigrationPlanEntry entry = Assert.Single(session.MigrationPlan!.Entries, item => item.Name == "config");
+        Assert.Equal(MigrationPlanDisposition.ReadyToMerge, entry.Disposition);
+        Assert.Same(session.MergeInspections["config"], entry.MergeInspection);
+        Assert.Equal(1, session.MigrationPreview!.MergeCount);
+    }
+
+    [Fact]
+    public async Task InspectionFailureOrMissingInspectorBlocksMergeButKeepsTheDecisionEditable()
+    {
+        MigrationWorkflow failing = MergeWorkflow(new StubMergeInspector(_ => throw new IOException("private path")));
+        MigrationWorkflow missing = MergeWorkflow(mergeInspector: null);
+
+        foreach (MigrationWorkflow workflow in new[] { failing, missing })
+        {
+            MigrationWorkflowSession session = await MergeConfiguredSession(workflow);
+            session = await workflow.InspectMergesAsync(session, TestContext.Current.CancellationToken);
+
+            MigrationPlanEntry entry = Assert.Single(session.MigrationPlan!.Entries, item => item.Name == "config");
+            Assert.Equal(MigrationPlanDisposition.BlockedMergeConflict, entry.Disposition);
+            Assert.Equal(MergeInspectionStatus.Unavailable, entry.MergeInspection!.Status);
+            Assert.Equal(MigrationPlanStatus.Blocked, session.MigrationPlan.Status);
+        }
+    }
+
+    [Fact]
+    public async Task CancelledMergeInspectionKeepsThePlanWaitingAndReportsCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        MigrationWorkflow workflow = MergeWorkflow(new StubMergeInspector(_ =>
+        {
+            cancellation.Cancel();
+            cancellation.Token.ThrowIfCancellationRequested();
+            throw new InvalidOperationException("unreachable");
+        }));
+
+        MigrationWorkflowSession session = await MergeConfiguredSession(workflow);
+        MigrationWorkflowSession after = await workflow.InspectMergesAsync(session, cancellation.Token);
+
+        Assert.Equal(MigrationWorkflowFailureKind.Cancelled, after.FailureKind);
+        Assert.Same(session.MigrationPlan, after.MigrationPlan);
+        Assert.Empty(after.MergeInspections);
+    }
+
+    [Fact]
+    public async Task ReconfiguringChoicesDiscardsMergeEvidence()
+    {
+        MigrationWorkflow workflow = MergeWorkflow(new StubMergeInspector(name => new MergeInspectionResult(
+            name, MergeUnit.File, MergeInspectionStatus.Clean, 0, 0, 0, 0)));
+        MigrationWorkflowSession session = await MergeConfiguredSession(workflow);
+        session = await workflow.InspectMergesAsync(session, TestContext.Current.CancellationToken);
+        Assert.NotEmpty(session.MergeInspections);
+
+        session = workflow.ConfigurePlan(
+            session,
+            ["config"],
+            new Dictionary<string, DestinationConflictDecision> { ["config"] = DestinationConflictDecision.Merge });
+
+        Assert.Empty(session.MergeInspections);
+        Assert.Equal(1, session.MigrationPlan!.MergeInspectionRequiredCount);
+    }
+
+    private static MigrationWorkflow MergeWorkflow(IMergeInspector? mergeInspector) =>
+        CreateWorkflow(
+            inspector: new StubInspector(_ => new InstanceInspectionResult(
+                EntryState.Directory,
+                [new EntryObservation("config", ExpectedEntryKind.Directory, EntryState.Directory)])),
+            planner: new MigrationPlanner(),
+            previewer: new MigrationPreviewer(),
+            mergeInspector: mergeInspector);
+
+    private static async Task<MigrationWorkflowSession> MergeConfiguredSession(MigrationWorkflow workflow)
+    {
+        MigrationWorkflowSession session = await InspectedSession(workflow);
+        return workflow.ConfigurePlan(
+            session,
+            ["config"],
+            new Dictionary<string, DestinationConflictDecision> { ["config"] = DestinationConflictDecision.Merge });
+    }
+
+    private sealed class StubMergeInspector(Func<string, MergeInspectionResult> inspect) : IMergeInspector
+    {
+        public List<string> Inspected { get; } = [];
+
+        public Task<MergeInspectionResult> InspectAsync(
+            string sourceRoot,
+            string destinationRoot,
+            string entryName,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.Equal("source", sourceRoot);
+            Assert.Equal("destination", destinationRoot);
+            Inspected.Add(entryName);
+            return Task.FromResult(inspect(entryName));
+        }
+    }
+
     private static async Task<MigrationWorkflowSession> ReadyForBackup(MigrationWorkflow workflow)
     {
         MigrationWorkflowSession session = await InspectedSession(workflow);
@@ -411,7 +523,8 @@ public sealed class MigrationWorkflowTests
         IBackupPlanner? backupPlanner = null,
         IBackupExecutor? backupExecutor = null,
         IExecutionOrchestrator? execution = null,
-        IExecutionWorkspaceSafetyValidator? workspace = null) =>
+        IExecutionWorkspaceSafetyValidator? workspace = null,
+        IMergeInspector? mergeInspector = null) =>
         new(
             inspector ?? new StubInspector(_ => Inspection()),
             planner ?? new StubPlanner(ReadyPlan()),
@@ -421,7 +534,8 @@ public sealed class MigrationWorkflowTests
             backupPlanner ?? new StubBackupPlanner(),
             backupExecutor ?? new StubBackupExecutor([]),
             execution ?? new StubExecutionOrchestrator([]),
-            workspace ?? new StubWorkspaceValidator());
+            workspace ?? new StubWorkspaceValidator(),
+            mergeInspector);
 
     private sealed class StubWorkspaceValidator(
         ExecutionWorkspaceSafetyStatus status = ExecutionWorkspaceSafetyStatus.Safe,
@@ -493,7 +607,8 @@ public sealed class MigrationWorkflowTests
     private sealed class StubPlanner(MigrationPlan plan) : IMigrationPlanner
     {
         public MigrationPlan CreatePlan(InstanceInspectionResult source, InstanceInspectionResult destination,
-            IEnumerable<string> selectedEntryNames, IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null) => plan;
+            IEnumerable<string> selectedEntryNames, IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null,
+            IReadOnlyDictionary<string, MergeInspectionResult>? mergeInspections = null) => plan;
 
         public MigrationPlan CreateRecommendedPlan(InstanceInspectionResult source, InstanceInspectionResult destination,
             IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null) => plan;

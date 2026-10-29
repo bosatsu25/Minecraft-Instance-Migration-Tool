@@ -4,7 +4,8 @@ Phase 2.1 introduced the legacy selection defaults and explicit top-level confli
 Phase 1 observes the eleven known names. Phase 2 plans explicit selections. Phase 2.1 adds a
 Recommended selection preset and typed Skip / Replace decisions for existing destinations.
 Phase 4.6 adds the first known nested content exclusion after inspecting the reference implementation.
-Merge behavior and compatibility analysis remain out of scope.
+Compatibility analysis remains out of scope. Merge is the third conflict decision for directory candidates
+([ADR 0004](adr/0004-merge-existing-destination-directories.md)).
 
 | Instance-relative candidate | Legacy intent | Recommended preset direction |
 | --- | --- | --- |
@@ -42,6 +43,32 @@ The rule is Domain-owned and is applied consistently to execution, post-write fi
 rollback restoration, and capacity measurement. Preview and Report expose a bounded rule summary.
 During Replace, a matching destination file is preserved in place and is neither put in the backup nor
 restored from it. See the [compatibility matrix](modpacktransfer-compatibility.md) for reference evidence.
+
+## Merge
+
+`Merge` is a third explicit decision for an existing destination directory. Each candidate's merge unit is
+Domain-owned in `KnownEntryCatalog`:
+
+| Merge unit | Candidates | Meaning |
+| --- | --- | --- |
+| File | `config`, `schematics`, `screenshots`, `itemscroller`, `g4mespeed` | each source file is written over the same relative path; destination-only content stays |
+| Top-level child | `resourcepacks`, `shaderpacks`, `XaeroWaypoints`, `XaeroWorldMap` | each source child joins or replaces the destination child as a whole |
+| Not offered | `options.txt`, `saves` | Merge is an `UnsupportedDecision`; Skip and Replace remain |
+
+A Merge decision on a destination of the catalog kind needs read-only merge inspection evidence for that entry:
+
+- without evidence the entry is `MergeInspectionRequired` and the plan stays `NeedsDecision`;
+- clean evidence for the same entry and unit makes it `ReadyToMerge`, which requires a whole-entry backup;
+- evidence that reports a kind conflict, a reparse point, or an unreadable tree, or that names another entry
+  or unit, makes it `BlockedMergeConflict`.
+
+When choices are applied, the workflow runs the read-only merge inspection for every entry waiting for
+evidence and replans; the UI shows the added, overwritten, and kept counts for the selected row. An inspection
+that cannot read both trees completely is `Unavailable` and blocks only that Merge.
+
+A Merge of a destination with a different kind is `BlockedDestinationKindMismatch`, as for Replace. Evidence
+supplied without a Merge decision is ignored. A `ReadyToMerge` entry becomes a `Merge` journal step only with
+clean evidence and directories on both sides; an applied Merge rolls back by guarded `RestoreFromBackup`.
 
 “Candidate” is not a compatibility guarantee. The Recommended preset now selects every known
 candidate except `saves` and `screenshots`, which stay OFF until explicitly selected.

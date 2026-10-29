@@ -40,6 +40,8 @@ public sealed class MigrationPreview
 
     public int ReplaceCount => Entries.Count(entry => entry.Action == MigrationPreviewAction.Replace);
 
+    public int MergeCount => Entries.Count(entry => entry.Action == MigrationPreviewAction.Merge);
+
     public int SkipCount => Entries.Count(entry => entry.Action == MigrationPreviewAction.Skip);
 
     public int NoSourceCount => Entries.Count(entry => entry.Action == MigrationPreviewAction.NoSource);
@@ -51,5 +53,7 @@ public sealed class MigrationPreview
     public bool RequiresBackup => Entries.Any(entry => entry.RequiresBackup);
 
     public bool HasPlannedWrites => Entries.Any(entry =>
-        entry.Action is MigrationPreviewAction.Copy or MigrationPreviewAction.Replace);
+        entry.Action is MigrationPreviewAction.Copy or
+            MigrationPreviewAction.Replace or
+            MigrationPreviewAction.Merge);
 }

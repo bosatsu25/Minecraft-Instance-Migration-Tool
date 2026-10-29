@@ -1,6 +1,7 @@
 using Microsoft.Win32.SafeHandles;
 using MinecraftInstanceMigration.Application.Execution;
 using MinecraftInstanceMigration.Domain.Execution;
+using MinecraftInstanceMigration.Domain.Inspection;
 using MinecraftInstanceMigration.Infrastructure.FileSystem;
 
 namespace MinecraftInstanceMigration.Infrastructure.Execution;
@@ -19,6 +20,153 @@ public sealed class WindowsExecutionMutationPort : IExecutionMutationPort
         return Task.Run(
             () => Apply(sourceRoot, destinationRoot, step, expectedDestination, cancellationToken),
             CancellationToken.None);
+    }
+
+    public Task<ExecutionMutationResult> MergeAsync(
+        string sourceRoot,
+        string destinationRoot,
+        string backupRoot,
+        ExecutionJournalEntry step,
+        ExecutionContentFingerprint expectedDestination,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+        ArgumentNullException.ThrowIfNull(expectedDestination);
+
+        return Task.Run(
+            () => Merge(sourceRoot, destinationRoot, backupRoot, step, expectedDestination, cancellationToken),
+            CancellationToken.None);
+    }
+
+    private static ExecutionMutationResult Merge(
+        string sourceRoot,
+        string destinationRoot,
+        string backupRoot,
+        ExecutionJournalEntry step,
+        ExecutionContentFingerprint expectedDestination,
+        CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Execution mutation requires Windows.");
+        }
+
+        MergeUnit unit = MergeUnitOf(step.Name);
+        if (step.Operation != ExecutionOperationKind.Merge ||
+            step.ExpectedKind != ExpectedEntryKind.Directory ||
+            unit == MergeUnit.NotOffered)
+        {
+            return Failed(ExecutionMutationFailureKind.DestinationChanged);
+        }
+
+        if (!WindowsPathRules.TryNormalizeLocalDirectory(sourceRoot, out string normalizedSource) ||
+            !WindowsPathRules.TryNormalizeLocalDirectory(destinationRoot, out string normalizedDestination) ||
+            !WindowsPathRules.TryNormalizeLocalDirectory(backupRoot, out string normalizedBackup))
+        {
+            return Failed(ExecutionMutationFailureKind.InvalidPath);
+        }
+
+        if (WindowsPathRules.RootsOverlap(normalizedSource, normalizedDestination) ||
+            WindowsPathRules.RootsOverlap(normalizedBackup, normalizedDestination) ||
+            WindowsPathRules.RootsOverlap(normalizedBackup, normalizedSource))
+        {
+            return Failed(ExecutionMutationFailureKind.OverlappingRoots);
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using WindowsExecutionTree.HeldDirectory source = OpenSourceRoot(normalizedSource);
+            using WindowsExecutionTree.HeldDirectory destination = OpenDestinationRoot(normalizedDestination);
+            using WindowsExecutionTree.HeldDirectory backup = OpenBackupRoot(normalizedBackup);
+
+            if (WindowsExecutionTree.PhysicalRootsOverlap(source, destination) ||
+                WindowsExecutionTree.PhysicalRootsOverlap(backup, destination) ||
+                WindowsExecutionTree.PhysicalRootsOverlap(backup, source))
+            {
+                return Failed(ExecutionMutationFailureKind.OverlappingRoots);
+            }
+
+            using WindowsExecutionTree.OpenedNode sourceNode = OpenSource(source.Root, step);
+            EnsureReplaceDestination(destination.Root, step);
+
+            // The held backup is the kept content of the rebuild; it must be exactly the proven pre-state.
+            using WindowsExecutionTree.HeldNodeTree preserved = OpenBackupTree(backup.Root, step.Name);
+            if (WindowsExecutionTree.FingerprintHeldTree(preserved, cancellationToken).ToDomain() !=
+                expectedDestination)
+            {
+                throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
+            }
+
+            // A kind conflict found now came from the source; refuse it before anything is deleted.
+            using (WindowsExecutionTree.OpenedNode preservedNode =
+                WindowsExecutionTree.OpenExistingNode(backup.Root, step.Name))
+            {
+                if (!WindowsMergeTree.Inspect(sourceNode, preservedNode, step.Name, unit, cancellationToken).IsClean)
+                {
+                    throw new ExecutionMutationException(ExecutionMutationFailureKind.SourceChanged);
+                }
+            }
+
+            using (WindowsExecutionTree.HeldNodeTree current =
+                WindowsExecutionTree.OpenHeldTree(destination.Root, step.Name, forDelete: true))
+            {
+                if (WindowsExecutionTree.FingerprintHeldTree(current, cancellationToken).ToDomain() !=
+                    expectedDestination)
+                {
+                    throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
+                }
+
+                WindowsExecutionTree.DeleteHeldTree(current, () => { });
+            }
+
+            WindowsMergeTree.Rebuild(sourceNode, preserved, destination.Root, step.Name, unit, cancellationToken);
+            return new ExecutionMutationResult(ExecutionMutationStatus.Applied);
+        }
+        catch (OperationCanceledException)
+        {
+            return new ExecutionMutationResult(ExecutionMutationStatus.Cancelled);
+        }
+        catch (ExecutionMutationException error)
+        {
+            return Failed(error.Kind);
+        }
+        catch (Exception error) when (FileSystemErrors.TryClassify(error, out FileSystemFailureKind kind))
+        {
+            return Failed(MapGeneralFailure(kind));
+        }
+    }
+
+    private static MergeUnit MergeUnitOf(string name) =>
+        KnownEntryCatalog.All
+            .SingleOrDefault(candidate => string.Equals(candidate.Name, name, StringComparison.Ordinal))
+            ?.MergeUnit ?? MergeUnit.NotOffered;
+
+    private static WindowsExecutionTree.HeldDirectory OpenBackupRoot(string path)
+    {
+        try
+        {
+            return WindowsExecutionTree.OpenDirectoryChain(path, writableFinal: false);
+        }
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
+        {
+            throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
+        }
+    }
+
+    private static WindowsExecutionTree.HeldNodeTree OpenBackupTree(SafeFileHandle backupRoot, string name)
+    {
+        try
+        {
+            return WindowsExecutionTree.OpenHeldTree(backupRoot, name, forDelete: false);
+        }
+        catch (FileSystemException error) when (
+            error.Kind is FileSystemFailureKind.Missing or FileSystemFailureKind.Changed)
+        {
+            throw new ExecutionMutationException(ExecutionMutationFailureKind.DestinationChanged);
+        }
     }
 
     private static ExecutionMutationResult Apply(

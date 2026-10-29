@@ -195,6 +195,44 @@ Coverage includes:
 At Phase 2.1 this policy deliberately did not define Merge or the `hanemod-client.json` exclusion scope.
 Phase 4.6 resolves the exclusion from inspected reference code; Merge remains outside the product contract.
 
+ADR 0004 step 2 adds the Domain Merge model (`MergePolicyTests`, Domain-only, no IO):
+
+- the catalog pins every candidate's merge unit, and only directory candidates offer Merge;
+- decision table: Merge without evidence waits as `MergeInspectionRequired`; clean evidence for the same entry
+  and unit is `ReadyToMerge` and backup-requiring; unclean or mismatched evidence is `BlockedMergeConflict`;
+  Merge on `options.txt` or `saves` is `UnsupportedDecision`; a kind-mismatched destination is
+  `BlockedDestinationKindMismatch`; a Merge decision without a conflict is stale; evidence without a decision
+  is ignored;
+- preview, backup (whole entry), journal (`Merge` step only with clean evidence), live validation, and
+  rollback (`RestoreFromBackup` only with a valid backup) follow the same evidence;
+- removing the evidence/unit consistency or the merge-unit support check fails four of these tests;
+- Application routes a Merge step through backup validation and the pre-state proof, like Replace.
+
+ADR 0004 step 3 adds the Windows Merge IO (`MergeIntegrationTests`, owned temporary fixtures):
+
+- File unit: shared files take the source content and spelling, destination-only files and nested excluded
+  files stay, a source excluded file is not written, and inspection counts added/replaced/kept units and the
+  rebuild's bytes;
+- Top-level child unit: a shared child is replaced as a whole and other children are kept;
+- the verifier rejects a missing kept file, an edited kept file, a missing source file, and an extra file;
+- a kind conflict is reported by inspection and refused by the mutation before anything is deleted;
+- a destination changed after its pre-state proof is refused and kept;
+- a nested reparse point is reported without being followed;
+- an orchestrated Merge is journaled as Applied and its guarded rollback restores the exact pre-merge fingerprint;
+- capacity counts source plus destination bytes as Merge writes.
+
+ADR 0004 step 4 exposes Merge in the workflow and UI:
+
+- the workflow inspects only entries waiting for evidence, replans Ready with it, turns an inspector failure or
+  a missing inspector into a blocked Merge, keeps the plan waiting on cancellation, and discards evidence when
+  choices are reconfigured;
+- the selection row offers Merge only for candidates with a merge unit (not `options.txt` or `saves`) and keeps
+  the choice editable in every Merge state;
+- applying a Merge choice compares before the preview, shows the counts for the row, and the confirmed run
+  backs up before executing; the confirmation and Report count Merge;
+- FlaUI `ExecutesConfirmedMergeKeepingDestinationOnlyFiles` runs a real Merge through the packaged UI and checks
+  the merged files, the backup, and the Report.
+
 
 ## Phase 2.2: Preview / Dry Run
 

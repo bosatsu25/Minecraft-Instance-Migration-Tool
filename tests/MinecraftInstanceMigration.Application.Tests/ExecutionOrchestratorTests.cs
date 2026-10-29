@@ -39,6 +39,35 @@ public sealed class ExecutionOrchestratorTests
     }
 
     [Fact]
+    public async Task MergeStepIsProvenLikeReplaceThenMergedAndVerifiedAgainstTheBackup()
+    {
+        var events = new List<string>();
+        MigrationPlan plan = MergePlan();
+        Fixture fixture = CreateFixture(events, plan);
+
+        ExecutionOrchestrationResult result = await fixture.Orchestrator.ExecuteAsync(
+            Request(plan, backupRoot: "backup"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionOrchestrationStatus.Completed, result.Status);
+        Assert.Equal(
+            new[]
+            {
+                "workspace",
+                "journal:create",
+                "live:0",
+                "backup",
+                "prestate:0",
+                "journal:started:0",
+                "merge:0:backup",
+                "verify-merge:0:backup",
+                "journal:applied:0",
+            },
+            events);
+        Assert.Equal(fixture.PreState.Result.Fingerprint, fixture.Mutation.ExpectedDestination);
+    }
+
+    [Fact]
     public async Task DestinationChangedSinceBackupBlocksBeforeStartedAndMutation()
     {
         var events = new List<string>();
@@ -401,6 +430,30 @@ public sealed class ExecutionOrchestratorTests
             ],
             []);
 
+    private static MigrationPlan MergePlan() =>
+        new(
+            EntryState.Directory,
+            EntryState.Directory,
+            [
+                Entry(
+                    "config",
+                    ExpectedEntryKind.Directory,
+                    EntryState.Directory,
+                    EntryState.Directory,
+                    MigrationPlanDisposition.ReadyToMerge) with
+                {
+                    MergeInspection = new MergeInspectionResult(
+                        "config",
+                        MergeUnit.File,
+                        MergeInspectionStatus.Clean,
+                        1,
+                        1,
+                        1,
+                        10),
+                },
+            ],
+            []);
+
     private static MigrationPlanEntry Entry(
         string name,
         ExpectedEntryKind kind,
@@ -597,6 +650,19 @@ public sealed class ExecutionOrchestratorTests
             ExpectedDestination = expectedDestination;
             return Task.FromResult(Result);
         }
+
+        public Task<ExecutionMutationResult> MergeAsync(
+            string sourceRoot,
+            string destinationRoot,
+            string backupRoot,
+            ExecutionJournalEntry step,
+            ExecutionContentFingerprint expectedDestination,
+            CancellationToken cancellationToken)
+        {
+            events.Add($"merge:{step.Sequence}:{backupRoot}");
+            ExpectedDestination = expectedDestination;
+            return Task.FromResult(Result);
+        }
     }
 
     private sealed class StubVerifier(List<string> events) : IExecutionPostWriteVerifier
@@ -617,6 +683,17 @@ public sealed class ExecutionOrchestratorTests
             CancellationToken cancellationToken)
         {
             events.Add($"verify:{step.Sequence}");
+            return Task.FromResult(Result);
+        }
+
+        public Task<ExecutionPostWriteVerificationResult> VerifyMergeAsync(
+            string sourceRoot,
+            string destinationRoot,
+            string backupRoot,
+            ExecutionJournalEntry step,
+            CancellationToken cancellationToken)
+        {
+            events.Add($"verify-merge:{step.Sequence}:{backupRoot}");
             return Task.FromResult(Result);
         }
     }

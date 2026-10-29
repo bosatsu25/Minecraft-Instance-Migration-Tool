@@ -240,6 +240,40 @@ public sealed class MigrationPreviewViewModelTests
         Assert.Equal(MigrationWorkflowState.Completed, model.WorkflowState);
     }
 
+    [Fact]
+    public async Task MergeIsComparedWhenChoicesAreAppliedThenBackedUpAndExecuted()
+    {
+        var calls = new List<string>();
+        var confirmation = new StubConfirmation(confirmed: true);
+        var model = CreateExecutableModel(
+            calls,
+            confirmation,
+            destinationConflict: true,
+            backupResult: new BackupExecutionResult(
+                BackupExecutionStatus.Completed,
+                "backup-root"),
+            mergeInspector: new StubMergeInspector(calls));
+        model.SourcePath = "source";
+        model.DestinationPath = "destination";
+        model.SafetyWorkspacePath = "workspace";
+        await model.GeneratePreviewAsync();
+        model.SelectedEntry = Entry(model, "config");
+
+        Assert.True(model.MergeConflictCommand.CanExecute(null));
+        model.MergeConflictCommand.Execute(null);
+        model.ApplyChoicesCommand.Execute(null);
+
+        Assert.Equal("Ready", model.PlanStatus);
+        Assert.Contains("Merge adds 2, overwrites 1, keeps 3.", model.SelectedChoiceSummary, StringComparison.Ordinal);
+
+        await model.CheckCapacityAsync();
+        await model.ExecuteMigrationAsync();
+
+        Assert.Equal(["merge-inspect:config", "backup", "execute"], calls);
+        Assert.Equal(1, Assert.Single(confirmation.Requests).MergeCount);
+        Assert.Equal(MigrationWorkflowState.Completed, model.WorkflowState);
+    }
+
     [Theory]
     [InlineData(BackupExecutionStatus.Failed, MigrationWorkflowState.ReadyForBackup, "BackupFailed", "Failed")]
     [InlineData(BackupExecutionStatus.Cancelled, MigrationWorkflowState.Cancelled, "Cancelled", "Cancelled")]
@@ -1018,7 +1052,8 @@ public sealed class MigrationPreviewViewModelTests
         IMigrationRollbackConfirmation? rollbackConfirmation = null,
         MigrationReportViewModel? reportViewModel = null,
         IBackupPlanner? backupPlanner = null,
-        IMigrationCapacityPreflight? capacity = null)
+        IMigrationCapacityPreflight? capacity = null,
+        IMergeInspector? mergeInspector = null)
     {
         return new MigrationPreviewViewModel(
             new MigrationWorkflow(
@@ -1034,7 +1069,8 @@ public sealed class MigrationPreviewViewModelTests
                 backupPlanner ?? new BackupPlanner(),
                 new RecordingBackupExecutor(calls, backupResult),
                 execution ?? new RecordingExecutionOrchestrator(calls),
-                new SafeWorkspaceValidator()),
+                new SafeWorkspaceValidator(),
+                mergeInspector),
             _ => null,
             confirmation,
             recovery,
@@ -1250,6 +1286,20 @@ public sealed class MigrationPreviewViewModelTests
         }
     }
 
+    private sealed class StubMergeInspector(List<string> calls) : IMergeInspector
+    {
+        public Task<MergeInspectionResult> InspectAsync(
+            string sourceRoot,
+            string destinationRoot,
+            string entryName,
+            CancellationToken cancellationToken = default)
+        {
+            calls.Add("merge-inspect:" + entryName);
+            return Task.FromResult(new MergeInspectionResult(
+                entryName, MergeUnit.File, MergeInspectionStatus.Clean, 2, 1, 3, 10));
+        }
+    }
+
     private sealed class StubConfirmation(bool confirmed) : IMigrationExecutionConfirmation
     {
         public List<MigrationExecutionConfirmation> Requests { get; } = [];
@@ -1334,7 +1384,8 @@ public sealed class MigrationPreviewViewModelTests
             InstanceInspectionResult source,
             InstanceInspectionResult destination,
             IEnumerable<string> selectedEntryNames,
-            IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null)
+            IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null,
+            IReadOnlyDictionary<string, MergeInspectionResult>? mergeInspections = null)
         {
             if (++calls > 1)
             {

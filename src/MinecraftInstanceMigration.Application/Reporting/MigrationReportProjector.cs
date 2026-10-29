@@ -25,8 +25,11 @@ public sealed class MigrationReportProjector : IMigrationReportProjector
             preview.Entries.Count(entry => entry.Action == MigrationPreviewAction.Excluded),
             preview.NoSourceCount,
             preview.BlockedCount,
-            Array.AsReadOnly(preview.ContentRuleSummaries.ToArray()));
-        int plannedWrites = preview.CopyCount + preview.ReplaceCount;
+            Array.AsReadOnly(preview.ContentRuleSummaries.ToArray()))
+        {
+            MergeCount = preview.MergeCount,
+        };
+        int plannedWrites = preview.CopyCount + preview.ReplaceCount + preview.MergeCount;
 
         if (!TryCreateOverallOutcome(
             evidence,
@@ -57,7 +60,7 @@ public sealed class MigrationReportProjector : IMigrationReportProjector
                     BackupExecutionStatus.Failed => MigrationReportBackupOutcome.Failed,
                     _ => MigrationReportBackupOutcome.NotStarted,
                 },
-            preview.ReplaceCount);
+            preview.ReplaceCount + preview.MergeCount);
 
         int terminalRollbackCount = evidence.RecoveryResult is null
             ? 0
@@ -225,15 +228,16 @@ public sealed class MigrationReportProjector : IMigrationReportProjector
             return evidence.BackupResult?.IsComplete == true;
         }
 
-        int replaceCount = evidence.Preview!.ReplaceCount;
-        if (replaceCount == 0)
+        // Replace and Merge both back up the whole destination entry.
+        int backedUpCount = evidence.Preview!.ReplaceCount + evidence.Preview.MergeCount;
+        if (backedUpCount == 0)
         {
             return evidence.BackupResult?.Status == BackupExecutionStatus.NotRequired;
         }
 
         return evidence.BackupResult?.Status == BackupExecutionStatus.Completed &&
-            evidence.BackupResult.EntriesCopied == replaceCount &&
-            evidence.BackupPlan?.Entries.Count == replaceCount;
+            evidence.BackupResult.EntriesCopied == backedUpCount &&
+            evidence.BackupPlan?.Entries.Count == backedUpCount;
     }
 
     private static bool RecoveryEvidenceIsConsistent(

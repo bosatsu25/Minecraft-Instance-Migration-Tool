@@ -248,6 +248,38 @@ public sealed class InspectorSmokeTests
     }
 
     [Fact]
+    public void ExecutesConfirmedMergeKeepingDestinationOnlyFiles()
+    {
+        using var source = new UiFixture();
+        using var destination = new UiFixture();
+        using var workspace = new UiFixture();
+        Directory.CreateDirectory(source.At("config"));
+        Directory.CreateDirectory(destination.At("config"));
+        File.WriteAllText(source.At(Path.Combine("config", "shared.cfg")), "member-setting");
+        File.WriteAllText(destination.At(Path.Combine("config", "shared.cfg")), "new-pack");
+        File.WriteAllText(destination.At(Path.Combine("config", "pack-only.cfg")), "pack-tuned");
+        string[] sourceBefore = source.Snapshot();
+
+        using var session = UiSession.Open();
+        session.SelectPreviewTab();
+        session.GeneratePreview(source.Root, destination.Root);
+        session.ChooseConflictAndApply("config", "MergeSelectedConflict", "Merge", "ReadyToMerge");
+        session.ExecuteMigration(workspace.Root);
+
+        Assert.Contains("Completed", session.Find("ExecutionState").Name);
+        session.SelectReportTab();
+        Assert.Contains("Completed", session.Find("ReportOverallOutcome").Name);
+        Assert.Contains("Merge: 1", session.Find("ReportMigrationSummary").Name);
+        Assert.Contains("Completed", session.Find("ReportBackupSummary").Name);
+        Assert.Equal("member-setting", File.ReadAllText(destination.At(Path.Combine("config", "shared.cfg"))));
+        Assert.Equal("pack-tuned", File.ReadAllText(destination.At(Path.Combine("config", "pack-only.cfg"))));
+        Assert.Equal(sourceBefore, source.Snapshot());
+        Assert.Contains(
+            Directory.EnumerateFiles(workspace.Root, "shared.cfg", SearchOption.AllDirectories),
+            path => File.ReadAllText(path) == "new-pack");
+    }
+
+    [Fact]
     public void MigratesAllKnownCandidatesAndPreservesExcludedDestinationContent()
     {
         using var source = new UiFixture();
@@ -533,7 +565,10 @@ public sealed class InspectorSmokeTests
             return lines.Length == 0 ? "none" : string.Join(" | ", lines);
         }
 
-        public void ReplaceConflictAndApply(string name)
+        public void ReplaceConflictAndApply(string name) =>
+            ChooseConflictAndApply(name, "ReplaceSelectedConflict", "Replace", "ReadyToReplace");
+
+        public void ChooseConflictAndApply(string name, string choiceId, string action, string disposition)
         {
             AutomationElement row = Assert.Single(
                 Find("PreviewEntries")
@@ -543,12 +578,12 @@ public sealed class InspectorSmokeTests
                     .Any(cell => cell.Name == name));
             row.Patterns.SelectionItem.Pattern.Select();
 
-            Button replace = Find("ReplaceSelectedConflict").AsButton();
-            Assert.True(replace.IsEnabled, "Replace was not enabled for the selected conflict.");
-            replace.Invoke();
+            Button choice = Find(choiceId).AsButton();
+            Assert.True(choice.IsEnabled, $"{action} was not enabled for the selected conflict.");
+            choice.Invoke();
 
             Button apply = Find("ApplyPreviewChoices").AsButton();
-            Assert.True(apply.IsEnabled, "Apply choices was not enabled after selecting Replace.");
+            Assert.True(apply.IsEnabled, $"Apply choices was not enabled after selecting {action}.");
             apply.Invoke();
 
             var applied = Retry.WhileFalse(
@@ -557,8 +592,8 @@ public sealed class InspectorSmokeTests
                     try
                     {
                         string[] cells = RenderedEntryCells("PreviewEntries", name);
-                        return cells.Contains("Replace", StringComparer.Ordinal) &&
-                            cells.Contains("ReadyToReplace", StringComparer.Ordinal);
+                        return cells.Contains(action, StringComparer.Ordinal) &&
+                            cells.Contains(disposition, StringComparer.Ordinal);
                     }
                     catch
                     {
@@ -568,7 +603,7 @@ public sealed class InspectorSmokeTests
                 timeout: TimeSpan.FromSeconds(15),
                 throwOnTimeout: false,
                 ignoreException: true);
-            Assert.True(applied.Success, "Replace choice did not produce a ready preview in fifteen seconds.");
+            Assert.True(applied.Success, $"{action} choice did not produce a ready preview in fifteen seconds.");
         }
 
         public void WaitForPreviewAction(string name, string action)

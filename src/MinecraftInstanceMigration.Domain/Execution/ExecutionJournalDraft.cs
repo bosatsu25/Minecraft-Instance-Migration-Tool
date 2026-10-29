@@ -13,6 +13,7 @@ public enum ExecutionOperationKind
 {
     Copy,
     Replace,
+    Merge,
 }
 
 public enum ExecutionJournalBlockerKind

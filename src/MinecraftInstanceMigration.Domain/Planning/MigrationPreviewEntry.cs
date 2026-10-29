@@ -9,6 +9,7 @@ public enum MigrationPreviewAction
     Copy,
     Skip,
     Replace,
+    Merge,
     NeedsDecision,
     Blocked,
 }
@@ -20,4 +21,8 @@ public sealed record MigrationPreviewEntry(
     EntryState? DestinationState,
     MigrationPreviewAction Action,
     MigrationPlanDisposition PlanDisposition,
-    bool RequiresBackup);
+    bool RequiresBackup)
+{
+    // Path-free Merge evidence for ReadyToMerge or BlockedMergeConflict rows; null otherwise.
+    public MergeInspectionResult? MergeInspection { get; init; }
+}

@@ -207,6 +207,17 @@ as a Failed step, with the untouched backup as the recovery source. A Replace wi
 refused the same way.
 
 
+### Merge steps (ADR 0004)
+
+A `Merge` step uses the same proofs as Replace: a validated backup and the pre-state fingerprint before Started.
+The mutation port then holds the backup entry and the destination entry, requires both to equal the proven
+fingerprint, refuses a new kind conflict found against the held backup, deletes the held destination, and
+rebuilds it create-only from the backup's kept units and the source. Verification compares the destination
+with the overlay of the validated backup and the source by the entry's merge unit, with source and backup
+fingerprinted before and after; only then is the whole destination entry's fingerprint written as Applied.
+Rollback of an applied Merge is the guarded whole-entry `RestoreFromBackup` used for Replace.
+
+
 ## Phase 3.7 rollback binding
 
 The durable execution journal's Applied fingerprint is now an active rollback safety guard.

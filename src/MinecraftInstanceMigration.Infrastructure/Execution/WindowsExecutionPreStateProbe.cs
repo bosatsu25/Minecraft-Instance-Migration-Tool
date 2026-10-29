@@ -33,7 +33,7 @@ public sealed class WindowsExecutionPreStateProbe : IExecutionPreStateProbe
             throw new PlatformNotSupportedException("Pre-state comparison requires Windows.");
         }
 
-        if (step.Operation != ExecutionOperationKind.Replace ||
+        if (step.Operation is not (ExecutionOperationKind.Replace or ExecutionOperationKind.Merge) ||
             !WindowsPathRules.TryNormalizeLocalDirectory(destinationRoot, out string normalizedDestination) ||
             !WindowsPathRules.TryNormalizeLocalDirectory(backupRoot, out string normalizedBackup) ||
             WindowsPathRules.RootsOverlap(normalizedDestination, normalizedBackup))

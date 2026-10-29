@@ -48,6 +48,22 @@ public static class ExecutionJournalPolicy
 
                 operation = ExecutionOperationKind.Replace;
             }
+            else if (entry.IsReadyToMerge)
+            {
+                // Only directory candidates define a merge unit, and both sides must be directories.
+                if (entry.ExpectedKind != ExpectedEntryKind.Directory ||
+                    !MatchesExpectedSource(entry) ||
+                    entry.DestinationState != EntryState.Directory ||
+                    entry.MergeInspection is not { IsClean: true })
+                {
+                    blockers.Add(new ExecutionJournalBlocker(
+                        ExecutionJournalBlockerKind.InvalidWriteIntent,
+                        entry.Name));
+                    continue;
+                }
+
+                operation = ExecutionOperationKind.Merge;
+            }
             else
             {
                 blockers.Add(new ExecutionJournalBlocker(
