@@ -195,6 +195,19 @@ Coverage includes:
 At Phase 2.1 this policy deliberately did not define Merge or the `hanemod-client.json` exclusion scope.
 Phase 4.6 resolves the exclusion from inspected reference code; Merge remains outside the product contract.
 
+ADR 0004 step 2 adds the Domain Merge model (`MergePolicyTests`, Domain-only, no IO):
+
+- the catalog pins every candidate's merge unit, and only directory candidates offer Merge;
+- decision table: Merge without evidence waits as `MergeInspectionRequired`; clean evidence for the same entry
+  and unit is `ReadyToMerge` and backup-requiring; unclean or mismatched evidence is `BlockedMergeConflict`;
+  Merge on `options.txt` or `saves` is `UnsupportedDecision`; a kind-mismatched destination is
+  `BlockedDestinationKindMismatch`; a Merge decision without a conflict is stale; evidence without a decision
+  is ignored;
+- preview, backup (whole entry), journal (`Merge` step only with clean evidence), live validation, and
+  rollback (`RestoreFromBackup` only with a valid backup) follow the same evidence;
+- removing the evidence/unit consistency or the merge-unit support check fails four of these tests;
+- Application routes a Merge step through backup validation and the pre-state proof, like Replace.
+
 
 ## Phase 2.2: Preview / Dry Run
 

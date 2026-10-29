@@ -20,7 +20,8 @@ public static class BackupPlanPolicy
         var entries = new List<BackupPlanEntry>();
         var blockers = new List<BackupBlocker>();
 
-        foreach (MigrationPlanEntry entry in migrationPlan.Entries.Where(candidate => candidate.IsReadyToReplace))
+        // Merge backs up the whole destination entry, so restore can reuse the Replace contract.
+        foreach (MigrationPlanEntry entry in migrationPlan.Entries.Where(candidate => candidate.RequiresBackup))
         {
             if (entry.DestinationState is not EntryState.File and not EntryState.Directory)
             {

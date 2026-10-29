@@ -5,6 +5,7 @@ public enum DestinationConflictDecision
     Unresolved,
     Skip,
     Replace,
+    Merge,
 }
 
 public enum ConflictDecisionIssueKind

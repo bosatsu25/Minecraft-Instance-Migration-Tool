@@ -1,6 +1,6 @@
 # ADR 0004: Merge into existing destination directories
 
-- Status: Proposed
+- Status: Accepted (owner decisions recorded below, 2026-10-29)
 - Date: 2026-10-29
 - Related: [migration rules](../migration-rules.md), [ModPackTransfer compatibility](../modpacktransfer-compatibility.md),
   [backup](../backup.md), [execution journal](../execution-journal.md), [rollback](../rollback.md)
@@ -58,7 +58,7 @@ behalf. An unresolved conflict still blocks the plan.
 | `g4mespeed` | offered | File | Small per-user data. |
 | `resourcepacks` | offered | Top-level child | An unpacked pack folder is one unit; mixing two versions leaves stale files. |
 | `shaderpacks` | offered | Top-level child | Same as `resourcepacks`. |
-| `saves` | offered | Top-level child | A world folder is one unit; file-level mixing of two worlds corrupts them. |
+| `saves` | held back | (Top-level child when offered) | A world folder is one unit; file-level mixing of two worlds corrupts them. Not offered in the first Merge release (decision 3). |
 | `XaeroWaypoints` | offered | Top-level child | Treated as one unit per world or server key (assumption, see Open questions). |
 | `XaeroWorldMap` | offered | Top-level child | Same as `XaeroWaypoints` (assumption). |
 
@@ -173,7 +173,8 @@ Each step is its own pull request with its own tests, and each step keeps the pr
 
 1. **Pre-state guard** for Replace (section 6). Independent of Merge. Implemented.
 2. **Domain**: decision, dispositions, catalog merge units, and plan, preview, backup, journal, live-validation,
-   and rollback policies. Merge is not selectable in the UI yet.
+   and rollback policies. Merge is not selectable in the UI yet. Implemented; Application already routes a
+   Merge step through backup validation and the pre-state proof, which refuses it until step 3.
 3. **Infrastructure**: merge inspection, overlay writer, overlay verifier, and rollback-attempt acceptance, with
    integration tests on owned fixtures.
 4. **Application and App**: three-way choice, counts in Preview, confirmation, and Report, Japanese and English
@@ -203,14 +204,16 @@ Each step is its own pull request with its own tests, and each step keeps the pr
 - **Pre-state guard**: a destination edit after Backup must be refused before Started for both Replace and Merge.
 - **Regression**: the existing Copy and Replace suites and the golden fingerprint values stay unchanged.
 
-## Open questions for the owner
+## Owner decisions
 
-1. Approve the merge-unit table, especially File for `config` and `schematics` and Top-level child for `saves`
-   and packs.
-2. Xaero's folder layout has to be checked against the members' real instances. Newer Xaero versions may store
-   data under a different folder (unverified). If so, the candidates themselves need updating before merge
-   units matter.
-3. Should Merge be offered for `saves` in the first release, or held back until a member has tried it on a copy
-   of real worlds? Whole-entry backups of large world folders are the main cost.
-4. Preview detail: counts only (proposed), or also a bounded list of relative names on screen? Names never enter
-   the journal or Report either way.
+The owner accepted the recommendations on 2026-10-29:
+
+1. The merge-unit table above is approved.
+2. Xaero's folder layout still has to be checked against the members' real instances. Implementation proceeds
+   with Top-level child for both Xaero candidates; if newer Xaero versions store data elsewhere, the candidates
+   themselves change in a separate decision.
+3. Merge is **not** offered for `saves` in the first Merge release. Its catalog unit is "not offered" until a
+   member has tried Merge on a copy of real worlds and whole-entry backups of large world folders are judged
+   acceptable.
+4. Preview, confirmation, and Report show counts only. Relative names are not shown and never enter the journal
+   or Report.

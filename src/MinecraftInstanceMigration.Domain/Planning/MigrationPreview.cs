@@ -51,5 +51,7 @@ public sealed class MigrationPreview
     public bool RequiresBackup => Entries.Any(entry => entry.RequiresBackup);
 
     public bool HasPlannedWrites => Entries.Any(entry =>
-        entry.Action is MigrationPreviewAction.Copy or MigrationPreviewAction.Replace);
+        entry.Action is MigrationPreviewAction.Copy or
+            MigrationPreviewAction.Replace or
+            MigrationPreviewAction.Merge);
 }

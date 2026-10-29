@@ -45,13 +45,17 @@ public sealed class MigrationPlan
         ConflictDecisionIssues.Count > 0 ||
         Entries.Any(entry => entry.IsBlocked)
             ? MigrationPlanStatus.Blocked
-            : Entries.Any(entry => entry.NeedsDecision)
+            : Entries.Any(entry => entry.NeedsDecision || entry.NeedsMergeInspection)
                 ? MigrationPlanStatus.NeedsDecision
                 : MigrationPlanStatus.Ready;
 
     public int ReadyToCopyCount => Entries.Count(entry => entry.IsReadyToCopy);
 
     public int ReadyToReplaceCount => Entries.Count(entry => entry.IsReadyToReplace);
+
+    public int ReadyToMergeCount => Entries.Count(entry => entry.IsReadyToMerge);
+
+    public int MergeInspectionRequiredCount => Entries.Count(entry => entry.NeedsMergeInspection);
 
     public int ReadyForWriteCount => Entries.Count(entry => entry.IsReadyForWrite);
 

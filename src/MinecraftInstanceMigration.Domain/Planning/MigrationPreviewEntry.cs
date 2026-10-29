@@ -9,6 +9,7 @@ public enum MigrationPreviewAction
     Copy,
     Skip,
     Replace,
+    Merge,
     NeedsDecision,
     Blocked,
 }

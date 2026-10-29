@@ -61,7 +61,7 @@ public sealed class MigrationRecoveryCoordinator(
 
         bool backupRequired = loaded.Snapshot.Steps.Any(step =>
             step.Outcome == ExecutionStepOutcome.Applied &&
-            step.Operation == ExecutionOperationKind.Replace);
+            step.Operation is ExecutionOperationKind.Replace or ExecutionOperationKind.Merge);
         BackupArtifactValidationResult? backupValidation = null;
         if (backupRequired)
         {

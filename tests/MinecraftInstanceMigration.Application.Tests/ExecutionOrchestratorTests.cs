@@ -39,6 +39,35 @@ public sealed class ExecutionOrchestratorTests
     }
 
     [Fact]
+    public async Task MergeStepRequiresBackupValidationAndPreStateProofLikeReplace()
+    {
+        var events = new List<string>();
+        MigrationPlan plan = MergePlan();
+        Fixture fixture = CreateFixture(events, plan);
+
+        ExecutionOrchestrationResult result = await fixture.Orchestrator.ExecuteAsync(
+            Request(plan, backupRoot: "backup"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionOrchestrationStatus.Completed, result.Status);
+        Assert.Equal(
+            new[]
+            {
+                "workspace",
+                "journal:create",
+                "live:0",
+                "backup",
+                "prestate:0",
+                "journal:started:0",
+                "mutation:0",
+                "verify:0",
+                "journal:applied:0",
+            },
+            events);
+        Assert.Equal(fixture.PreState.Result.Fingerprint, fixture.Mutation.ExpectedDestination);
+    }
+
+    [Fact]
     public async Task DestinationChangedSinceBackupBlocksBeforeStartedAndMutation()
     {
         var events = new List<string>();
@@ -398,6 +427,30 @@ public sealed class ExecutionOrchestratorTests
                     EntryState.Directory,
                     EntryState.Directory,
                     MigrationPlanDisposition.ReadyToReplace),
+            ],
+            []);
+
+    private static MigrationPlan MergePlan() =>
+        new(
+            EntryState.Directory,
+            EntryState.Directory,
+            [
+                Entry(
+                    "config",
+                    ExpectedEntryKind.Directory,
+                    EntryState.Directory,
+                    EntryState.Directory,
+                    MigrationPlanDisposition.ReadyToMerge) with
+                {
+                    MergeInspection = new MergeInspectionResult(
+                        "config",
+                        MergeUnit.File,
+                        MergeInspectionStatus.Clean,
+                        1,
+                        1,
+                        1,
+                        10),
+                },
             ],
             []);
 

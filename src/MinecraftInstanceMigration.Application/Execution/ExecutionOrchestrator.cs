@@ -174,8 +174,9 @@ public sealed class ExecutionOrchestrator(
                     appliedSteps);
             }
 
+            // Merge, like Replace, needs a validated backup and proof that it still covers the destination.
             ExecutionContentFingerprint? expectedDestination = null;
-            if (step.Operation == ExecutionOperationKind.Replace)
+            if (step.Operation is ExecutionOperationKind.Replace or ExecutionOperationKind.Merge)
             {
                 BackupArtifactValidationResult backupValidation;
                 try

@@ -8,7 +8,8 @@ public static class MigrationPlanPolicy
         InstanceInspectionResult source,
         InstanceInspectionResult destination,
         IEnumerable<string> selectedEntryNames,
-        IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null)
+        IReadOnlyDictionary<string, DestinationConflictDecision>? conflictDecisions = null,
+        IReadOnlyDictionary<string, MergeInspectionResult>? mergeInspections = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
@@ -27,11 +28,12 @@ public static class MigrationPlanPolicy
             .ToArray();
 
         conflictDecisions ??= new Dictionary<string, DestinationConflictDecision>();
+        mergeInspections ??= new Dictionary<string, MergeInspectionResult>();
         var decisionIssues = ValidateDecisionKeys(conflictDecisions, knownNames, selected);
         var applicableDecisions = conflictDecisions
             .Where(pair => knownNames.Contains(pair.Key)
                 && selected.Contains(pair.Key)
-                && Enum.IsDefined(pair.Value))
+                && IsSupported(pair.Key, pair.Value))
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
 
         var entries = KnownEntryCatalog.All
@@ -40,7 +42,8 @@ public static class MigrationPlanPolicy
                 destination,
                 candidate,
                 selected.Contains(candidate.Name),
-                applicableDecisions.GetValueOrDefault(candidate.Name, DestinationConflictDecision.Unresolved)))
+                applicableDecisions.GetValueOrDefault(candidate.Name, DestinationConflictDecision.Unresolved),
+                mergeInspections.GetValueOrDefault(candidate.Name)))
             .ToArray();
 
         foreach (var pair in applicableDecisions)
@@ -50,7 +53,10 @@ public static class MigrationPlanPolicy
             if (entry.Disposition is not MigrationPlanDisposition.DestinationConflict
                 and not MigrationPlanDisposition.SkippedDestinationConflict
                 and not MigrationPlanDisposition.ReadyToReplace
-                and not MigrationPlanDisposition.BlockedDestinationKindMismatch)
+                and not MigrationPlanDisposition.BlockedDestinationKindMismatch
+                and not MigrationPlanDisposition.ReadyToMerge
+                and not MigrationPlanDisposition.MergeInspectionRequired
+                and not MigrationPlanDisposition.BlockedMergeConflict)
             {
                 decisionIssues.Add(new ConflictDecisionIssue(pair.Key, ConflictDecisionIssueKind.NoDestinationConflict));
             }
@@ -80,7 +86,7 @@ public static class MigrationPlanPolicy
                 continue;
             }
 
-            if (!Enum.IsDefined(pair.Value))
+            if (!IsSupported(pair.Key, pair.Value))
             {
                 issues.Add(new ConflictDecisionIssue(pair.Key, ConflictDecisionIssueKind.UnsupportedDecision));
             }
@@ -89,12 +95,21 @@ public static class MigrationPlanPolicy
         return issues;
     }
 
+    // Merge exists only for candidates whose catalog entry defines a merge unit.
+    private static bool IsSupported(string name, DestinationConflictDecision decision) =>
+        Enum.IsDefined(decision) &&
+        (decision != DestinationConflictDecision.Merge ||
+            KnownEntryCatalog.All.Any(candidate =>
+                string.Equals(candidate.Name, name, StringComparison.Ordinal) &&
+                candidate.MergeUnit != MergeUnit.NotOffered));
+
     private static MigrationPlanEntry CreateEntry(
         InstanceInspectionResult source,
         InstanceInspectionResult destination,
         KnownEntryDefinition candidate,
         bool selected,
-        DestinationConflictDecision conflictDecision)
+        DestinationConflictDecision conflictDecision,
+        MergeInspectionResult? mergeInspection)
     {
         EntryObservation? sourceObservation = FindUniqueObservation(source, candidate.Name);
         EntryObservation? destinationObservation = FindUniqueObservation(destination, candidate.Name);
@@ -159,7 +174,12 @@ public static class MigrationPlanPolicy
             EntryState.Inaccessible or EntryState.InvalidPath or EntryState.Unavailable =>
                 Entry(candidate, sourceObservation, destinationObservation, MigrationPlanDisposition.BlockedDestinationObservation),
             EntryState.File or EntryState.Directory =>
-                ResolveDestinationConflict(candidate, sourceObservation, destinationObservation, conflictDecision),
+                ResolveDestinationConflict(
+                    candidate,
+                    sourceObservation,
+                    destinationObservation,
+                    conflictDecision,
+                    mergeInspection),
             _ => Entry(candidate, sourceObservation, destinationObservation, MigrationPlanDisposition.BlockedDestinationObservation),
         };
     }
@@ -168,19 +188,46 @@ public static class MigrationPlanPolicy
         KnownEntryDefinition candidate,
         EntryObservation source,
         EntryObservation destination,
-        DestinationConflictDecision decision) =>
+        DestinationConflictDecision decision,
+        MergeInspectionResult? mergeInspection) =>
         decision switch
         {
             DestinationConflictDecision.Skip =>
                 Entry(candidate, source, destination, MigrationPlanDisposition.SkippedDestinationConflict),
-            // Execution replaces only an entry of the catalog kind. Refuse a mismatched Replace here,
+            // Execution replaces or merges only an entry of the catalog kind. Refuse a mismatch here,
             // before Backup or a durable Started record, instead of failing after the journal begins.
-            DestinationConflictDecision.Replace when destination.MatchesExpectedKind != true =>
+            DestinationConflictDecision.Replace or DestinationConflictDecision.Merge
+                when destination.MatchesExpectedKind != true =>
                 Entry(candidate, source, destination, MigrationPlanDisposition.BlockedDestinationKindMismatch),
             DestinationConflictDecision.Replace =>
                 Entry(candidate, source, destination, MigrationPlanDisposition.ReadyToReplace),
+            DestinationConflictDecision.Merge =>
+                ResolveMerge(candidate, source, destination, mergeInspection),
             _ => Entry(candidate, source, destination, MigrationPlanDisposition.DestinationConflict),
         };
+
+    private static MigrationPlanEntry ResolveMerge(
+        KnownEntryDefinition candidate,
+        EntryObservation source,
+        EntryObservation destination,
+        MergeInspectionResult? inspection)
+    {
+        if (inspection is null)
+        {
+            return Entry(candidate, source, destination, MigrationPlanDisposition.MergeInspectionRequired);
+        }
+
+        // Evidence for another entry or another unit cannot describe this merge.
+        bool consistent =
+            string.Equals(inspection.Name, candidate.Name, StringComparison.Ordinal) &&
+            inspection.Unit == candidate.MergeUnit;
+
+        MigrationPlanDisposition disposition = consistent && inspection.IsClean
+            ? MigrationPlanDisposition.ReadyToMerge
+            : MigrationPlanDisposition.BlockedMergeConflict;
+
+        return Entry(candidate, source, destination, disposition) with { MergeInspection = inspection };
+    }
 
     private static MigrationPlanEntry Entry(
         KnownEntryDefinition candidate,
