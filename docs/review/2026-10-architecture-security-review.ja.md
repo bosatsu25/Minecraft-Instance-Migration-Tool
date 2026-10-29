@@ -43,6 +43,7 @@
 | D6 | 低 | NuGet ロックファイルなし・取得元未固定（依存関係の取り違え余地） | リポジトリ構成（確実） | テスト5プロジェクトにロック＋`--locked-mode`、`nuget.config` で nuget.org のみに固定、Dependabot |
 | D7 | 低 | 日本語 UI で Blocked 系の理由が英語識別子のまま表示 | `UiText.Translate` の語境界規則（確実） | 全 Blocked 系に日本語を追加しテストで網羅 |
 | D8 | 低（性能） | 検証時のディレクトリ名照合が O(n²)（大きな `saves` で遅い） | `MigrationPayloadMatches`（確実） | 辞書照合に変更（同順位の選択規則は維持） |
+| D9 | 中（追補 2026-10-29） | 置換の直前に「現在の移行先がバックアップと同じ内容か」を確認していない。バックアップ後に移行先が変わると、その変更は削除され、バックアップにも残らない | `ExecutionOrchestrator` と `ExecutionLiveValidationPolicy` は上位の種類とバックアップの完全性だけを確認（確実） | [ADR 0004](../adr/0004-merge-existing-destination-directories.md) §6 で対策を設計（未実装） |
 
 ## 4. 採用技術の評価（ユーザー負担・導入/削除の容易さ）
 

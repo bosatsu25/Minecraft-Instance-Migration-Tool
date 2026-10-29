@@ -53,6 +53,7 @@ and presets.
 - Missing candidates, unreadable entries, empty directories, and partial inspection.
 - Merge semantics and their backup/rollback requirements; Skip and Replace intent are now explicit,
   with Replace marked as backup-requiring. There is still no silent overwrite.
+  [ADR 0004](adr/0004-merge-existing-destination-directories.md) proposes Merge with a per-candidate merge unit.
 - Any future exclusion needs explicit scope, precedence, and deterministic ordering.
 - Source/destination containment and overlap, junctions/symlinks, stale plans, and concurrent changes.
 - Large worlds/screenshots, free space, cancellation, and bounded diagnostics.
