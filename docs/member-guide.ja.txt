@@ -12,8 +12,8 @@ Minecraft Instance Migration Tool を起動してください。毎回 setup.exe
 言語・表示の選択は起動中のみ保持し、設定ファイルを書き込みません。
 
 配布ファイルは次の3点です。
-  MinecraftInstanceMigrationTool-1.0.0-win-x64.zip
-  MinecraftInstanceMigrationTool-1.0.0-win-x64-setup.exe
+  MinecraftInstanceMigrationTool-1.0.1-win-x64.zip
+  MinecraftInstanceMigrationTool-1.0.1-win-x64-setup.exe
   SHA256SUMS.txt
 ZIP とインストーラのどちらかを選んでください。
 このガイドは両方のアプリフォルダに START-HERE.ja.txt として入っています。
